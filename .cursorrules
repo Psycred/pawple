@@ -1,0 +1,668 @@
+# PAWPLE CURSOR RULES (STRICT ENFORCEMENT)
+
+You are building Pawple — a calm, premium, emotionally restrained pet journaling & meetup app.
+
+Pawple is NOT a traditional social media product.
+
+It should feel:
+• warm
+• calm
+• breathable
+• emotionally soft
+• premium
+• human
+• pet-first
+• Apple-inspired
+
+NOT:
+❌ engagement-driven
+❌ loud
+❌ cluttered
+❌ heavily decorated
+❌ utility-heavy
+❌ influencer-oriented
+
+ALWAYS follow these rules.
+NEVER deviate unless explicitly instructed.
+
+-----------------------------------------------------
+🧠 CORE PRODUCT PHILOSOPHY
+-----------------------------------------------------
+
+Pawple should feel like:
+“A quiet collection of saved pet memories.”
+
+NOT:
+❌ Instagram clone
+❌ Pinterest aesthetic
+❌ scrapbook craft project
+❌ event management app
+❌ creator platform
+
+RULE:
+Every screen should prioritize:
+1. the pet/content
+2. emotional warmth
+3. calm composition
+
+NOT:
+the design system itself.
+
+-----------------------------------------------------
+🧠 COMPOSITION PHILOSOPHY (STRICT)
+-----------------------------------------------------
+
+Screens should feel:
+• inevitable
+• emotionally calm
+• breathable
+• softly composed
+• visually quiet
+• premium through restraint
+
+Whitespace should feel:
+• intentional
+• calming
+• balanced
+
+NOT:
+❌ empty
+❌ excessive
+❌ mechanically spaced
+
+RULE:
+When uncertain, REMOVE rather than ADD.
+
+-----------------------------------------------------
+
+AVOID:
+❌ helper text overload
+❌ excessive labels
+❌ decorative UI
+❌ stacked chips everywhere
+❌ loud visual hierarchy
+❌ dense forms
+❌ visible configuration systems
+❌ excessive segmentation
+
+-----------------------------------------------------
+
+FAVOR:
+✅ compressed interactions
+✅ hidden complexity
+✅ placeholders over explanations
+✅ progressive disclosure
+✅ natural language
+✅ calm layouts
+✅ emotionally invisible guidance
+
+-----------------------------------------------------
+✍️ UX WRITING PHILOSOPHY
+-----------------------------------------------------
+
+Pawple copy should be:
+• short
+• human
+• obvious
+• emotionally quiet
+• natural
+
+Avoid:
+❌ long labels
+❌ UX-writer-heavy phrasing
+❌ explanatory helper text
+❌ over-emotional narration
+❌ instructional writing
+
+Prefer:
+✅ one-word labels
+✅ compressed language
+✅ example-driven placeholders
+
+-----------------------------------------------------
+
+GOOD:
+“Meetup”
+“Open to”
+“Time”
+“Joining paws”
+
+BAD:
+“What should nearby paws call this meetup?”
+“Who’s this meetup best suited for?”
+“When should nearby paws arrive?”
+
+-----------------------------------------------------
+
+RULE:
+Placeholders should guide naturally.
+
+Prefer:
+examples over explanations.
+
+-----------------------------------------------------
+🔤 TYPOGRAPHY HIERARCHY (STRICT)
+-----------------------------------------------------
+
+PRIMARY FONT:
+Inter
+
+HANDWRITTEN FONT:
+Caveat
+
+-----------------------------------------------------
+
+Inter is used for:
+• UI
+• buttons
+• labels
+• inputs
+• metadata
+• navigation
+• settings
+• legal text
+• meetup UI
+• onboarding
+• tabs
+
+-----------------------------------------------------
+
+Caveat is ONLY used for:
+• handwritten captions
+• moment/journal writing
+• emotionally personal text
+
+-----------------------------------------------------
+
+NEVER use Caveat for:
+❌ buttons
+❌ navigation
+❌ labels
+❌ forms
+❌ tabs
+❌ metadata
+❌ legal text
+
+-----------------------------------------------------
+
+FONT SIZES
+
+BODY / INPUTS:
+Inter Regular 16px
+
+LABELS / METADATA:
+Inter Medium 14px
+
+BUTTONS:
+Inter SemiBold 16px
+
+CARD TITLES:
+Inter SemiBold 18px
+
+PAGE TITLES:
+Inter SemiBold 30px
+
+HANDWRITTEN CAPTIONS:
+Caveat Regular 18–20px
+
+SMALL METADATA:
+Inter Regular 12px
+
+BRANDING:
+Inter Medium 11px
+
+-----------------------------------------------------
+🎨 COLOR SYSTEM (STRICT TOKEN USAGE)
+-----------------------------------------------------
+
+ALL colors MUST come from:
+theme.colors.*
+
+NEVER hardcode colors except explicit brand colors below.
+
+-----------------------------------------------------
+
+BACKGROUND:
+screen → #F5F4F1
+card → #FBFAF8
+
+-----------------------------------------------------
+
+TEXT:
+primary → #2F2F2F
+secondary → #6A6A6A
+muted → #7A7A7A
+placeholder → #9A9A9A
+
+-----------------------------------------------------
+
+SAGE SYSTEM:
+sage → #8FAF9B
+sageLight → #E8F1EA
+sageDark → #6D8B74
+
+-----------------------------------------------------
+
+HEART PURPLE:
+#7B61FF
+
+-----------------------------------------------------
+
+FRAME COLOR:
+#7A4F46
+
+Alternative:
+#70564B
+
+-----------------------------------------------------
+
+RULE:
+Always import:
+import { theme } from '../config/theme'
+
+-----------------------------------------------------
+📐 SPACING & SAFE AREA SYSTEM
+-----------------------------------------------------
+
+STRICT 8PT GRID ONLY:
+8, 16, 24, 32, 48, 64
+
+Avoid arbitrary spacing.
+
+-----------------------------------------------------
+
+SCREEN PADDING:
+Top → 24px
+Horizontal → 20px
+Bottom → 32px
+
+-----------------------------------------------------
+
+SECTION GAP:
+24px
+
+-----------------------------------------------------
+
+LABEL → INPUT GAP:
+8px
+
+-----------------------------------------------------
+
+CARD PADDING:
+16px
+
+-----------------------------------------------------
+
+BOTTOM SAFE AREA:
+minimum 32px
+
+-----------------------------------------------------
+
+RULE:
+Content must NEVER:
+❌ collide with notch
+❌ touch gesture area
+❌ feel cramped vertically
+
+-----------------------------------------------------
+
+ALL screens MUST use:
+SafeAreaView
+
+-----------------------------------------------------
+
+ScrollViews MUST use:
+contentContainerStyle={{
+  paddingTop: 24,
+  paddingHorizontal: 20,
+  paddingBottom: 32,
+  flexGrow: 1,
+}}
+
+-----------------------------------------------------
+🧩 COMPONENT SYSTEM
+-----------------------------------------------------
+
+BUTTONS:
+• minHeight 48px
+• borderRadius 22px
+• Inter SemiBold 16px
+• backgroundColor: theme.colors.sage
+
+-----------------------------------------------------
+
+INPUTS:
+• borderRadius 16px
+• minHeight 48px
+• paddingVertical 14px
+• paddingHorizontal 16px
+• backgroundColor: theme.colors.background.card
+• Inter Regular 16px
+
+-----------------------------------------------------
+
+CARDS:
+• borderRadius 22px
+• backgroundColor: theme.colors.background.card
+• subtle shadow only
+• marginBottom 24px
+
+-----------------------------------------------------
+
+BOTTOM SHEETS:
+• soft appearance only
+• handle width 40px
+• handle height 4px
+• radius 2px
+• backdrop rgba(0,0,0,0.35)
+
+-----------------------------------------------------
+
+RULE:
+Never use default React Native styling.
+
+Everything must feel:
+• soft
+• calm
+• premium
+• restrained
+
+-----------------------------------------------------
+🖼️ FEED IMAGE & FRAME PHILOSOPHY
+-----------------------------------------------------
+
+Moment posts should feel like:
+“printed memories softly placed on paper.”
+
+NOT:
+❌ image assets with overlays
+❌ scrapbook templates
+❌ graphic-designed cards
+
+-----------------------------------------------------
+
+RULE:
+The frame ALWAYS exists OUTSIDE the image.
+
+NEVER place:
+❌ sketch lines
+❌ doodles
+❌ borders
+❌ decorative overlays
+
+INSIDE the photograph.
+
+-----------------------------------------------------
+
+FRAME RULES:
+• warm maroon-brown only
+• subtle imperfection
+• slightly hand-drawn
+• 2px max stroke
+• ~75% opacity
+
+-----------------------------------------------------
+
+TILT RULES:
+ONLY:
+• image
+• outer frame
+
+may tilt.
+
+-----------------------------------------------------
+
+NEVER tilt:
+❌ captions
+❌ metadata
+❌ branding
+❌ card container
+
+-----------------------------------------------------
+
+ALL posts MUST maintain:
+the SAME orientation direction.
+
+Tilt:
+-1.5deg maximum.
+
+-----------------------------------------------------
+
+RULE:
+The pet/photo is ALWAYS the emotional focus.
+
+The frame should support the memory quietly,
+NOT dominate visually.
+
+-----------------------------------------------------
+📸 FEED CARD COMPOSITION
+-----------------------------------------------------
+
+Feed cards should feel:
+• breathable
+• calm
+• handcrafted
+• emotionally restrained
+
+-----------------------------------------------------
+
+IMAGE RATIO:
+4:5 portrait
+
+-----------------------------------------------------
+
+IMAGE DOMINANCE:
+~82% of card height
+
+-----------------------------------------------------
+
+BOTTOM CONTENT ORDER:
+1. handwritten caption
+2. pet name
+3. metadata
+4. subtle pawple branding
+
+-----------------------------------------------------
+
+HEART & SHARE:
+• always OUTSIDE the card
+• no counts
+• no comments
+• no reposts
+• no social metrics
+
+-----------------------------------------------------
+
+HEART INTERACTION:
+• pulse twice on first like
+• fill purple
+• remain purple until unliked
+
+Animation:
+soft only.
+180–260ms.
+
+-----------------------------------------------------
+
+PAWPLE BRANDING:
+• lowercase only
+• subtle
+• bottom-right
+• never watermark-like
+
+-----------------------------------------------------
+🚫 ANTI-CLUTTER ENFORCEMENT
+-----------------------------------------------------
+
+Always minimize visible UI.
+
+Hide complexity whenever possible.
+
+Prefer:
+• bottom sheets
+• progressive disclosure
+• collapsed interactions
+• compressed UI
+
+-----------------------------------------------------
+
+Avoid:
+❌ always-visible options
+❌ giant forms
+❌ helper paragraphs
+❌ excessive chips
+❌ configuration-heavy screens
+❌ visual noise
+
+-----------------------------------------------------
+
+RULE:
+If the same idea is already communicated naturally,
+DO NOT create additional UI for it.
+
+-----------------------------------------------------
+🗄️ SUPABASE & DATA
+-----------------------------------------------------
+
+Always wrap DB calls in try/catch.
+
+Log exact Supabase errors:
+console.error('[Supabase]', error)
+
+-----------------------------------------------------
+
+Always fetch:
+supabase.auth.getUser()
+
+before write operations.
+
+-----------------------------------------------------
+
+RULE:
+Never modify:
+❌ schemas
+❌ RLS
+❌ queries
+❌ insert/update logic
+
+unless explicitly instructed.
+
+-----------------------------------------------------
+🤖 AI OUTPUT BEHAVIOR
+-----------------------------------------------------
+
+ALWAYS:
+• output complete runnable files
+• preserve architecture
+• preserve navigation
+• preserve Supabase logic
+• preserve state management
+
+-----------------------------------------------------
+
+WHEN MODIFYING UI:
+Only change:
+• styling
+• spacing
+• composition
+• visual hierarchy
+
+DO NOT break:
+• logic
+• data flow
+• interactions
+
+-----------------------------------------------------
+
+ADD:
+helpful beginner-friendly comments explaining WHY.
+
+-----------------------------------------------------
+
+MENTALLY TEST:
+• imports
+• theme mapping
+• spacing
+• safe areas
+• prop usage
+• navigation
+
+before outputting.
+
+-----------------------------------------------------
+🚫 STRICT PROHIBITIONS
+-----------------------------------------------------
+
+❌ hardcoded colors
+❌ hardcoded fonts
+❌ arbitrary spacing
+❌ Caveat outside emotional text
+❌ visual clutter
+❌ helper text overload
+❌ dense layouts
+❌ loud gradients
+❌ strong shadows
+❌ engagement metrics
+❌ comments
+❌ follower systems
+❌ popularity systems
+❌ overlapping safe areas
+❌ navigation rewrites
+❌ deleting architecture without instruction
+❌ partial code outputs
+❌ over-designed scrapbook aesthetics
+
+-----------------------------------------------------
+FINAL PRINCIPLE
+-----------------------------------------------------
+
+Pawple should feel:
+like a calm emotional product,
+not a designed interface.
+
+TECH STACK: Expo SDK 51+ | React Native 0.74+ | React Navigation 6+ | Supabase JS v2 | react-native-safe-area-context
+HEART ANIMATION: Use simple state-driven scale transform (Animated API). Pulse twice on first like. Duration: 200ms. No external libraries required.
+
+FRAME IMPLEMENTATION: Use a styled View with subtle border-radius variation or a lightweight SVG path. Do NOT use image overlays, heavy shaders, or third-party frame packages.
+
+When uncertain:
+REMOVE rather than ADD.
+
+-----------------------------------------------------
+🆕 MEETUP & PROFILE DESIGN SYSTEM (LATEST)
+-----------------------------------------------------
+These rules apply specifically to the Meetup Cards, Pet Profile Hero, and My Meetups sections. They override general component rules where there is a conflict.
+
+MEETUP CARD COLORS:
+- Card Background: #FFFCF8
+- Card Border: #F1E8DF
+- Title Color: #6E8E73 (Sage Green variant for Meetup Titles ONLY)
+- Primary Button: #9EB8A0 (Sage Green)
+- Muted Accent (Labels/Icons): #8EA88F
+- Date/Time Text: #4A403B
+- Participant Text: #6B625C
+
+MEETUP TYPOGRAPHY OVERRIDES:
+- Meetup Card Title: Inter SemiBold 22px (Overrides general Card Title 18px)
+- "YOUR MEETUP" Label: Inter Medium 11px, Letter Spacing 1px, Uppercase, #8EA88F
+- Date & Time: Inter Medium 16px, #4A403B
+- Location/Distance: Inter Regular 14px, #8EA88F
+
+PET PROFILE HERO OVERRIDES:
+- Pet Name: Inter SemiBold 26-28px, #3A312E
+- Pet Subtitle (Breed • Age): Inter Medium 15px, #666
+- Bio: Italicized, #888, Max 100 chars.
+- Companion Badge: #9EB8A0 background, White text, rounded pill.
+
+MEETUP ARCHITECTURE RULES:
+- Meetups belong to PETS, not users. 
+- Always use `meetup_hosts` and `meetup_participants` junction tables.
+- Never show owner/human names on meetup cards. Only show pet names (e.g., "Hosted by Tyson • Peter").
+- Mock data must always include at least 1 mock host pet. Participant count must be realistic (Hosts + User + Random Extras). Minimum count is 2.
+
+STRICT MEETUP UI PROHIBITIONS:
+- NO system emojis (like 📍) in the location line. Use clean text.
+- NO fake "initial" avatars for hosts. Use real photos or just text names.
+- NO double paw emojis. Use a single quiet paw or just text.
+- NO heavy borders around sections. Use whitespace (24px) to separate.
+- NO exclamation marks in the primary button ("You're Going", not "You're Going!").

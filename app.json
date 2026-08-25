@@ -1,0 +1,62 @@
+{
+  "expo": {
+    "name": "Pawple",
+    "slug": "Pawple",
+    "version": "1.0.0",
+    "scheme": "pawple",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "Allow Pawple to access your photos to upload pet pictures.",
+        "NSCameraUsageDescription": "Allow Pawple to take photos of your pet.",
+        "NSLocationWhenInUseUsageDescription": "Pawple uses your approximate location to show nearby pet events and help you find pet mates in your area.",
+        "NSLocationDefaultAccuracyReduced": true
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "edgeToEdgeEnabled": true,
+      "permissions": [
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.CAMERA",
+        "ACCESS_COARSE_LOCATION",
+        "android.permission.RECORD_AUDIO"
+      ],
+      "blockedPermissions": [
+        "android.permission.ACCESS_FINE_LOCATION"
+      ],
+      "package": "com.anonymous.Pawple"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-asset",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Pawple uses your approximate location to show nearby pet events and help you find pet mates in your area."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Pawple needs access to your photos to add an optional pet picture.",
+          "cameraPermission": "Pawple needs camera access to take an optional pet photo."
+        }
+      ]
+    ]
+  }
+}

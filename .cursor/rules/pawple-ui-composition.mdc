@@ -1,0 +1,135 @@
+---
+description: Pawple global safe area, spacing, and screen composition (Apple-inspired, calm, premium)
+alwaysApply: true
+---
+
+# Pawple — Global safe area, spacing & composition
+
+Apply consistently across **all** current and future Pawple screens. Map numbers to `theme.js` where possible; when theme lacks a token, prefer extending the theme over one-off magic numbers.
+
+## Core philosophy
+
+Screens must **never** feel: packed, dense, form-heavy, maximized for content, mechanically spaced, or edge-to-edge crowded.
+
+Screens **should** feel: airy, balanced, intentionally composed, calmly suspended, easy to breathe through. **Whitespace is part of the design language.**
+
+- **Do not** optimize for “fitting more on screen.”
+- **Do** optimize for “making interaction feel effortless.”
+- **When unsure:** remove rather than add. Prefer clarity over completeness, calmness over density, emotion over functionality. The interface should feel inevitable, not designed.
+
+**Product feel:** “Nothing extra exists.” Users feel emotionally relaxed, visually calm, gently guided — not cognitively loaded or operationally overwhelmed.
+
+## Safe areas (devices)
+
+Always respect: Dynamic Island, camera cutouts, punch holes, gesture bars, rounded corners, home indicators.
+
+**Never:** headers hugging the top edge, CTAs cramped on the gesture area, content colliding with hardware.
+
+Use `SafeAreaView` / safe-area context and tab-bar height where relevant; verify on notched and gesture-nav devices.
+
+## Top spacing (after safe-area inset)
+
+| Target | Value |
+|--------|--------|
+| **Minimum** top spacing below safe area | **32px** |
+| **Ideal** | **36–40px** |
+
+The first prominent element (usually the page title) must **not** feel visually attached to the status bar, notch, punch hole, or top edge. Top should feel calm, premium, breathable — not compressed or “cramped-app.”
+
+## Bottom spacing
+
+Bottom CTAs and nav must **not** feel cramped against gesture bar, home indicator, keyboard, or raw screen edge.
+
+| Target | Value |
+|--------|--------|
+| **Minimum** bottom padding (above system UI) | **24–34px** |
+
+Sticky CTA strips: float slightly above the bottom edge; calm and intentional; add soft top separation (hairline, subtle fill, or spacing) when needed.
+
+## Horizontal page padding
+
+| Context | Value |
+|---------|--------|
+| **Default** horizontal padding | **24px** |
+| **Large composition sections** | **28px** (optional) |
+
+**Avoid:** defaulting everything to 16px-wide gutters, overly narrow margins, crowded horizontal composition.
+
+## Vertical rhythm (non-uniform)
+
+Avoid equal spacing top-to-bottom. Use **tiered** rhythm so layout feels guided and relaxed, not mechanical.
+
+| Tier | Range | Use for |
+|------|--------|---------|
+| **Micro** | 4–8px | Icon ↔ text, tight label hints |
+| **Small** | 10–14px | Label → field |
+| **Medium** | 20–28px | Related grouped sections |
+| **Large** | 32–40px | Major section separation |
+| **XL breathing** | 48–64px | Emotional reset / hero areas |
+
+**Do not** use mathematically identical gaps for every block on a screen.
+
+## Forms & inputs
+
+Forms must **not** feel enterprise, dashboard-like, or mechanically stacked.
+
+| Property | Guideline |
+|----------|-----------|
+| Input height | **56–58px** |
+| Input radius | **16–18px** |
+| Tone | Lightweight, conversational, emotionally soft |
+
+**Avoid:** dense forms, tiny spacing, excessive labels, helper-text overload.
+
+## Cards
+
+| Property | Guideline |
+|----------|-----------|
+| Radius | **18–24px** |
+| Inner padding | **18–22px** |
+| Vertical spacing between cards | **10–16px** |
+
+Cards should feel floating, soft, breathable.
+
+**Avoid:** heavy borders, aggressive shadows, compressed card content.
+
+## Typography
+
+Type should breathe.
+
+**Avoid:** stacked dense text, tiny metadata overload, excessive font-weight jumps.
+
+- Page titles: strong breathing room **above**, generous spacing **below**.
+- Metadata: subtle, secondary, visually quiet.
+
+## Primary buttons
+
+| Property | Guideline |
+|----------|-----------|
+| Height | **48–52px** |
+| Radius | **999px** (full pill) |
+
+Primary CTAs should feel calm, stable, touchable, emotionally soft.
+
+**Avoid:** buttons touching screen edges, crowding content, aggressive visual weight.
+
+## Scrolling
+
+Scrolling should feel light, breathable, frictionless.
+
+**Avoid:** too many competing focal elements at once, overwhelming vertical stacking, information density for density’s sake.
+
+## Animation & motion
+
+| Property | Guideline |
+|----------|-----------|
+| Duration | **180–280ms** |
+| Easing | **ease-out**; soft spring only if needed |
+
+Motion should feel subtle, soft, natural, emotionally invisible.
+
+**Avoid:** aggressive movement, heavy spring, flashy transitions.
+
+## Implementation note
+
+Prefer **theme tokens** and **semantic names** (e.g. `screenPaddingHorizontal`, `sectionGapLarge`) when adding these values to `theme.js`, so screens stay aligned with this document as the single source of truth for composition intent.
