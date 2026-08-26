@@ -1,0 +1,11 @@
+{
+  "name": "Pawple",
+  "install": "npm ci",
+  "terminals": [
+    {
+      "name": "expo-web",
+      "command": "BROWSER=none npx expo start --web --port 8081"
+    }
+  ],
+  "ports": [8081]
+}
