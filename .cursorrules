@@ -26,6 +26,122 @@ ALWAYS follow these rules.
 NEVER deviate unless explicitly instructed.
 
 -----------------------------------------------------
+🧭 DESIGN GOVERNANCE & DECISION AUTHORITY
+-----------------------------------------------------
+
+This section defines who owns Pawple decisions. It does not change any existing
+product, visual-system, architecture, or implementation rule below.
+
+FOUNDER & MANAGING DIRECTOR
+
+Owns:
+• Pawple's fundamental product vision and identity
+• the pet-first philosophy and core product principles
+• long-term strategic direction
+• fundamental changes to product scope
+• consequential decisions affecting Pawple's identity, privacy, safety, trust,
+  or material user behaviour
+• founder-level strategic decisions
+
+The Founder & Managing Director does not need to approve individual visual-system
+implementation details such as exact spacing values, individual corner radii,
+typography sizes or weights, button geometry, component-level visual treatment,
+or responsive layout details unless those choices materially change Pawple's
+product identity or user behaviour.
+
+CEO / EXECUTIVE LEADERSHIP
+
+Owns:
+• operational leadership
+• translating strategic direction into execution
+• coordinating functional leadership
+• day-to-day company and product decisions within the established mandate
+• ensuring execution remains aligned with Pawple's product principles and
+  strategic direction
+• escalating founder-level or materially consequential decisions to the
+  Founder & Managing Director
+
+DESIGN / UX
+
+Owns visual-system and interaction-design execution within Pawple's established
+product principles, including:
+• typography system
+• spacing system and visual rhythm
+• component geometry and consistency
+• colour application
+• hierarchy
+• interaction patterns
+• screen composition
+• responsive behaviour
+• accessibility-oriented presentation
+
+Design / UX may evaluate and select the most appropriate implementation when
+existing visual rules contain conflicts without Founder & Managing Director
+approval for ordinary visual-system execution.
+
+Design / UX must preserve:
+• pet-first identity
+• Pawple's established warmth and personality
+• Apple-inspired simplicity, clarity, restraint, hierarchy, progressive
+  disclosure, and intuitive interaction
+• existing product principles and scope
+
+Design / UX must not independently change:
+• product functionality or scope
+• mating or matching criteria
+• privacy or safety rules
+• chat or other product behaviour
+• major product architecture
+• established Product Contract requirements
+
+ARCHITECTURE
+
+Owns:
+• technical and data architecture
+• system boundaries
+• integration patterns
+• database and storage architecture
+• engineering approach
+
+Architecture must respect the Product Contract and established product and
+design principles.
+
+ENGINEERING
+
+Owns implementation of approved product, design, and architecture decisions.
+Engineering must not silently change product behaviour or design principles
+during implementation.
+
+DECISION ESCALATION
+
+A decision must return to the Founder & Managing Director when it:
+• changes Pawple's fundamental identity
+• changes the pet-first principle
+• fundamentally changes product vision
+• makes a major strategic change to product scope
+• materially changes a consequential user journey
+• affects privacy, safety, or trust at founder-level significance
+• changes an established Product Contract requirement where such a change is
+  actually authorized
+• introduces a major new product mechanic with significant strategic
+  implications
+
+CEO / Executive Leadership handles ordinary operational and product decisions
+within its established mandate.
+
+A decision does not require Founder & Managing Director approval merely because
+it involves:
+• 20px versus 24px spacing
+• an exact corner radius
+• exact typography sizing
+• button geometry
+• component-level visual refinement
+• responsive layout details
+
+This applies only when the decision remains consistent with Pawple's established
+product principles, approved product direction, scope, and Product Contract.
+
+-----------------------------------------------------
 🧠 CORE PRODUCT PHILOSOPHY
 -----------------------------------------------------
 
