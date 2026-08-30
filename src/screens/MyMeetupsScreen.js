@@ -12,13 +12,20 @@ import {
   View,
 } from 'react-native';
 import MeetupCard from '../components/MeetupCard';
+import LoadErrorRetry from '../components/LoadErrorRetry';
 import ScreenWrapper from '../components/ScreenWrapper';
 import { theme } from '../config/theme';
 import { useActivePet } from '../contexts/ActivePetContext';
+import { getDemoMeetupsForFeed } from '../data/demoFeed';
+import {
+  applyDemoMeetupRsvp,
+  getDemoJoinedMeetupIdsForPet,
+} from '../data/demoMeetupRsvp';
 import { getCachedLocation } from '../lib/locationManager';
 import {
   fetchPetHostingMeetupsByPet,
   fetchPetParticipatingMeetups,
+  sortMeetupsByDateAsc,
 } from '../services/meetups';
 import { computeMeetupDistanceKm, enrichMeetupWithMockCoords } from '../utils/locationUtils';
 
@@ -55,6 +62,44 @@ function enrichMeetupsWithDistance(meetups, viewerCoords) {
     }
     return { ...enriched, distanceKm };
   });
+}
+
+/** Deduplicate meetup rows by id, then sort soonest-first. */
+function mergeMeetupsById(...groups) {
+  const byId = new Map();
+  groups.flat().forEach((meetup) => {
+    if (meetup?.id) {
+      byId.set(String(meetup.id), meetup);
+    }
+  });
+  return sortMeetupsByDateAsc([...byId.values()]);
+}
+
+/**
+ * Dev-only private Going/Hosting membership from demo fixtures.
+ * Going = session-joined viewer pets; Hosting = pet listed in meetup_hosts.
+ */
+function getDemoMembershipMeetups(petId) {
+  if (!__DEV__ || !petId) {
+    return { going: [], hosting: [] };
+  }
+
+  const petKey = String(petId);
+  const joinedIds = new Set(getDemoJoinedMeetupIdsForPet(petKey));
+  const fixtures = getDemoMeetupsForFeed()
+    .map((meetup) => applyDemoMeetupRsvp(meetup))
+    .filter((meetup) => meetup?.status === 'upcoming');
+
+  return {
+    going: fixtures.filter((meetup) => joinedIds.has(String(meetup.id))),
+    hosting: fixtures
+      .filter((meetup) =>
+        (meetup.meetup_hosts ?? []).some(
+          (row) => String(row?.pet_id ?? '') === petKey,
+        ),
+      )
+      .map((meetup) => ({ ...meetup, is_hosting: true })),
+  };
 }
 
 function MeetupSegmentedControl({ activeTab, onSelect }) {
@@ -108,11 +153,11 @@ function MeetupListSkeleton() {
   );
 }
 
-function EmptyState({ message }) {
+function EmptyState() {
   return (
     <View style={styles.emptyWrap}>
       <Text style={styles.emptyText} allowFontScaling>
-        {message}
+        Nothing yet.
       </Text>
     </View>
   );
@@ -130,7 +175,9 @@ export default function MyMeetupsScreen({ navigation }) {
   const [hostingMeetups, setHostingMeetups] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   const [manageMeetup, setManageMeetup] = useState(null);
+  const loadRequestRef = useRef(0);
 
   const stackNavigation = useMemo(
     () => rootNavigation.getParent?.() ?? navigation,
@@ -138,11 +185,15 @@ export default function MyMeetupsScreen({ navigation }) {
   );
 
   const loadMeetups = useCallback(async ({ isRefresh = false } = {}) => {
+    const requestId = loadRequestRef.current + 1;
+    loadRequestRef.current = requestId;
+
     if (isRefresh) {
       setRefreshing(true);
     } else {
       setLoading(true);
     }
+    setLoadError(false);
 
     try {
       if (!activePetId) {
@@ -158,15 +209,39 @@ export default function MyMeetupsScreen({ navigation }) {
         fetchPetHostingMeetupsByPet(activePetId),
       ]);
 
-      setGoingMeetups(enrichMeetupsWithDistance(going, viewerCoords));
-      setHostingMeetups(enrichMeetupsWithDistance(hosting, viewerCoords));
+      if (requestId !== loadRequestRef.current) {
+        return;
+      }
+
+      // Fast Lane: merge private demo Going/Hosting only in development builds.
+      if (__DEV__) {
+        const demo = getDemoMembershipMeetups(activePetId);
+        setGoingMeetups(
+          enrichMeetupsWithDistance(
+            mergeMeetupsById(going, demo.going),
+            viewerCoords,
+          ),
+        );
+        setHostingMeetups(
+          enrichMeetupsWithDistance(
+            mergeMeetupsById(hosting, demo.hosting),
+            viewerCoords,
+          ),
+        );
+      } else {
+        setGoingMeetups(enrichMeetupsWithDistance(going, viewerCoords));
+        setHostingMeetups(enrichMeetupsWithDistance(hosting, viewerCoords));
+      }
+      setLoadError(false);
     } catch (error) {
       console.error('[MyMeetups] load failed', error);
-      if (!isRefresh) {
-        setGoingMeetups([]);
-        setHostingMeetups([]);
-      }
+      setLoadError(true);
+      setGoingMeetups([]);
+      setHostingMeetups([]);
     } finally {
+      if (requestId !== loadRequestRef.current) {
+        return;
+      }
       if (isRefresh) {
         setRefreshing(false);
       } else {
@@ -197,10 +272,6 @@ export default function MyMeetupsScreen({ navigation }) {
 
   const activeMeetups = activeTab === 'going' ? goingMeetups : hostingMeetups;
   const actionVariant = activeTab === 'going' ? 'going' : 'hosting';
-  const emptyMessage =
-    activeTab === 'going'
-      ? 'No upcoming meetups to attend.'
-      : "You haven't hosted any meetups yet.";
 
   const refreshControl = (
     <RefreshControl
@@ -243,13 +314,21 @@ export default function MyMeetupsScreen({ navigation }) {
 
         {loading ? (
           <MeetupListSkeleton />
+        ) : loadError ? (
+          <ScrollView
+            contentContainerStyle={styles.emptyScrollContent}
+            showsVerticalScrollIndicator={false}
+            refreshControl={refreshControl}
+          >
+            <LoadErrorRetry onRetry={() => loadMeetups()} />
+          </ScrollView>
         ) : activeMeetups.length === 0 ? (
           <ScrollView
             contentContainerStyle={styles.emptyScrollContent}
             showsVerticalScrollIndicator={false}
             refreshControl={refreshControl}
           >
-            <EmptyState message={emptyMessage} />
+            <EmptyState />
           </ScrollView>
         ) : (
           <FlatList
@@ -366,8 +445,11 @@ const styles = StyleSheet.create({
   },
   emptyWrap: {
     alignItems: 'center',
-    paddingTop: 40,
-    paddingHorizontal: 16,
+    marginTop: theme.spacing.md,
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.xl,
+    borderRadius: theme.borderRadius.lg,
+    backgroundColor: theme.colors.background.card,
   },
   emptyText: {
     fontFamily: theme.fonts.body,

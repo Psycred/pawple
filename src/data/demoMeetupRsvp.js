@@ -30,6 +30,7 @@ function getOrCreateEntry(meetup) {
       fixtureParticipantCount: getFixtureCount(meetup),
       joinedPetIds: new Set(),
       petSnapshots: new Map(),
+      status: meetup?.status ?? 'upcoming',
     };
     demoRsvpByMeetup.set(meetupId, entry);
   }
@@ -99,6 +100,7 @@ export function applyDemoMeetupRsvp(meetup, viewerPets = []) {
   const joinedCount = entry.joinedPetIds.size;
   return {
     ...meetup,
+    status: entry.status,
     demo_fixture_participant_count: entry.fixtureParticipantCount,
     meetup_participants: [...fixtureParticipants, ...viewerParticipantRows],
     participant_count: entry.fixtureParticipantCount + joinedCount,
@@ -151,10 +153,41 @@ export function leaveDemoMeetupWithPets(meetup, viewerPets, petIdsArray) {
   return applyDemoMeetupRsvp(meetup, viewerPets);
 }
 
+/** Keep a demo cancellation visible across screens for this JS session. */
+export function cancelDemoMeetup(meetup) {
+  if (!__DEV__) {
+    throw new Error('Demo meetups are previews. Cancellation requires a saved meetup.');
+  }
+
+  const entry = getOrCreateEntry(meetup);
+  entry.status = 'cancelled';
+  return applyDemoMeetupRsvp(meetup);
+}
+
 /** Read-only helper used by development diagnostics. */
 export function getDemoMeetupJoinedPetIds(meetupId) {
   if (!__DEV__) {
     return [];
   }
   return [...(demoRsvpByMeetup.get(String(meetupId))?.joinedPetIds ?? [])];
+}
+
+/** Demo meetup ids joined by one pet during this JavaScript session. */
+export function getDemoJoinedMeetupIdsForPet(petId) {
+  if (!__DEV__ || !petId) {
+    return [];
+  }
+
+  const targetPetId = String(petId);
+  return [...demoRsvpByMeetup.entries()]
+    .filter(
+      ([, entry]) =>
+        entry.status !== 'cancelled' && entry.joinedPetIds.has(targetPetId),
+    )
+    .map(([meetupId]) => String(meetupId));
+}
+
+/** Session-local participated count for one pet across demo meetups. */
+export function getDemoParticipatedMeetupCountForPet(petId) {
+  return getDemoJoinedMeetupIdsForPet(petId).length;
 }

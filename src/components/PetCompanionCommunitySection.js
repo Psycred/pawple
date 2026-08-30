@@ -16,6 +16,7 @@ export default function PetCompanionCommunitySection({
   hostedCount = 0,
   participatedCount = 0,
   showCommunity = true,
+  communityAction = null,
 }) {
   return (
     <View style={styles.wrap}>
@@ -46,16 +47,29 @@ export default function PetCompanionCommunitySection({
 
       {showCommunity ? (
         <>
-          <Text style={styles.sectionTitle} allowFontScaling>
-            Community
-          </Text>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle} allowFontScaling>
+              Community
+            </Text>
+            {communityAction}
+          </View>
           <View style={styles.communityCard}>
-            <Text style={styles.communityLine} allowFontScaling>
-              Hosted Meetups: {hostedCount}
-            </Text>
-            <Text style={styles.communityLine} allowFontScaling>
-              Participated Meetups: {participatedCount}
-            </Text>
+            <View style={styles.statColumn}>
+              <Text style={styles.statNumber} allowFontScaling>
+                {hostedCount}
+              </Text>
+              <Text style={styles.statLabel} allowFontScaling>
+                Hosted
+              </Text>
+            </View>
+            <View style={styles.statColumn}>
+              <Text style={styles.statNumber} allowFontScaling>
+                {participatedCount}
+              </Text>
+              <Text style={styles.statLabel} allowFontScaling>
+                Joined
+              </Text>
+            </View>
           </View>
         </>
       ) : null}
@@ -93,22 +107,38 @@ const styles = StyleSheet.create({
     lineHeight: Math.round(theme.fontSizes.sm * theme.lineHeights.normal),
     color: theme.colors.text.muted.light,
   },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: theme.spacing.md,
+  },
   sectionTitle: {
     fontFamily: theme.fonts.semibold,
     fontSize: theme.fontSizes.lg,
     color: theme.colors.text.primary.light,
-    marginBottom: theme.spacing.md,
   },
   communityCard: {
+    flexDirection: 'row',
     backgroundColor: theme.colors.background.card,
     borderRadius: theme.borderRadius.lg,
     paddingHorizontal: theme.spacing.lg,
     paddingVertical: theme.spacing.lg,
-    gap: theme.spacing.sm,
+    gap: theme.spacing.md,
   },
-  communityLine: {
-    fontFamily: theme.fonts.body,
-    fontSize: theme.fontSizes.md,
-    color: theme.colors.text.secondary.light,
+  statColumn: {
+    flex: 1,
+    alignItems: 'center',
+    gap: theme.spacing.xs,
+  },
+  statNumber: {
+    fontFamily: theme.fonts.semibold,
+    fontSize: theme.fontSizes.xl,
+    color: theme.colors.text.primary.light,
+  },
+  statLabel: {
+    fontFamily: theme.fonts.medium,
+    fontSize: theme.fontSizes.xs,
+    color: theme.colors.text.muted.light,
   },
 });

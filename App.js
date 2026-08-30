@@ -39,6 +39,7 @@ import CreateMomentScreen from './src/screens/CreateMomentScreen';
 import { AuthProvider, useAuth } from './src/contexts/AuthContext';
 import { ActivePetProvider, useActivePet } from './src/contexts/ActivePetContext';
 import { refreshProfileLocationOnAppOpen } from './src/lib/profileLocation';
+import { assertContractEnvironment } from './src/config/environment';
 
 const Stack = createNativeStackNavigator();
 
@@ -65,7 +66,7 @@ function parseMomentId(url) {
 }
 
 function AppNavigator() {
-  const { user, authLoading, profileLoading, hasProfile, hasCompletedOnboarding } = useAuth();
+  const { user, authLoading, profileLoading, hasProfile, hasCompletedOnboarding, pendingInviteCode } = useAuth();
   const { loading: petLoading } = useActivePet();
 
   useEffect(() => {
@@ -109,7 +110,9 @@ function AppNavigator() {
       ? 'MainTabs'
       : hasProfile
         ? 'OnboardingPets'
-        : 'OnboardingUser';
+        : pendingInviteCode
+          ? 'OnboardingUser'
+          : 'InviteCodeScreen';
 
   return (
     <NavigationContainer ref={navigationRef}>
@@ -278,6 +281,10 @@ function AppNavigator() {
 }
 
 export default function App() {
+  useEffect(() => {
+    assertContractEnvironment();
+  }, []);
+
   const [fontsLoaded, fontError] = useFonts({
     Kalam: Kalam_400Regular,
     'ShadowsIntoLight-Regular': ShadowsIntoLight_400Regular,

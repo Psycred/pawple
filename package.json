@@ -6,7 +6,16 @@
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "verify:demo-gating": "node scripts/verify-demo-gating.js",
+    "verify:environment": "node scripts/verify-environment-config.js",
+    "verify:migrations": "node scripts/verify-migrations.js",
+    "verify:contract": "npm run verify:demo-gating && npm run verify:environment",
+    "verify:active-pet": "node scripts/verify-active-pet-integrity.js",
+    "test:unit": "node --test tests/unit/*.test.js",
+    "test:rls": "node scripts/rls-security-tests.js",
+    "test:integration": "node tests/integration/run.mjs",
+    "test": "npm run verify:contract && npm run test:integration"
   },
   "dependencies": {
     "@expo-google-fonts/caveat": "^0.4.2",
@@ -52,7 +61,8 @@
     "react-native-web": "~0.19.13"
   },
   "devDependencies": {
-    "@babel/core": "^7.25.0"
+    "@babel/core": "^7.25.0",
+    "pg": "^8.23.0"
   },
   "private": true
 }

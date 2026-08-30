@@ -3,6 +3,11 @@
  */
 
 import { supabase } from '../config/supabase';
+import { getDemoMeetupsForFeed } from '../data/demoFeed';
+import {
+  applyDemoMeetupRsvp,
+  getDemoParticipatedMeetupCountForPet,
+} from '../data/demoMeetupRsvp';
 
 const PET_PROFILE_SELECT =
   'id, owner_id, name, pet_type, pet_type_custom, breed, age, gender, vaccinated, bio, photo_url, is_looking_for_companion, traits';
@@ -26,63 +31,44 @@ export async function fetchPetMeetupCounts(petId) {
     return { hosted_count: 0, participated_count: 0 };
   }
 
-  const [hostedRes, participatedRes] = await Promise.all([
-    supabase.rpc('get_pet_hosted_count', { target_pet_id: petId }),
-    supabase.rpc('get_pet_participated_count', { target_pet_id: petId }),
-  ]);
-
-  if (!hostedRes.error && !participatedRes.error) {
-    return {
-      hosted_count: Number(hostedRes.data ?? 0) || 0,
-      participated_count: Number(participatedRes.data ?? 0) || 0,
-    };
-  }
-
-  if (hostedRes.error) {
-    console.warn('[Pet] get_pet_hosted_count unavailable:', hostedRes.error.message);
-  }
-  if (participatedRes.error) {
-    console.warn('[Pet] get_pet_participated_count unavailable:', participatedRes.error.message);
-  }
-
-  // Legacy combined RPC fallback.
-  const { data, error } = await supabase.rpc('get_pet_meetup_counts', {
-    target_pet_id: petId,
-  });
-
-  if (!error && data?.length) {
-    const row = data[0];
-    return {
-      hosted_count: Number(row.hosted_count ?? 0) || 0,
-      participated_count: Number(row.participated_count ?? 0) || 0,
-    };
-  }
-
-  if (error) {
-    console.warn('[Pet] get_pet_meetup_counts fallback unavailable:', error.message);
-  }
-
   const [hostedTable, participatedTable] = await Promise.all([
     supabase
       .from('meetup_hosts')
-      .select('id', { count: 'exact', head: true })
-      .eq('pet_id', petId),
+      .select('id, meetups!inner(status)', { count: 'exact', head: true })
+      .eq('pet_id', petId)
+      .neq('meetups.status', 'cancelled'),
     supabase
       .from('meetup_participants')
-      .select('id', { count: 'exact', head: true })
-      .eq('pet_id', petId),
+      .select('id, meetups!inner(status)', { count: 'exact', head: true })
+      .eq('pet_id', petId)
+      .neq('meetups.status', 'cancelled'),
   ]);
 
   if (hostedTable.error) {
     console.error('[Supabase]', hostedTable.error);
+    throw hostedTable.error;
   }
   if (participatedTable.error) {
     console.error('[Supabase]', participatedTable.error);
+    throw participatedTable.error;
   }
 
+  const petKey = String(petId);
+  const demoHostedCount = getDemoMeetupsForFeed()
+    .map((meetup) => applyDemoMeetupRsvp(meetup))
+    .filter((meetup) => meetup?.status !== 'cancelled')
+    .filter((meetup) =>
+      (meetup.meetup_hosts ?? []).some(
+        (row) => String(row?.pet_id ?? '') === petKey,
+      ),
+    ).length;
+  const demoParticipatedCount =
+    getDemoParticipatedMeetupCountForPet(petKey);
+
   return {
-    hosted_count: hostedTable.count ?? 0,
-    participated_count: participatedTable.count ?? 0,
+    hosted_count: (hostedTable.count ?? 0) + demoHostedCount,
+    participated_count:
+      (participatedTable.count ?? 0) + demoParticipatedCount,
   };
 }
 

@@ -85,8 +85,23 @@ import {
   joinDemoMeetupWithPets,
   leaveDemoMeetupWithPets,
 } from '../data/demoMeetupRsvp';
+import {
+  filterShowablePublicMeetups,
+  getMeetupStartTimestamp,
+  isShowablePublicMeetup,
+} from '../lib/meetupPublicFilter';
 import { validateOptionalGoogleMapsLink } from '../utils/mapLinkValidation';
 import { formatMeetupHostedByLine } from '../utils/meetupHostDisplay';
+
+export {
+  filterShowablePublicMeetups,
+  getMeetupStartTimestamp,
+  isShowablePublicMeetup,
+};
+/** @deprecated Use isShowablePublicMeetup */
+export const isShowableMeetup = isShowablePublicMeetup;
+/** @deprecated Use filterShowablePublicMeetups */
+export const filterShowableMeetups = filterShowablePublicMeetups;
 
 export const MEETUP_OPEN_TO_OPTIONS = [
   'Open to All',
@@ -289,9 +304,8 @@ export async function fetchGoingMeetups(userId, options = {}) {
     .eq('pets.owner_id', userId);
 
   if (error) {
-    // Table may not exist until migration runs — fail quietly for dev.
-    console.warn('[Meetup] fetchGoingMeetups:', error.message);
-    return [];
+    console.error('[Supabase]', error);
+    throw error;
   }
 
   const rows = (data ?? [])
@@ -312,10 +326,7 @@ export async function fetchGoingMeetups(userId, options = {}) {
 const MEETUP_PET_EMBED = `meetups(${MEETUP_SELECT})`;
 
 function getMeetupSortTimestamp(meetup) {
-  const dateStr = String(meetup?.date ?? '').split('T')[0];
-  const timeStr = String(meetup?.start_time ?? '00:00:00').slice(0, 8);
-  const parsed = new Date(`${dateStr}T${timeStr}`);
-  return Number.isNaN(parsed.getTime()) ? Number.MAX_SAFE_INTEGER : parsed.getTime();
+  return getMeetupStartTimestamp(meetup) ?? Number.MAX_SAFE_INTEGER;
 }
 
 /** Sort meetups by date + start_time ascending (soonest first). */
@@ -351,7 +362,7 @@ async function fetchMeetupRowsFromJunction(table, petId, hosting = false) {
 
   if (error) {
     console.error('[Supabase]', error);
-    return [];
+    throw error;
   }
 
   return (data ?? [])
@@ -766,11 +777,31 @@ export async function leaveMeetupWithPets(meetupId, petIdsArray, demoContext = {
     throw new Error('No valid pets to remove.');
   }
 
+  // Host pets stay on the meetup until Edit or Cancel — leave only removes joiners.
+  const { data: hostRows, error: hostsError } = await supabase
+    .from('meetup_hosts')
+    .select('pet_id')
+    .eq('meetup_id', meetupId)
+    .in('pet_id', allowedPetIds);
+
+  if (hostsError) {
+    console.error('[Supabase]', hostsError);
+    throw hostsError;
+  }
+
+  const hostPetIds = new Set((hostRows ?? []).map((row) => String(row.pet_id)));
+  const removablePetIds = allowedPetIds.filter(
+    (petId) => !hostPetIds.has(String(petId)),
+  );
+  if (removablePetIds.length === 0) {
+    throw new Error('Hosting pets must be changed from Edit or Cancel Event.');
+  }
+
   const { error } = await supabase
     .from('meetup_participants')
     .delete()
     .eq('meetup_id', meetupId)
-    .in('pet_id', allowedPetIds);
+    .in('pet_id', removablePetIds);
 
   if (error) {
     console.error('[Supabase]', error);
@@ -782,7 +813,7 @@ export async function leaveMeetupWithPets(meetupId, petIdsArray, demoContext = {
     throw new Error('Meetup could not be refreshed.');
   }
 
-  return { joined: false, petIds: allowedPetIds, meetup: refreshedMeetup };
+  return { joined: false, petIds: removablePetIds, meetup: refreshedMeetup };
 }
 
 /** True when id is not a Supabase UUID (demo / seed rows). */
@@ -914,11 +945,12 @@ export async function cancelMeetup(meetupId) {
     throw new Error('Meetup is required.');
   }
 
-  let { error } = await supabase
+  const { data, error } = await supabase
     .from('meetups')
     .update({ status: 'cancelled' })
     .eq('id', meetupId)
-    .eq('user_id', user.id);
+    .eq('user_id', user.id)
+    .select('id, status');
 
   if (error) {
     if (/status/i.test(error.message ?? '')) {
@@ -928,7 +960,12 @@ export async function cancelMeetup(meetupId) {
     throw error;
   }
 
-  return { cancelled: true };
+  // Confirm the update actually cancelled this creator's row (RLS / race safe).
+  if (!Array.isArray(data) || data.length !== 1 || data[0]?.status !== 'cancelled') {
+    throw new Error('Meetup could not be cancelled. It may no longer be available.');
+  }
+
+  return { cancelled: true, meetupId: String(data[0].id) };
 }
 
 /** Whether a meetup date/time has passed. */

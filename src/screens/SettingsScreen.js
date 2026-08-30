@@ -8,7 +8,6 @@ import {
   Pressable,
   SafeAreaView,
   ScrollView,
-  Share,
   StyleSheet,
   Text,
   ToastAndroid,
@@ -19,6 +18,8 @@ import InviteSheet from '../components/InviteSheet';
 import { supabase } from '../config/supabase';
 import { theme } from '../config/theme';
 import { useAuth } from '../contexts/AuthContext';
+import { deleteAccount } from '../lib/deleteAccount';
+import { exportUserData, shareUserDataExport } from '../lib/exportAccount';
 import { openAppSettings } from '../lib/permissions';
 
 const APPEARANCE_KEY = 'settings.appearance';
@@ -35,6 +36,7 @@ export default function SettingsScreen({ navigation }) {
   const [inviteVisible, setInviteVisible] = useState(false);
   const [remainingInvites, setRemainingInvites] = useState(5);
   const [exportingData, setExportingData] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
   const [appearance, setAppearance] = useState(VALUE_DEFAULTS.appearance);
   const [distanceUnit, setDistanceUnit] = useState(VALUE_DEFAULTS.distance);
 
@@ -95,48 +97,23 @@ export default function SettingsScreen({ navigation }) {
     Alert.alert('Download My Data', message);
   }, []);
 
-  const exportPayload = useCallback(async () => {
-    if (!user?.id) return null;
-    const safeFetch = async (table, userColumn) => {
-      try {
-        const { data, error } = await supabase.from(table).select('*').eq(userColumn, user.id);
-        if (error) throw error;
-        return data ?? [];
-      } catch (_error) {
-        return [];
-      }
-    };
-    const [profiles, pets, journalEntries, meetups, meetupHistory, photos] = await Promise.all([
-      safeFetch('profiles', 'id'),
-      safeFetch('pets', 'owner_id'),
-      safeFetch('posts', 'user_id'),
-      safeFetch('meetups', 'user_id'),
-      safeFetch('meetup_history', 'user_id'),
-      safeFetch('photos', 'user_id'),
-    ]);
-    return { exportedAt: new Date().toISOString(), userId: user.id, profiles, pets, journalEntries, photos, meetups, meetupHistory };
-  }, [user?.id]);
-
   const handleExportData = useCallback(async () => {
-    if (exportingData) return;
+    if (exportingData || !user?.id) return;
     try {
       setExportingData(true);
-      showExportToast("Export started. You'll receive it via email.");
-      const payload = await exportPayload();
-      if (!payload) {
-        return;
-      }
-      await Share.share({
-        message: "Export started. You'll receive it via email.",
-      });
-      showExportToast('Your data export request is in progress.');
+      const payload = await exportUserData();
+      await shareUserDataExport(payload);
+      showExportToast('Your data is ready to save or share.');
     } catch (error) {
       console.log('[Settings] export error', error);
-      Alert.alert('Download My Data', 'Could not start export right now. Please try again.');
+      Alert.alert(
+        'Download My Data',
+        'Could not prepare your export right now. Please try again.',
+      );
     } finally {
       setExportingData(false);
     }
-  }, [exportPayload, exportingData, showExportToast]);
+  }, [exportingData, showExportToast, user?.id]);
 
   const handleLogout = useCallback(() => {
     Alert.alert('Logout?', 'You will need to sign in again.', [
@@ -152,31 +129,38 @@ export default function SettingsScreen({ navigation }) {
     ]);
   }, [navigation]);
 
+  const performDeleteAccount = useCallback(async () => {
+    if (deletingAccount || !user?.id) return;
+    try {
+      setDeletingAccount(true);
+      await deleteAccount();
+      navigation.reset({ index: 0, routes: [{ name: 'Auth' }] });
+    } catch (error) {
+      console.error('[Settings] delete account error', error);
+      Alert.alert(
+        'Delete Account',
+        'Could not delete your account right now. Please try again.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Try Again', style: 'destructive', onPress: performDeleteAccount },
+        ],
+      );
+    } finally {
+      setDeletingAccount(false);
+    }
+  }, [deletingAccount, navigation, user?.id]);
+
   const handleDeleteAccount = useCallback(() => {
+    if (deletingAccount) return;
     Alert.alert('Delete account?', 'This removes your profile, pets, invites, and posts from Pawple.', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete',
         style: 'destructive',
-        onPress: async () => {
-          if (!user?.id) return;
-          const deleteQuietly = async (table, userColumn) => {
-            try {
-              await supabase.from(table).delete().eq(userColumn, user.id);
-            } catch (_error) {}
-          };
-          await Promise.all([
-            deleteQuietly('posts', 'user_id'),
-            deleteQuietly('invites', 'user_id'),
-            deleteQuietly('pets', 'owner_id'),
-            deleteQuietly('profiles', 'id'),
-          ]);
-          await supabase.auth.signOut();
-          navigation.reset({ index: 0, routes: [{ name: 'Auth' }] });
-        },
+        onPress: performDeleteAccount,
       },
     ]);
-  }, [navigation, user?.id]);
+  }, [deletingAccount, performDeleteAccount]);
 
   const appVersion = useMemo(() => 'v1.0.0', []);
 
@@ -212,7 +196,7 @@ export default function SettingsScreen({ navigation }) {
             <SettingRow
               icon="bell"
               title="Notifications"
-              subtitle="Manage alerts for likes, invites, and reminders"
+              subtitle="Opens your device notification settings"
               onPress={handleManageNotifications}
             />
             <SettingRow icon="map-pin" title="Location Permissions" onPress={openAppSettings} />
@@ -220,6 +204,7 @@ export default function SettingsScreen({ navigation }) {
             <SettingRow
               icon="download"
               title="Download My Data"
+              subtitle="JSON file on this device"
               onPress={handleExportData}
               rightNode={
                 exportingData ? <ActivityIndicator size="small" color={theme.colors.text.muted.light} /> : undefined
@@ -282,16 +267,25 @@ export default function SettingsScreen({ navigation }) {
 
           <Pressable
             onPress={handleDeleteAccount}
+            disabled={deletingAccount}
             style={({ pressed }) => [
               styles.bottomActionRow,
               styles.deleteActionRow,
-              pressed && styles.rowPressed,
+              pressed && !deletingAccount && styles.rowPressed,
+              deletingAccount && styles.bottomActionDisabled,
             ]}
             accessibilityRole="button"
             accessibilityLabel="Delete account"
+            accessibilityState={{ disabled: deletingAccount, busy: deletingAccount }}
           >
-            <Feather name="trash-2" size={theme.fontSizes.xl} color={theme.colors.danger.value} />
-            <Text style={styles.deleteActionText}>Delete Account</Text>
+            {deletingAccount ? (
+              <ActivityIndicator size="small" color={theme.colors.danger.value} />
+            ) : (
+              <Feather name="trash-2" size={theme.fontSizes.xl} color={theme.colors.danger.value} />
+            )}
+            <Text style={styles.deleteActionText}>
+              {deletingAccount ? 'Deleting…' : 'Delete Account'}
+            </Text>
           </Pressable>
         </View>
       </ScrollView>
@@ -382,6 +376,9 @@ const styles = StyleSheet.create({
     fontSize: theme.fontSizes.md,
     color: theme.colors.danger.value,
     textAlign: 'center',
+  },
+  bottomActionDisabled: {
+    opacity: 0.6,
   },
   sectionHeader: {
     marginBottom: theme.spacing.md,

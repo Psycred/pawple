@@ -8,6 +8,7 @@ import {
   View,
 } from 'react-native';
 import MeetupCard from '../components/MeetupCard';
+import LoadErrorRetry from '../components/LoadErrorRetry';
 import ScreenWrapper from '../components/ScreenWrapper';
 import { theme } from '../config/theme';
 import { supabase } from '../config/supabase';
@@ -22,6 +23,7 @@ export default function PublicUserProfileScreen({ navigation, route }) {
   const viewerUserId = route?.params?.viewerUserId ?? null;
 
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [profile, setProfile] = useState(null);
   const [hostedMeetups, setHostedMeetups] = useState([]);
   const [isSelfView, setIsSelfView] = useState(false);
@@ -34,6 +36,7 @@ export default function PublicUserProfileScreen({ navigation, route }) {
       return;
     }
     setLoading(true);
+    setLoadError(false);
     try {
       let resolvedViewerId = viewerUserId;
       if (!resolvedViewerId) {
@@ -57,8 +60,10 @@ export default function PublicUserProfileScreen({ navigation, route }) {
       setIsSelfView(Boolean(data?.isSelfView));
       setResolvedViewerId(resolvedViewerId);
       setViewerPets(petsResult.error ? [] : petsResult.data ?? []);
+      setLoadError(false);
     } catch (error) {
       console.error('[PublicUserProfile] load failed', error);
+      setLoadError(true);
       setProfile(null);
       setHostedMeetups([]);
       setIsSelfView(false);
@@ -86,6 +91,8 @@ export default function PublicUserProfileScreen({ navigation, route }) {
         <View style={styles.loadingWrap}>
           <ActivityIndicator color={theme.colors.brand.sage.value} />
         </View>
+      ) : loadError ? (
+        <LoadErrorRetry onRetry={loadProfile} />
       ) : (
         <ScrollView
           contentContainerStyle={styles.content}

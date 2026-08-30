@@ -13,6 +13,7 @@ import { Feather } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { supabase } from '../config/supabase';
 import { theme } from '../config/theme';
+import { useAuth } from '../contexts/AuthContext';
 import {
   APPROXIMATE_LOCATION_OPTIONS,
   fetchApproximateCoords,
@@ -20,7 +21,8 @@ import {
 } from '../lib/profileLocation';
 
 export default function OnboardingUserScreen({ navigation, route }) {
-  const routeInviteCode = route?.params?.inviteCode ?? '';
+  const { pendingInviteCode } = useAuth();
+  const routeInviteCode = route?.params?.inviteCode ?? pendingInviteCode ?? '';
   const [fullName, setFullName] = useState('');
   const [city, setCity] = useState('');
   const [saving, setSaving] = useState(false);
@@ -36,19 +38,18 @@ export default function OnboardingUserScreen({ navigation, route }) {
         Alert.alert('Session Required', 'Please complete authentication to continue.', [
           {
             text: 'OK',
-            onPress: () => {
-              if (navigation.getState()?.routeNames?.includes('AuthScreen')) {
-                navigation.replace('AuthScreen');
-              } else {
-                navigation.replace('Auth');
-              }
-            },
+            onPress: () => navigation.replace('Auth'),
           },
         ]);
+        return;
+      }
+
+      if (!routeInviteCode && !__DEV__) {
+        navigation.replace('InviteCodeScreen');
       }
     };
     checkSession();
-  }, [navigation]);
+  }, [navigation, routeInviteCode]);
 
   const saveUserProfile = async (name, cityValue) => {
     const {

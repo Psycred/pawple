@@ -9,6 +9,7 @@ import { supabase } from '../config/supabase';
 import {
   fetchGoingMeetups,
   fetchPublicHostedMeetups,
+  filterShowablePublicMeetups,
 } from './meetups';
 
 function isSelfView(viewedUserId, viewerUserId) {
@@ -33,7 +34,8 @@ export async function fetchMeetupsForUserProfile(viewedUserId, viewerUserId) {
   const self = isSelfView(viewedUserId, viewerUserId);
 
   // Public-safe query: creator/host only — never participant-only rows.
-  const hostedMeetups = await fetchPublicHostedMeetups(viewedUserId);
+  const hostedRows = await fetchPublicHostedMeetups(viewedUserId);
+  const hostedMeetups = filterShowablePublicMeetups(hostedRows);
 
   if (!self) {
     return {

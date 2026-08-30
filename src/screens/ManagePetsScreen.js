@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../config/supabase';
 import { theme } from '../config/theme';
 import { useActivePet } from '../contexts/ActivePetContext';
+import { resolveActivePetAfterDelete } from '../lib/activePetIntegrity';
 
 const DESTRUCTIVE = theme.colors.destructive?.light ?? theme.colors.error.light;
 
@@ -24,7 +25,7 @@ const DESTRUCTIVE = theme.colors.destructive?.light ?? theme.colors.error.light;
  */
 export default function ManagePetsScreen({ navigation }) {
   const insets = useSafeAreaInsets();
-  const { activePetId, setActivePetId } = useActivePet();
+  const { activePetId, setPet } = useActivePet();
   const [pets, setPets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -88,14 +89,9 @@ export default function ManagePetsScreen({ navigation }) {
       }
       Alert.alert('Pets', 'Pet removed');
 
-      if (activePetId === petId) {
-        const remaining = nextPets;
-        const nextPet = remaining[0];
-        if (nextPet) {
-          setActivePetId(nextPet.id);
-        } else {
-          setActivePetId(null);
-        }
+      const nextPetId = resolveActivePetAfterDelete(activePetId, petId, nextPets);
+      if (nextPetId !== undefined) {
+        await setPet(nextPetId);
       }
     } catch (error) {
       console.log('[ManagePets] Delete pet error:', error);

@@ -12,9 +12,11 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import EventCarousel from '../components/EventCarousel';
+import LoadErrorRetry from '../components/LoadErrorRetry';
 import MeetupCard from '../components/MeetupCard';
 import MomentCard from '../components/MomentCard';
 import { theme } from '../config/theme';
+import { isDemoContentEnabled } from '../config/environment';
 import {
   DEMO_FEED_CAROUSEL_SIZE,
   DEMO_FEED_SHOW_ALL_MEETUPS,
@@ -30,7 +32,7 @@ import {
   fetchUserFeedLocation,
   sortFeedMoments,
 } from '../services/moments';
-import { fetchMeetups, isDemoMeetupId } from '../services/meetups';
+import { fetchMeetups, filterShowablePublicMeetups, isDemoMeetupId } from '../services/meetups';
 import { getCachedLocation } from '../lib/locationManager';
 import { supabase } from '../lib/supabase';
 import { useMeetupFeedLogic } from '../hooks/useMeetupFeedLogic';
@@ -70,6 +72,7 @@ export default function FeedScreen() {
   const [momentPage, setMomentPage] = useState(0);
   const [hasMoreMoments, setHasMoreMoments] = useState(true);
   const [loadingMoreMoments, setLoadingMoreMoments] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   const hasCompletedInitialLoadRef = useRef(false);
   const feedGenerationRef = useRef(0);
   const feedLoadInProgressRef = useRef(false);
@@ -88,6 +91,9 @@ export default function FeedScreen() {
     } else if (!isBackground) {
       setLoading(true);
     }
+    if (!isBackground) {
+      setLoadError(false);
+    }
 
     try {
       const {
@@ -100,14 +106,8 @@ export default function FeedScreen() {
       const viewerCoords = await getCachedLocation().catch(() => null);
 
       const [meetupsData, momentsPageResult, likesRes, petsRes] = await Promise.all([
-        fetchMeetups().catch((e) => {
-          console.error('[Supabase]', e);
-          return [];
-        }),
-        fetchFeedMoments(user?.id, feedLocation, 0, DEFAULT_FEED_MOMENT_PAGE_LIMIT).catch((e) => {
-          console.error('[Supabase]', e);
-          return { moments: [], hasMore: false };
-        }),
+        fetchMeetups(),
+        fetchFeedMoments(user?.id, feedLocation, 0, DEFAULT_FEED_MOMENT_PAGE_LIMIT),
         user?.id
           ? supabase.from('likes').select('moment_id').eq('user_id', user.id)
           : Promise.resolve({ data: [], error: null }),
@@ -153,13 +153,20 @@ export default function FeedScreen() {
         });
       }
 
+      // Apply session-local demo state, then keep only showable public meetups.
+      nextMeetups = filterShowablePublicMeetups(
+        nextMeetups.map((m) =>
+          isDemoContentEnabled && isDemoMeetupId(m?.id)
+            ? applyDemoMeetupRsvp(m, viewerPets)
+            : m,
+        ),
+      );
+
       // Mock venue coords + distance so cards always show "📍 X km away" in dev.
       nextMeetups = nextMeetups.map((m, i) => {
-        const meetupWithDemoRsvp =
-          __DEV__ && isDemoMeetupId(m?.id) ? applyDemoMeetupRsvp(m, viewerPets) : m;
-        const enriched = enrichMeetupWithMockCoords(meetupWithDemoRsvp, i);
+        const enriched = enrichMeetupWithMockCoords(m, i);
         const preset = Number(
-          meetupWithDemoRsvp.distanceKm ?? meetupWithDemoRsvp.distance_km,
+          m.distanceKm ?? m.distance_km,
         );
         if (Number.isFinite(preset) && preset > 0) {
           return { ...enriched, distanceKm: preset };
@@ -189,12 +196,14 @@ export default function FeedScreen() {
       setHasMoreMoments(hasMoreMomentsRef.current);
       setUserPets(viewerPets);
       setLikedIds(new Set(likedMomentIds.map(String)));
+      setLoadError(false);
     } catch (error) {
       if (generation !== feedGenerationRef.current) {
         return;
       }
       console.error('[FeedScreen] Load feed failed:', error);
       if (!isBackground) {
+        setLoadError(true);
         setMeetups([]);
         setRealMoments([]);
         momentPageRef.current = 0;
@@ -384,7 +393,7 @@ export default function FeedScreen() {
     navigation.navigate('CreateMomentScreen');
   }, [navigation]);
 
-  const isEmpty = !loading && meetups.length === 0 && mergedMoments.length === 0;
+  const isEmpty = !loading && !loadError && meetups.length === 0 && mergedMoments.length === 0;
   const showCarousel = headerMeetups.length > 0;
 
   const scrollBottomPad = theme.feed.shellPaddingBottom + Math.max(tabBarHeight - theme.spacing.lg, 0);
@@ -451,6 +460,10 @@ export default function FeedScreen() {
       );
     }
 
+    if (loadError) {
+      return <LoadErrorRetry onRetry={() => loadFeed()} />;
+    }
+
     if (!isEmpty) {
       return null;
     }
@@ -484,7 +497,7 @@ export default function FeedScreen() {
         </View>
       </View>
     );
-  }, [isEmpty, loading, openCaptureMoment, openPlanMeetup]);
+  }, [isEmpty, loadError, loadFeed, loading, openCaptureMoment, openPlanMeetup]);
 
   const listFooterComponent = useMemo(() => {
     if (!loadingMoreMoments) {
@@ -502,7 +515,7 @@ export default function FeedScreen() {
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <FlatList
         style={styles.scroll}
-        data={loading || isEmpty ? [] : feedRows}
+        data={loading || loadError || isEmpty ? [] : feedRows}
         renderItem={renderFeedItem}
         keyExtractor={keyExtractor}
         ListHeaderComponent={listHeaderComponent}
@@ -512,6 +525,7 @@ export default function FeedScreen() {
           styles.scrollContent,
           { paddingBottom: scrollBottomPad },
           isEmpty && styles.scrollContentEmpty,
+          loadError && styles.scrollContentEmpty,
         ]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"

@@ -1,0 +1,164 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { supabase } from '../config/supabase';
+import { isLocalDevRuntime, pawpleEnv } from '../config/environment';
+
+const pendingInviteKey = (userId) => `onboarding_pending_invite:${userId}`;
+export const DEVELOPMENT_BOOTSTRAP_INVITE_CODE = 'Paw-T00y';
+const NORMALIZED_DEVELOPMENT_BOOTSTRAP_INVITE_CODE =
+  DEVELOPMENT_BOOTSTRAP_INVITE_CODE.toUpperCase();
+
+export function isDevelopmentInviteRuntime() {
+  return isLocalDevRuntime && pawpleEnv === 'development';
+}
+
+export function getDefaultDevelopmentInviteCode() {
+  return isDevelopmentInviteRuntime() ? DEVELOPMENT_BOOTSTRAP_INVITE_CODE : '';
+}
+
+export function isDevelopmentBootstrapInviteCode(code) {
+  return (
+    String(code ?? '').trim().toUpperCase() ===
+    NORMALIZED_DEVELOPMENT_BOOTSTRAP_INVITE_CODE
+  );
+}
+
+/**
+ * Validate an invite code without consuming it (Product Contract §4 step 2).
+ * @returns {{ ok: true, inviteId: string } | { ok: false, reason: string }}
+ */
+export async function validateInviteCode(code, userId) {
+  const normalized = String(code ?? '').trim().toUpperCase();
+  if (!normalized) {
+    return { ok: false, reason: 'empty' };
+  }
+
+  if (isDevelopmentBootstrapInviteCode(normalized)) {
+    if (!isDevelopmentInviteRuntime()) {
+      return { ok: false, reason: 'invalid' };
+    }
+    return {
+      ok: true,
+      inviteId: null,
+      code: DEVELOPMENT_BOOTSTRAP_INVITE_CODE,
+    };
+  }
+
+  const { data, error } = await supabase
+    .from('invites')
+    .select('id, user_id, status')
+    .eq('code', normalized)
+    .maybeSingle();
+
+  if (error) {
+    console.error('[Supabase]', error);
+    throw error;
+  }
+
+  if (!data?.id || data.status === 'used') {
+    return { ok: false, reason: 'invalid' };
+  }
+
+  if (userId && String(data.user_id) === String(userId)) {
+    return { ok: false, reason: 'own_invite' };
+  }
+
+  return { ok: true, inviteId: data.id, code: normalized };
+}
+
+export async function storePendingInvite(userId, code) {
+  if (!userId || !code) {
+    return;
+  }
+  await AsyncStorage.setItem(pendingInviteKey(userId), String(code).trim().toUpperCase());
+}
+
+export async function getPendingInvite(userId) {
+  if (!userId) {
+    return null;
+  }
+  const stored = await AsyncStorage.getItem(pendingInviteKey(userId));
+  return stored ? stored.trim().toUpperCase() : null;
+}
+
+export async function clearPendingInvite(userId) {
+  if (!userId) {
+    return;
+  }
+  await AsyncStorage.removeItem(pendingInviteKey(userId));
+}
+
+/**
+ * Consume invite and mark onboarding complete after pet creation succeeds.
+ * Invite is consumed before the completion flag so a failed completion can be retried.
+ */
+export async function completeOnboarding({ userId, inviteId, inviteCode }) {
+  const completedAt = new Date().toISOString();
+  const isDevelopmentBootstrap =
+    isDevelopmentBootstrapInviteCode(inviteCode);
+
+  if (isDevelopmentBootstrap) {
+    if (!isDevelopmentInviteRuntime()) {
+      throw new Error('Development invite codes are unavailable in this build.');
+    }
+  }
+
+  if (inviteId && !isDevelopmentBootstrap) {
+    const { data: redeemedInvite, error: redeemError } = await supabase
+      .from('invites')
+      .update({ status: 'used', used_by_user_id: userId, used_at: completedAt })
+      .eq('id', inviteId)
+      .eq('status', 'unused')
+      .select('id')
+      .maybeSingle();
+
+    if (redeemError) {
+      console.error('[Supabase]', redeemError);
+      throw redeemError;
+    }
+
+    if (!redeemedInvite?.id) {
+      const { data: alreadyUsed } = await supabase
+        .from('invites')
+        .select('id, used_by_user_id')
+        .eq('id', inviteId)
+        .eq('status', 'used')
+        .maybeSingle();
+      if (String(alreadyUsed?.used_by_user_id) !== String(userId)) {
+        if (inviteCode) {
+          const check = await validateInviteCode(inviteCode, userId);
+          if (check.ok) {
+            throw new Error('Invite could not be consumed. It may have been used elsewhere.');
+          }
+        }
+        throw new Error('Invite code invalid or already used.');
+      }
+    }
+  }
+
+  const { data: updatedProfile, error: profileError } = await supabase
+    .from('profiles')
+    .update({ onboarding_completed_at: completedAt, updated_at: completedAt })
+    .eq('id', userId)
+    .is('onboarding_completed_at', null)
+    .select('id')
+    .maybeSingle();
+
+  if (profileError) {
+    console.error('[Supabase]', profileError);
+    throw profileError;
+  }
+
+  if (!updatedProfile?.id) {
+    const { data: existing } = await supabase
+      .from('profiles')
+      .select('onboarding_completed_at')
+      .eq('id', userId)
+      .maybeSingle();
+    if (!existing?.onboarding_completed_at) {
+      throw new Error('Could not mark onboarding complete.');
+    }
+  }
+
+  await clearPendingInvite(userId);
+  return completedAt;
+}

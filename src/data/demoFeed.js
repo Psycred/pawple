@@ -3,6 +3,7 @@
  * Dates relative to app ship window (May 2026).
  */
 
+import { isDemoContentEnabled } from '../config/environment';
 import { MOCK_MEETUP_VENUES } from '../utils/locationUtils';
 
 const unsplash = (id, w = 800, h = 1000) =>
@@ -556,6 +557,9 @@ export function generateBulkDemoMeetups() {
 
 /** Meetup rows for FeedScreen / EventCarousel — full bulk dataset for scroll testing. */
 export function getDemoMeetupsForFeed() {
+  if (!isDemoContentEnabled) {
+    return [];
+  }
   console.log('[DemoFeed] Generating bulk meetups, target count:', BULK_DEMO_MEETUP_COUNT);
   const meetups = generateBulkDemoMeetups();
   console.log('[DemoFeed] Returning meetups, count:', meetups.length);
@@ -564,6 +568,9 @@ export function getDemoMeetupsForFeed() {
 
 /** Moment rows for FeedScreen (maps demo posts → `moments` / `memories` shape). */
 export function getDemoMomentsForFeed() {
+  if (!isDemoContentEnabled) {
+    return [];
+  }
   return DEMO_FEED_POSTS.map((post) => ({
     id: post.id,
     photo_url: post.imageUrl,
@@ -580,11 +587,18 @@ export function isDemoMomentId(id) {
   return typeof id === 'string' && /^d\d+$/.test(id);
 }
 
+/**
+ * Dev-only opt-ins — inactive in staging/production (`__DEV__` is false there).
+ * Toggle locally when you need fixture data in Metro dev sessions.
+ */
+const ENABLE_DEMO_FEED_IN_DEV = true;
+const ENABLE_DEMO_MEETUPS_IN_DEV = true;
+
 /** Use demo scrapbook content when Supabase returns no feed rows. */
-export const USE_DEMO_FEED_WHEN_EMPTY = true;
+export const USE_DEMO_FEED_WHEN_EMPTY = isDemoContentEnabled && ENABLE_DEMO_FEED_IN_DEV;
 
 /** Dev/testing: surface all generated demo meetups in carousel + vertical feed. */
-export const DEMO_FEED_SHOW_ALL_MEETUPS = true;
+export const DEMO_FEED_SHOW_ALL_MEETUPS = isDemoContentEnabled && ENABLE_DEMO_MEETUPS_IN_DEV;
 
 /** Final product rule: the top carousel contains exactly three Meetups. */
 export const DEMO_FEED_CAROUSEL_SIZE = 3;

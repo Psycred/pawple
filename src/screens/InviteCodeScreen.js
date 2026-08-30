@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   AccessibilityInfo,
   Alert,
@@ -14,27 +14,37 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { supabase } from '../config/supabase';
 import { theme } from '../config/theme';
+import { useAuth } from '../contexts/AuthContext';
+import {
+  getDefaultDevelopmentInviteCode,
+  storePendingInvite,
+  validateInviteCode,
+} from '../lib/onboardingInvite';
 
 export default function InviteCodeScreen({ navigation }) {
-  const [inviteCode, setInviteCode] = useState('PAWPLE-BETA');
+  const { user, refreshProfile } = useAuth();
+  const [inviteCode, setInviteCode] = useState(getDefaultDevelopmentInviteCode);
   const [loading, setLoading] = useState(false);
   const [showErrorModal, setShowErrorModal] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('That invite may have expired or already been used.');
 
-  const showInviteErrorModal = () => {
+  useEffect(() => {
+    if (!user?.id) {
+      return;
+    }
+    const ensureSession = async () => {
+      const { data } = await supabase.auth.getSession();
+      if (!data?.session) {
+        navigation.replace('Auth');
+      }
+    };
+    ensureSession();
+  }, [navigation, user?.id]);
+
+  const showInviteErrorModal = (message) => {
+    setErrorMessage(message ?? 'That invite may have expired or already been used.');
     setShowErrorModal(true);
     AccessibilityInfo.announceForAccessibility?.('Invalid invite code. That invite may have expired or already been used.');
-  };
-
-  const ensureDevSession = async () => {
-    if (!__DEV__) return true;
-    const { data: authData, error: authError } = await supabase.auth.signInAnonymously();
-    if (authError) {
-      console.error('[Invite] Anonymous auth failed:', authError);
-      Alert.alert('Auth Error', 'Could not create session. Please try again.');
-      return false;
-    }
-    console.log('[Invite] Anonymous user created:', authData?.user?.id);
-    return true;
   };
 
   const handleContinue = async () => {
@@ -44,42 +54,34 @@ export default function InviteCodeScreen({ navigation }) {
       return;
     }
 
+    const {
+      data: { user: currentUser },
+    } = await supabase.auth.getUser();
+    if (!currentUser?.id) {
+      Alert.alert('Session Required', 'Please sign in before entering your invite code.', [
+        { text: 'OK', onPress: () => navigation.replace('Auth') },
+      ]);
+      return;
+    }
+
     setLoading(true);
     try {
-      // 1) Permanent invite codes: always valid, never consumed.
-      const PERMANENT_CODES = ['PAWPLE-TY00'];
-      if (PERMANENT_CODES.includes(code)) {
-        console.log('[Invite] Permanent code accepted:', code);
-        const hasSession = await ensureDevSession();
-        if (!hasSession) return;
-        navigation.replace('OnboardingUser', { redeemedInvite: code });
+      const result = await validateInviteCode(code, currentUser.id);
+      if (!result.ok) {
+        if (result.reason === 'own_invite') {
+          showInviteErrorModal('You cannot redeem your own invite code.');
+        } else {
+          showInviteErrorModal();
+        }
         return;
       }
 
-      // 2) Random invite codes from DB: validate active/unconsumed status.
-      const { data, error } = await supabase
-        .from('invites')
-        .select('id, status')
-        .eq('code', code)
-        .single();
-
-      if (error || !data || data.status === 'used') {
-        showInviteErrorModal();
-        return;
-      }
-
-      // 3) Consume random invite code and continue.
-      await supabase
-        .from('invites')
-        .update({ status: 'used', used_at: new Date().toISOString() })
-        .eq('id', data.id);
-
-      console.log('[Invite] Random code validated & consumed:', code);
-      const hasSession = await ensureDevSession();
-      if (!hasSession) return;
-      navigation.replace('OnboardingUser', { redeemedInvite: code });
+      await storePendingInvite(currentUser.id, result.code);
+      await refreshProfile?.();
+      console.log('[Invite] Code validated (not consumed):', result.code);
+      navigation.replace('OnboardingUser', { inviteCode: result.code });
     } catch (err) {
-      console.log('[InviteCodeScreen] invite check error', err);
+      console.error('[InviteCodeScreen] invite check error', err);
       showInviteErrorModal();
     } finally {
       setLoading(false);
@@ -90,7 +92,7 @@ export default function InviteCodeScreen({ navigation }) {
     <SafeAreaView style={styles.safe}>
       <View style={styles.container}>
         <Pressable
-          onPress={() => navigation.goBack()}
+          onPress={() => navigation.replace('Auth')}
           style={({ pressed }) => [styles.backButton, pressed && styles.buttonPressed]}
           accessibilityRole="button"
           accessibilityLabel="Back to sign in"
@@ -104,7 +106,6 @@ export default function InviteCodeScreen({ navigation }) {
           style={styles.input}
           placeholder="PAW-XXXXXX"
           placeholderTextColor={theme.colors.text.muted.light}
-          defaultValue="PAWPLE-BETA"
           value={inviteCode}
           onChangeText={setInviteCode}
           autoCapitalize="characters"
@@ -153,13 +154,9 @@ export default function InviteCodeScreen({ navigation }) {
             accessibilityLabel="Dismiss error message"
           />
 
-          <View
-            style={styles.modalCard}
-            accessibilityViewIsModal
-            accessible
-          >
+          <View style={styles.modalCard} accessibilityViewIsModal accessible>
             <Text style={styles.modalTitle}>Invalid Invite Code</Text>
-            <Text style={styles.modalBody}>That invite may have expired or already been used.</Text>
+            <Text style={styles.modalBody}>{errorMessage}</Text>
             <Pressable
               onPress={() => setShowErrorModal(false)}
               style={({ pressed }) => [styles.modalButton, pressed && styles.buttonPressed]}

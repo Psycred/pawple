@@ -106,7 +106,7 @@ const clampDateToTodayOrPast = (date) => {
 export default function CreateMomentScreen() {
   const navigation = useNavigation();
   const { user } = useAuth();
-  const { activePetId } = useActivePet();
+  const { activePetId, loading: activePetLoading } = useActivePet();
   const [imageUri, setImageUri] = useState(null);
   const [isFraming, setIsFraming] = useState(false);
   const [isImageSelected, setIsImageSelected] = useState(false);
@@ -174,7 +174,8 @@ export default function CreateMomentScreen() {
   }, [activePetId]);
 
   const petNames = selectedPets.map((p) => p.name).filter(Boolean);
-  const attributionLabel = petNames.length ? buildPetAttribution(petNames) : '— Tyson';
+  const attributionLabel = petNames.length ? buildPetAttribution(petNames) : null;
+  const hasActivePet = Boolean(activePetId);
 
   const onDismiss = () => {
     navigation.goBack();
@@ -443,6 +444,12 @@ export default function CreateMomentScreen() {
             Frame a Moment
           </Text>
 
+          {!activePetLoading && !hasActivePet ? (
+            <Text style={styles.noPetLine} allowFontScaling>
+              Add a pet to frame a moment.
+            </Text>
+          ) : null}
+
           <View style={styles.main}>
             <Animated.View
               style={[
@@ -556,9 +563,11 @@ export default function CreateMomentScreen() {
                   accessibilityLabel="Caption"
                 />
 
-                <Text style={styles.petAttribution} allowFontScaling>
-                  {attributionLabel}
-                </Text>
+                {attributionLabel ? (
+                  <Text style={styles.petAttribution} allowFontScaling>
+                    {attributionLabel}
+                  </Text>
+                ) : null}
 
                 <View style={styles.metadataContainer}>
                   <TouchableOpacity
@@ -745,6 +754,13 @@ const styles = StyleSheet.create({
     fontSize: 17,
     color: '#3A312E',
     letterSpacing: -0.2,
+    textAlign: 'center',
+  },
+  noPetLine: {
+    marginBottom: 20,
+    fontFamily: 'Inter-Regular',
+    fontSize: 14,
+    color: '#9A9A9A',
     textAlign: 'center',
   },
   main: {

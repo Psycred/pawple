@@ -29,6 +29,8 @@ import { pickFromGallery } from '../lib/photoPicker';
 import { useActivePet } from '../contexts/ActivePetContext';
 import { useAuth } from '../contexts/AuthContext';
 import { formatPetIdentityLine } from '../utils/petDisplay';
+import { completeOnboarding, getPendingInvite, validateInviteCode } from '../lib/onboardingInvite';
+import { resolvePetPhotoUrl } from '../lib/petPhotoUpload';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -102,25 +104,12 @@ const getPetTypePromptLine = (pet, petIndex) => {
   return petIndex === 0 ? 'Is your new friend a... 🐾' : 'Is this new friend a... 🐾';
 };
 
-/**
- * Keep the selected pet photo visible in-app even before remote storage is configured.
- * Accepts remote URLs and local picker URIs (file/content).
- */
-const photoUrlForInsert = (photoUri) => {
-  if (photoUri == null || typeof photoUri !== 'string') return null;
-  const trimmed = photoUri.trim();
-  if (!trimmed) return null;
-  const isRemote = trimmed.startsWith('https://') || trimmed.startsWith('http://');
-  const isLocal = trimmed.startsWith('file://') || trimmed.startsWith('content://');
-  return isRemote || isLocal ? trimmed : null;
-};
-
 /** Collapsed card: Name • Type • Breed (Apple-style identity line). */
 const formatPetSummary = (pet) => `🐾 ${formatPetIdentityLine(pet)}`;
 
 export default function OnboardingPetsScreen({ navigation, route }) {
   const { setPet } = useActivePet();
-  const { profile } = useAuth();
+  const { profile, refreshProfile, pendingInviteCode } = useAuth();
   const mode = route?.params?.mode;
   const petId = route?.params?.petId ?? null;
   const isManageAddMode = mode === 'add';
@@ -128,7 +117,7 @@ export default function OnboardingPetsScreen({ navigation, route }) {
   const isManageCrudMode = isManageAddMode || isEditMode;
   const fullName = route?.params?.fullName ?? profile?.name ?? '';
   const city = route?.params?.city ?? profile?.city ?? '';
-  const inviteCode = (route?.params?.inviteCode ?? '').trim().toUpperCase();
+  const inviteCode = (route?.params?.inviteCode ?? pendingInviteCode ?? '').trim().toUpperCase();
   const [petForms, setPetForms] = useState([createEmptyPet()]);
   /** Only one pet form is expanded at a time; summaries appear above. */
   const [expandedPetIndex, setExpandedPetIndex] = useState(0);
@@ -137,6 +126,7 @@ export default function OnboardingPetsScreen({ navigation, route }) {
   const [photoModalVisible, setPhotoModalVisible] = useState(false);
   const [photoModalPetIndex, setPhotoModalPetIndex] = useState(null);
   const [prefillLoading, setPrefillLoading] = useState(false);
+  const [existingPetIds, setExistingPetIds] = useState([]);
   const [secondaryPetFocusToken, setSecondaryPetFocusToken] = useState(0);
   const nameInputRef = useRef(null);
   const scrollViewRef = useRef(null);
@@ -210,6 +200,54 @@ export default function OnboardingPetsScreen({ navigation, route }) {
     };
     loadPetForEdit();
   }, [isEditMode, navigation, petId]);
+
+  /** Resume interrupted onboarding: reuse pets already saved without duplicating rows. */
+  useEffect(() => {
+    const loadExistingOnboardingPets = async () => {
+      if (isManageCrudMode) {
+        return;
+      }
+      setPrefillLoading(true);
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user?.id) {
+          return;
+        }
+        const { data: existingPets, error } = await supabase
+          .from('pets')
+          .select('id, name, age, breed, gender, vaccinated, photo_url, pet_type, pet_type_custom')
+          .eq('owner_id', user.id)
+          .order('created_at', { ascending: true });
+        if (error) {
+          throw error;
+        }
+        if (!existingPets?.length) {
+          return;
+        }
+        setExistingPetIds(existingPets.map((pet) => pet.id));
+        setPetForms(
+          existingPets.map((data) => ({
+            name: data.name ?? '',
+            age: data.age != null ? String(data.age) : '',
+            breed: data.breed ?? '',
+            gender: data.gender ?? '',
+            vaccinated: data.vaccinated ?? '',
+            photoUri: data.photo_url ?? null,
+            pet_type: data.pet_type ?? '',
+            pet_type_custom: data.pet_type_custom ?? '',
+          })),
+        );
+        setExpandedPetIndex(0);
+      } catch (error) {
+        console.log('[OnboardingPets] Resume prefill error:', error);
+      } finally {
+        setPrefillLoading(false);
+      }
+    };
+    loadExistingOnboardingPets();
+  }, [isManageCrudMode]);
 
   const updatePetField = (index, field, value) => {
     setPetForms((prev) => prev.map((pet, i) => (i === index ? { ...pet, [field]: value } : pet)));
@@ -363,6 +401,7 @@ export default function OnboardingPetsScreen({ navigation, route }) {
           Alert.alert('Pets', 'Please sign in again.');
           return;
         }
+        const photo_url = await resolvePetPhotoUrl(activePet.photoUri, user.id);
         const payload = {
           owner_id: user.id,
           name: activePet.name.trim(),
@@ -371,7 +410,7 @@ export default function OnboardingPetsScreen({ navigation, route }) {
           gender: activePet.gender?.trim() || null,
           vaccinated:
             activePet.vaccinated === 'Yes' || activePet.vaccinated === 'No' ? activePet.vaccinated : null,
-          photo_url: photoUrlForInsert(activePet.photoUri),
+          photo_url,
           pet_type: activePet.pet_type,
           pet_type_custom:
             activePet.pet_type === 'other'
@@ -467,36 +506,41 @@ export default function OnboardingPetsScreen({ navigation, route }) {
 
       console.log('[OnboardingPets] Onboarding save start, user:', user.id, 'inviteCode:', inviteCode || '(none)');
 
+      const resolvedInviteCode = inviteCode || (await getPendingInvite(user.id));
+      if (!resolvedInviteCode && !__DEV__) {
+        Alert.alert('Invite required', 'Please enter a valid invite code to continue.');
+        navigation.replace('InviteCodeScreen');
+        return;
+      }
+
       let redeemInviteId = null;
-      if (inviteCode) {
-        const { data: inviteRow, error: inviteError } = await supabase
-          .from('invites')
-          .select('id, user_id, status')
-          .eq('code', inviteCode)
-          .eq('status', 'unused')
-          .maybeSingle();
-        if (inviteError) {
-          throw inviteError;
-        }
-        if (!inviteRow?.id) {
-          showInviteInvalidFeedback();
+      if (resolvedInviteCode) {
+        const inviteCheck = await validateInviteCode(resolvedInviteCode, user.id);
+        if (!inviteCheck.ok) {
+          if (inviteCheck.reason === 'own_invite') {
+            Alert.alert('Invite code', 'You cannot redeem your own invite code.');
+          } else {
+            showInviteInvalidFeedback();
+          }
           return;
         }
-        if (String(inviteRow.user_id) === String(user.id)) {
-          Alert.alert('Invite code', 'You cannot redeem your own invite code.');
-          return;
-        }
-        redeemInviteId = inviteRow.id;
+        redeemInviteId = inviteCheck.inviteId;
       }
 
       const { data: existingProfile, error: existingProfileError } = await supabase
         .from('profiles')
-        .select('id')
+        .select('id, onboarding_completed_at')
         .eq('id', user.id)
         .maybeSingle();
 
       if (existingProfileError) {
         throw existingProfileError;
+      }
+
+      if (existingProfile?.onboarding_completed_at) {
+        await refreshProfile?.();
+        navigation.replace('MainTabs', { screen: 'FeedScreen' });
+        return;
       }
 
       const consentAt = new Date().toISOString();
@@ -542,61 +586,58 @@ export default function OnboardingPetsScreen({ navigation, route }) {
         }
       }
 
-      const petsToSave = petForms.filter(isPetValid);
-      const petsPayload = petsToSave.map((pet) => ({
-        owner_id: user.id,
-        name: pet.name.trim(),
-        age: parseAgeForStorage(pet.age),
-        breed: pet.breed.trim() || null,
-        gender: pet.gender?.trim() || null,
-        vaccinated: pet.vaccinated === 'Yes' || pet.vaccinated === 'No' ? pet.vaccinated : null,
-        photo_url: photoUrlForInsert(pet.photoUri),
-        pet_type: pet.pet_type,
-        pet_type_custom:
-          pet.pet_type === 'other' ? (pet.pet_type_custom?.trim() ? pet.pet_type_custom.trim() : null) : null,
-      }));
+      let firstPetId = existingPetIds[0] ?? null;
 
-      const petsData = petsPayload;
-      console.log('[DEBUG] User:', user);
-      console.log('[DEBUG] Pets data:', petsData);
-      console.log('[OnboardingPets] Saving pets:', petsPayload);
-      console.log('[OnboardingPets] Current user:', user?.id);
-      console.log('[OnboardingPets] Pets to save count:', petsPayload.length, 'raw forms:', petForms.length);
+      if (!existingPetIds.length) {
+        const petsToSave = petForms.filter(isPetValid);
+        const petsPayload = await Promise.all(
+          petsToSave.map(async (pet) => {
+            const photo_url = await resolvePetPhotoUrl(pet.photoUri, user.id);
+            return {
+              owner_id: user.id,
+              name: pet.name.trim(),
+              age: parseAgeForStorage(pet.age),
+              breed: pet.breed.trim() || null,
+              gender: pet.gender?.trim() || null,
+              vaccinated: pet.vaccinated === 'Yes' || pet.vaccinated === 'No' ? pet.vaccinated : null,
+              photo_url,
+              pet_type: pet.pet_type,
+              pet_type_custom:
+                pet.pet_type === 'other' ? (pet.pet_type_custom?.trim() ? pet.pet_type_custom.trim() : null) : null,
+            };
+          }),
+        );
 
-      const { data: insertedPets, error: petError } = await supabase.from('pets').insert(petsPayload).select('id');
-      if (petError) {
-        console.error('[OnboardingPets] Pets insert error:', {
-          message: petError?.message,
-          code: petError?.code,
-          details: petError?.details,
-          hint: petError?.hint,
-        });
-        throw petError;
-      }
-      console.log('[OnboardingPets] Pets insert OK:', { insertedPets, rowCount: insertedPets?.length ?? 0 });
+        console.log('[OnboardingPets] Saving pets:', petsPayload);
 
-      const firstCreatedPetId = insertedPets?.[0]?.id;
-      if (firstCreatedPetId) {
-        await setPet(String(firstCreatedPetId));
-      }
-
-      if (redeemInviteId) {
-        const redeemedAt = new Date().toISOString();
-        const { data: redeemedInvite, error: redeemError } = await supabase
-          .from('invites')
-          .update({ status: 'used', used_by_user_id: user.id, used_at: redeemedAt })
-          .eq('id', redeemInviteId)
-          .eq('status', 'unused')
-          .select('id')
-          .maybeSingle();
-        if (redeemError) {
-          throw redeemError;
+        const { data: insertedPets, error: petError } = await supabase.from('pets').insert(petsPayload).select('id');
+        if (petError) {
+          console.error('[OnboardingPets] Pets insert error:', {
+            message: petError?.message,
+            code: petError?.code,
+            details: petError?.details,
+            hint: petError?.hint,
+          });
+          throw petError;
         }
-        if (!redeemedInvite?.id) {
-          showInviteInvalidFeedback();
-          return;
-        }
+        console.log('[OnboardingPets] Pets insert OK:', { insertedPets, rowCount: insertedPets?.length ?? 0 });
+        firstPetId = insertedPets?.[0]?.id ?? null;
+      } else {
+        console.log('[OnboardingPets] Reusing existing pets for interrupted onboarding:', existingPetIds);
       }
+
+      if (!firstPetId) {
+        throw new Error('At least one pet is required to complete onboarding.');
+      }
+
+      await setPet(String(firstPetId));
+
+      await completeOnboarding({
+        userId: user.id,
+        inviteId: redeemInviteId,
+        inviteCode: resolvedInviteCode,
+      });
+      await refreshProfile?.();
 
       navigation.replace('OnboardingFinal');
     } catch (error) {

@@ -185,6 +185,16 @@ export default function MeetupCard({
   };
 
   const renderPrimaryButton = () => {
+    if (isHostPet && actionVariant !== 'hosting') {
+      return (
+        <View style={[styles.primaryButton, styles.primaryButtonHost]} accessibilityRole="text">
+          <Text style={[styles.primaryButtonText, styles.primaryButtonTextHost]} allowFontScaling>
+            Host
+          </Text>
+        </View>
+      );
+    }
+
     if (actionVariant === 'hosting') {
       return (
         <Pressable
@@ -553,6 +563,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: CARD_BORDER,
   },
+  primaryButtonHost: {
+    backgroundColor: theme.colors.background.screen,
+  },
   primaryButtonText: {
     fontFamily: theme.fonts.semibold,
     fontSize: 16,
@@ -565,6 +578,10 @@ const styles = StyleSheet.create({
   primaryButtonTextFull: {
     fontFamily: theme.fonts.medium,
     color: META_TEXT,
+  },
+  primaryButtonTextHost: {
+    fontFamily: theme.fonts.medium,
+    color: TITLE_SAGE,
   },
   pressed: {
     opacity: theme.opacity.pressedUi,

@@ -1,67 +1,26 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { theme } from '../config/theme';
-import { openAppSettings } from '../lib/permissions';
-import { requestNotificationPermission } from '../lib/notifications';
 
 /**
- * Calm, contextual nudge used before asking for notification permissions.
+ * Calm note about notification status. Beta does not request OS permission
+ * because push delivery is deferred (Product Contract §9).
  */
-export default function NotificationNudge({ onEnabled, onDismiss, onEnablePress }) {
-  const [loading, setLoading] = useState(false);
-
-  const handleEnable = async () => {
-    if (onEnablePress) {
-      setLoading(true);
-      try {
-        await onEnablePress();
-      } finally {
-        setLoading(false);
-      }
-      return;
-    }
-
-    setLoading(true);
-    const granted = await requestNotificationPermission();
-    setLoading(false);
-    if (granted) {
-      onEnabled?.();
-      return;
-    }
-    onDismiss?.();
-    openAppSettings();
-  };
-
+export default function NotificationNudge({ onDismiss }) {
   return (
     <View style={styles.card} accessibilityRole="summary">
-      <Text style={styles.title}>Stay in the loop</Text>
-      <Text style={styles.body}>Get likes, meetup invites, and gentle journal reminders.</Text>
-      <View style={styles.actions}>
-        <Pressable
-          style={({ pressed }) => [styles.secondary, pressed && styles.pressed]}
-          onPress={onDismiss}
-          accessibilityRole="button"
-          accessibilityLabel="Not now"
-        >
-          <Text style={styles.secondaryText}>Not now</Text>
-        </Pressable>
-        <Pressable
-          style={({ pressed }) => [styles.primary, pressed && styles.pressed]}
-          onPress={handleEnable}
-          disabled={loading}
-          accessibilityRole="button"
-          accessibilityLabel="Enable notifications"
-        >
-          <Text style={styles.primaryText}>{loading ? 'Checking…' : 'Enable'}</Text>
-        </Pressable>
-      </View>
-      <Text
-        style={styles.reassurance}
-        accessibilityRole="text"
-        accessibilityLabel="You can always change notification settings later"
-      >
-        You can always change this later in Settings.
+      <Text style={styles.title}>No alerts yet</Text>
+      <Text style={styles.body}>
+        Push notifications aren't part of beta. Pawple will ask only when gentle reminders are ready.
       </Text>
+      <Pressable
+        style={({ pressed }) => [styles.primary, pressed && styles.pressed]}
+        onPress={onDismiss}
+        accessibilityRole="button"
+        accessibilityLabel="Continue"
+      >
+        <Text style={styles.primaryText}>Continue</Text>
+      </Pressable>
     </View>
   );
 }
@@ -87,22 +46,6 @@ const styles = StyleSheet.create({
     color: theme.colors.text.secondary.light,
     marginBottom: theme.spacing.md,
   },
-  actions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: theme.spacing.sm,
-  },
-  secondary: {
-    minHeight: 44,
-    paddingHorizontal: theme.spacing.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  secondaryText: {
-    fontFamily: theme.fonts.body,
-    fontSize: theme.fontSizes.sm,
-    color: theme.colors.text.muted.light,
-  },
   primary: {
     minHeight: 44,
     paddingHorizontal: theme.spacing.md,
@@ -119,12 +62,5 @@ const styles = StyleSheet.create({
   },
   pressed: {
     opacity: 0.85,
-  },
-  reassurance: {
-    marginTop: theme.spacing.sm,
-    fontFamily: 'Inter-Regular',
-    fontSize: theme.fontSizes.sm,
-    color: theme.colors.text.muted.light,
-    textAlign: 'center',
   },
 });

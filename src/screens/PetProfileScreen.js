@@ -84,11 +84,15 @@ function truncateBio(bio, maxLength = 100) {
   return `${trimmed.slice(0, maxLength - 1)}…`;
 }
 
+function formatLocationLabel(value) {
+  return String(value ?? '').trim().replace(/[;.]+$/, '').trim() || null;
+}
+
 function PetProfileHero({ pet, ownerCity, lookingForCompanion, petTraits = [] }) {
   const subtitle = formatHeroSubtitle(pet);
   const bio = truncateBio(pet?.bio);
   const traits = normalizeTraits(petTraits);
-  const locationLabel = ownerCity?.trim() || null;
+  const locationLabel = formatLocationLabel(ownerCity);
 
   return (
     <View style={styles.heroSection}>
@@ -120,7 +124,7 @@ function PetProfileHero({ pet, ownerCity, lookingForCompanion, petTraits = [] })
 
       {locationLabel ? (
         <Text style={styles.heroLocation} allowFontScaling>
-          {`📍 ${locationLabel}`}
+          {locationLabel}
         </Text>
       ) : null}
 
@@ -252,7 +256,7 @@ export default function PetProfileScreen() {
       const petMoments = await fetchMomentsForPet(activePetId);
       setPosts(petMoments);
     } catch (error) {
-      console.log('[PetProfileScreen] Fetch error', error);
+      console.error('[PetProfileScreen] Fetch error', error);
     } finally {
       setLoading(false);
     }
@@ -422,9 +426,10 @@ export default function PetProfileScreen() {
           showToggle={false}
           hostedCount={hostedCount}
           participatedCount={participatedCount}
+          communityAction={
+            isOwner && activePetId ? <PetProfileMeetupsSection /> : null
+          }
         />
-
-        {isOwner && activePetId ? <PetProfileMeetupsSection /> : null}
       </ScrollView>
     );
   };

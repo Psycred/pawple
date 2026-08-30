@@ -14,7 +14,6 @@ import { theme } from '../config/theme';
 import { supabase } from '../config/supabase';
 import { useActivePet } from '../contexts/ActivePetContext';
 import {
-  extractMeetupAttendeePetIds,
   extractMeetupHostPetIds,
   extractViewerJoinedPetIds,
   isDemoMeetupId,
@@ -56,11 +55,6 @@ export default function MeetupPetJoinSheet({
 
   const hostPetIds = useMemo(
     () => new Set(extractMeetupHostPetIds(meetup ?? {})),
-    [meetup],
-  );
-
-  const attendeePetIds = useMemo(
-    () => new Set(extractMeetupAttendeePetIds(meetup ?? {})),
     [meetup],
   );
 
@@ -129,7 +123,7 @@ export default function MeetupPetJoinSheet({
     }
 
     const leavable = viewerJoinedIds.filter((id) => !hostPetIds.has(String(id)));
-    setSelectedIds(leavable.length ? leavable : viewerJoinedIds);
+    setSelectedIds(leavable);
   }, [
     visible,
     pets,
@@ -143,9 +137,9 @@ export default function MeetupPetJoinSheet({
 
   const togglePet = (petId) => {
     const id = String(petId);
-    const isHostLocked = hostPetIds.has(id) && attendeePetIds.has(id);
+    const isHostLocked = hostPetIds.has(id);
 
-    if (isJoin && isHostLocked) {
+    if (isHostLocked) {
       return;
     }
 
@@ -238,8 +232,7 @@ export default function MeetupPetJoinSheet({
             {pets.map((pet) => {
               const petId = String(pet.id);
               const isSelected = selectedIds.includes(petId);
-              const isHostLocked =
-                isJoin && hostPetIds.has(petId) && attendeePetIds.has(petId);
+              const isHostLocked = hostPetIds.has(petId);
               const emoji = petTypeEmoji(pet.pet_type);
 
               return (
@@ -255,7 +248,7 @@ export default function MeetupPetJoinSheet({
                     </Text>
                     {isHostLocked ? (
                       <Text style={styles.hostHint} allowFontScaling>
-                        Hosting
+                        Host
                       </Text>
                     ) : null}
                   </View>

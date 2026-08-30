@@ -25,6 +25,8 @@ import {
   requestCameraPermissionJIT,
 } from '../lib/permissions';
 import { pickFromGallery } from '../lib/photoPicker';
+import { resolveActivePetAfterDelete } from '../lib/activePetIntegrity';
+import { resolvePetPhotoUrl } from '../lib/petPhotoUpload';
 import { TRAIT_SUGGESTIONS, MAX_TRAITS } from '../constants/petTraits';
 
 const PET_TYPE_OPTIONS = [
@@ -56,19 +58,6 @@ const parseAgeForStorage = (ageStr) => {
   }
   const n = parseFloat(t);
   return Number.isFinite(n) ? n : null;
-};
-
-const photoUrlForStorage = (photoUri) => {
-  if (photoUri == null || typeof photoUri !== 'string') {
-    return null;
-  }
-  const trimmed = photoUri.trim();
-  if (!trimmed) {
-    return null;
-  }
-  const isRemote = trimmed.startsWith('https://') || trimmed.startsWith('http://');
-  const isLocal = trimmed.startsWith('file://') || trimmed.startsWith('content://');
-  return isRemote || isLocal ? trimmed : null;
 };
 
 function normalizeVaccinationFromDb(raw) {
@@ -103,7 +92,7 @@ function normalizeTraits(raw) {
  */
 export default function EditPetScreen({ navigation, route }) {
   const petId = route?.params?.petId ?? null;
-  const { activePetId, setActivePetId } = useActivePet();
+  const { activePetId, setPet } = useActivePet();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -270,6 +259,8 @@ export default function EditPetScreen({ navigation, route }) {
         return;
       }
 
+      const photo_url = await resolvePetPhotoUrl(photoUri, user.id);
+
       const payload = {
         name: name.trim(),
         pet_type: petType,
@@ -279,7 +270,7 @@ export default function EditPetScreen({ navigation, route }) {
         age: parseAgeForStorage(age),
         vaccinated: vaccinationForDb(vaccinationStatus),
         bio: bio.trim() || null,
-        photo_url: photoUrlForStorage(photoUri),
+        photo_url,
         traits: normalizeTraits(selectedTraits),
       };
 
@@ -320,13 +311,15 @@ export default function EditPetScreen({ navigation, route }) {
         if (user) {
           const { data: remaining } = await supabase
             .from('pets')
-            .select('id')
+            .select('id, created_at')
             .eq('owner_id', user.id)
-            .order('created_at', { ascending: true })
-            .limit(1);
-          setActivePetId(remaining?.[0]?.id ?? null);
+            .order('created_at', { ascending: true });
+          const nextPetId = resolveActivePetAfterDelete(activePetId, petId, remaining ?? []);
+          if (nextPetId !== undefined) {
+            await setPet(nextPetId);
+          }
         } else {
-          setActivePetId(null);
+          await setPet(null);
         }
       }
       navigation.goBack();

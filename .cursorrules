@@ -647,6 +647,14 @@ console.error('[Supabase]', error)
 
 -----------------------------------------------------
 
+Any displayed count or statistic (for example, Hosted or Participated meetups)
+MUST be derived live from canonical junction tables using head/count queries:
+select('id', { count: 'exact', head: true })
+
+NEVER hardcode or cache stale counts.
+
+-----------------------------------------------------
+
 Always fetch:
 supabase.auth.getUser()
 
@@ -662,6 +670,13 @@ Never modify:
 ❌ insert/update logic
 
 unless explicitly instructed.
+
+-----------------------------------------------------
+🧠 STATE & CONTEXT
+-----------------------------------------------------
+
+The active pet is ALWAYS read from ActivePetContext.
+NEVER read it from props, route params, or local guesses.
 
 -----------------------------------------------------
 🤖 AI OUTPUT BEHAVIOR

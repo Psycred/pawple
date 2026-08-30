@@ -22,6 +22,7 @@ import { theme } from '../config/theme';
 import { useActivePet } from '../contexts/ActivePetContext';
 import { getLikedPostIds, toggleLikedPost } from '../utils/pawpleStorage';
 import { DEMO_FEED_POSTS, DEMO_FEED_ROTATION_EVENTS, DEMO_UPCOMING_EVENTS } from '../data/demoFeed';
+import { isDemoContentEnabled } from '../config/environment';
 import { buildFeedItemLayoutGetters, buildRotatedFeed } from '../utils/feedRotation';
 import { formatFeedPostDate, shareFeedPost } from '../utils/shareFeedPost';
 
@@ -391,6 +392,9 @@ export default function HomeScreen({ navigation, route }) {
   }, []);
 
   const feedItems = useMemo(() => {
+    if (!isDemoContentEnabled) {
+      return [];
+    }
     // TODO Phase 2: Replace mocks with Supabase query WHERE pet_id IN (activePetId, followedPets)
     const mockPosts = DEMO_FEED_POSTS.map((post) => ({
       ...post,
@@ -520,7 +524,7 @@ export default function HomeScreen({ navigation, route }) {
   const listHeader = useMemo(
     () => (
       <View onLayout={(e) => setListHeaderHeight(e.nativeEvent.layout.height)}>
-        <UpcomingPawBumps events={DEMO_UPCOMING_EVENTS} />
+        {isDemoContentEnabled ? <UpcomingPawBumps events={DEMO_UPCOMING_EVENTS} /> : null}
       </View>
     ),
     [],

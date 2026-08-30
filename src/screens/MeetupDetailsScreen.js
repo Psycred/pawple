@@ -17,9 +17,13 @@ import MeetupPetJoinSheet from '../components/MeetupPetJoinSheet';
 import ParticipantModal from '../components/ParticipantModal';
 import ScreenWrapper from '../components/ScreenWrapper';
 import { theme } from '../config/theme';
+import { isDemoContentEnabled } from '../config/environment';
 import { supabase } from '../config/supabase';
 import { useActivePet } from '../contexts/ActivePetContext';
-import { applyDemoMeetupRsvp } from '../data/demoMeetupRsvp';
+import {
+  applyDemoMeetupRsvp,
+  cancelDemoMeetup,
+} from '../data/demoMeetupRsvp';
 import { getCachedLocation } from '../lib/locationManager';
 import { buildMeetupShareMessage } from '../lib/shareUtils';
 import {
@@ -159,6 +163,16 @@ export default function MeetupDetailsScreen({ navigation, route }) {
 
       let row = null;
 
+      const isBlockedDemoMeetup =
+        !isDemoContentEnabled &&
+        (isDemoMeetupId(meetupId) || isDemoMeetupId(seedMeetup?.id));
+
+      if (isBlockedDemoMeetup) {
+        setMeetup(null);
+        setError(true);
+        return;
+      }
+
       if (meetupId && !isDemoMeetupId(meetupId)) {
         row = await fetchMeetupById(meetupId);
       }
@@ -201,7 +215,10 @@ export default function MeetupDetailsScreen({ navigation, route }) {
       );
     } catch (err) {
       console.error('[MeetupDetails]', err);
-      if (seedMeetup) {
+      const canUseSeedFallback =
+        seedMeetup && (isDemoContentEnabled || !isDemoMeetupId(seedMeetup?.id));
+
+      if (canUseSeedFallback) {
         const normalized = normalizeMeetupRow(seedMeetup);
         const row =
           __DEV__ && isDemoMeetupId(normalized.id)
@@ -399,22 +416,25 @@ export default function MeetupDetailsScreen({ navigation, route }) {
 
   const handleCancelEvent = () => {
     Alert.alert(
-      'Cancel this entire event?',
-      'All participants will be notified.',
+      'Cancel meetup?',
+      "It will be removed from everyone's plans.",
       [
         { text: 'No', style: 'cancel' },
         {
           text: 'Yes, cancel',
           style: 'destructive',
           onPress: async () => {
-            if (!meetup?.id || isDemoMeetupId(meetup.id)) {
-              setMeetup((prev) => (prev ? { ...prev, status: 'cancelled' } : prev));
+            if (!meetup?.id) {
+              Alert.alert('Meetup', 'Could not cancel this meetup.');
+              return;
+            }
+            if (isDemoMeetupId(meetup.id)) {
+              setMeetup(cancelDemoMeetup(meetup));
               return;
             }
             setRsvpBusy(true);
             try {
               await cancelMeetup(meetup.id);
-              console.log('[MeetupDetails] Trigger notifications to all participants');
               const row = await fetchMeetupById(meetup.id);
               setMeetup(row ?? { ...meetup, status: 'cancelled' });
             } catch (err) {
