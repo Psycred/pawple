@@ -8,7 +8,7 @@ import { Kalam_400Regular } from '@expo-google-fonts/kalam';
 import { ShadowsIntoLight_400Regular } from '@expo-google-fonts/shadows-into-light';
 import { useFonts } from 'expo-font';
 import Toast from 'react-native-toast-message';
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import * as Linking from 'expo-linking';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -17,8 +17,10 @@ import { navigationRef } from './src/navigation/navigationRef';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import MainTabs from './src/navigation/MainTabs';
+import AgeGateScreen from './src/screens/AgeGateScreen';
 import AuthScreen from './src/screens/AuthScreen';
 import InviteCodeScreen from './src/screens/InviteCodeScreen';
+import { hasPassedAgeGate } from './src/lib/ageGate';
 import LegalScreen from './src/screens/LegalScreen';
 import LocationSettingsScreen from './src/screens/LocationSettingsScreen';
 import ManagePetsScreen from './src/screens/ManagePetsScreen';
@@ -31,6 +33,7 @@ import PrivacySettingsScreen from './src/screens/PrivacySettingsScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import TermsOfServiceScreen from './src/screens/TermsOfServiceScreen';
 import PrivacyPolicyScreen from './src/screens/PrivacyPolicyScreen';
+import CommunityGuidelinesScreen from './src/screens/CommunityGuidelinesScreen';
 import CreateMeetupScreen from './src/screens/CreateMeetupScreen';
 import MeetupDetailsScreen from './src/screens/MeetupDetailsScreen';
 import MyMeetupsScreen from './src/screens/MyMeetupsScreen';
@@ -68,13 +71,40 @@ function parseMomentId(url) {
 function AppNavigator() {
   const { user, authLoading, profileLoading, hasProfile, hasCompletedOnboarding, pendingInviteCode } = useAuth();
   const { loading: petLoading } = useActivePet();
+  // Phase 1 India: device must pass 18+ gate before Auth or any signed-in surface.
+  const [ageGateLoading, setAgeGateLoading] = useState(true);
+  const [ageGatePassed, setAgeGatePassed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const passed = await hasPassedAgeGate();
+        if (!cancelled) {
+          setAgeGatePassed(passed);
+        }
+      } catch (error) {
+        console.error('[AgeGate] bootstrap failed', error);
+        if (!cancelled) {
+          setAgeGatePassed(false);
+        }
+      } finally {
+        if (!cancelled) {
+          setAgeGateLoading(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     // pawple://moment/{id} → open the app to the Feed, carrying the moment id.
     // (No standalone moment-detail screen exists yet; Feed is the closest destination.)
     const handleUrl = (url) => {
       const momentId = parseMomentId(url);
-      if (!momentId || !navigationRef.isReady()) {
+      if (!momentId || !navigationRef.isReady() || !ageGatePassed) {
         return;
       }
       navigationRef.navigate('MainTabs', {
@@ -86,17 +116,17 @@ function AppNavigator() {
     Linking.getInitialURL().then(handleUrl).catch(() => {});
     const subscription = Linking.addEventListener('url', ({ url }) => handleUrl(url));
     return () => subscription.remove();
-  }, []);
+  }, [ageGatePassed]);
 
   // Returning users only: silent coarse refresh or native OS prompt — never custom onboarding UI.
   useEffect(() => {
-    if (authLoading || profileLoading || !user?.id || !hasCompletedOnboarding) {
+    if (!ageGatePassed || authLoading || profileLoading || !user?.id || !hasCompletedOnboarding) {
       return;
     }
     refreshProfileLocationOnAppOpen(user.id);
-  }, [authLoading, hasCompletedOnboarding, profileLoading, user?.id]);
+  }, [ageGatePassed, authLoading, hasCompletedOnboarding, profileLoading, user?.id]);
 
-  if (authLoading || (user && profileLoading) || (user && petLoading)) {
+  if (ageGateLoading || authLoading || (user && profileLoading) || (user && petLoading)) {
     return (
       <View style={styles.bootstrapContainer}>
         <ActivityIndicator color={theme.colors.primary.light} />
@@ -104,19 +134,35 @@ function AppNavigator() {
     );
   }
 
-  const initialRoute = !user
-    ? 'Auth'
-    : hasCompletedOnboarding
-      ? 'MainTabs'
-      : hasProfile
-        ? 'OnboardingPets'
-        : pendingInviteCode
-          ? 'OnboardingUser'
-          : 'InviteCodeScreen';
+  const initialRoute = !ageGatePassed
+    ? 'AgeGate'
+    : !user
+      ? 'Auth'
+      : hasCompletedOnboarding
+        ? 'MainTabs'
+        : hasProfile
+          ? 'OnboardingPets'
+          : pendingInviteCode
+            ? 'OnboardingUser'
+            : 'InviteCodeScreen';
 
   return (
     <NavigationContainer ref={navigationRef}>
-      <Stack.Navigator key={user?.id ?? 'guest'} initialRouteName={initialRoute} screenOptions={{ headerShown: false }}>
+      <Stack.Navigator
+        key={`${user?.id ?? 'guest'}-${ageGatePassed ? 'eligible' : 'gate'}`}
+        initialRouteName={initialRoute}
+        screenOptions={{ headerShown: false }}
+      >
+        <Stack.Screen name="AgeGate">
+          {(props) => (
+            <AgeGateScreen
+              {...props}
+              onPassed={() => {
+                setAgeGatePassed(true);
+              }}
+            />
+          )}
+        </Stack.Screen>
         <Stack.Screen name="Auth" component={AuthScreen} />
         <Stack.Screen name="InviteCodeScreen" component={InviteCodeScreen} />
         <Stack.Screen name="OnboardingUser" component={OnboardingUserScreen} />
@@ -205,6 +251,22 @@ function AppNavigator() {
           }}
         />
         <Stack.Screen
+          name="CommunityGuidelines"
+          component={CommunityGuidelinesScreen}
+          options={{
+            presentation: 'modal',
+            headerShown: true,
+            title: 'Community Guidelines',
+            headerBackTitleVisible: false,
+            headerStyle: { backgroundColor: theme.colors.background.light },
+            headerTintColor: theme.colors.text.primary.light,
+            headerTitleStyle: {
+              fontFamily: theme.fonts.heading,
+              color: theme.colors.text.primary.light,
+            },
+          }}
+        />
+        <Stack.Screen
           name="LocationSettings"
           component={LocationSettingsScreen}
           options={{
@@ -224,7 +286,7 @@ function AppNavigator() {
           component={PrivacySettingsScreen}
           options={{
             headerShown: true,
-            title: 'Privacy',
+            title: 'Blocked pets',
             headerBackTitleVisible: false,
             headerStyle: { backgroundColor: theme.colors.background.light },
             headerTintColor: theme.colors.text.primary.light,

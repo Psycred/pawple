@@ -1,5 +1,4 @@
 import { supabase } from '../config/supabase';
-import { fetchPetDiscoveryMap, isPetVisibleToViewer } from './pets';
 
 /**
  * Moment data flow for Pawple.
@@ -93,7 +92,7 @@ export function formatMomentDisplayDate(moment) {
 }
 
 /** Normalize a moments.pet_ids column (uuid[] / jsonb / comma string) into string ids. */
-function normalizePetIds(value) {
+export function normalizePetIds(value) {
   if (!value) {
     return [];
   }
@@ -114,7 +113,7 @@ function normalizePetIds(value) {
   return [];
 }
 
-/** Feed/MomentCard expects: photo_url, caption, location, memory_date, created_at, pet_names. */
+/** Feed/MomentCard expects: photo_url, caption, location, memory_date, created_at, pet_names (+ safety ids). */
 function toFeedMoment(moment, petNames = '') {
   return {
     id: moment.id,
@@ -124,6 +123,9 @@ function toFeedMoment(moment, petNames = '') {
     memory_date: formatMomentDisplayDate(moment),
     created_at: moment.created_at ?? '',
     pet_names: petNames,
+    // Safety (PAW-47): report flags human account; block filters by pet_ids.
+    user_id: moment.user_id ?? null,
+    pet_ids: normalizePetIds(moment.pet_ids),
   };
 }
 
@@ -386,34 +388,12 @@ async function fetchPetNamesById(petIds) {
  * No joins — pet attribution from pet_names / pet_ids on the row.
  * Sorted by proximity when lat/lng exist (Phase 2); otherwise created_at DESC (Phase 1).
  */
-/** Hide moments tagged with non-discoverable pets from other users' feeds. */
-async function filterMomentsByPetDiscovery(rows, viewerUserId) {
-  const foreignPetIds = new Set();
-  for (const moment of rows) {
-    if (viewerUserId && String(moment.user_id) === String(viewerUserId)) {
-      continue;
-    }
-    normalizePetIds(moment.pet_ids).forEach((id) => foreignPetIds.add(String(id)));
-  }
-
-  if (foreignPetIds.size === 0) {
-    return rows;
-  }
-
-  const discoveryMap = await fetchPetDiscoveryMap([...foreignPetIds], viewerUserId);
-
-  return rows.filter((moment) => {
-    if (viewerUserId && String(moment.user_id) === String(viewerUserId)) {
-      return true;
-    }
-    const petIds = normalizePetIds(moment.pet_ids);
-    if (!petIds.length) {
-      return true;
-    }
-    return petIds.every((id) =>
-      isPetVisibleToViewer(discoveryMap.get(String(id)), viewerUserId),
-    );
-  });
+/**
+ * Companion opt-in must not hide Moments from the community feed.
+ * Kept as a pass-through so feed pagination stays stable if filters return later.
+ */
+async function filterMomentsByPetDiscovery(rows, _viewerUserId) {
+  return rows;
 }
 
 /**

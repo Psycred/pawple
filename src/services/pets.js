@@ -74,7 +74,7 @@ export async function fetchPetMeetupCounts(petId) {
 
 /**
  * Load a pet profile with calculated meetup counts.
- * Non-owners cannot view pets with discovery turned off.
+ * Companion opt-in is display/Discover-filter only — it must not hide profiles.
  *
  * @param {string} petId
  * @param {string|null} [viewerUserId]
@@ -118,10 +118,6 @@ export async function fetchPetProfile(petId, viewerUserId = null) {
   const owner = isPetOwner(pet, resolvedViewerId);
   const discoverable = Boolean(pet.is_looking_for_companion);
 
-  if (!owner && !discoverable) {
-    return null;
-  }
-
   let ownerCity = null;
   if (pet.owner_id) {
     const { data: ownerProfile } = await supabase
@@ -145,7 +141,7 @@ export async function fetchPetProfile(petId, viewerUserId = null) {
 }
 
 /**
- * Toggle whether a pet is discoverable in public feed/search.
+ * Toggle companion Discover listing for a pet (not feed/profile visibility).
  * Owner-only — enforced by RLS on pets update.
  */
 export async function updatePetCompanionDiscovery(petId, isLookingForCompanion) {
@@ -206,7 +202,8 @@ export async function fetchDiscoverablePets(options = {}) {
 }
 
 /**
- * Batch lookup for feed/discover privacy — which pet ids are publicly visible.
+ * Batch lookup of pet companion metadata (Discover filter / badge display).
+ * Companion does not gate feed or profile visibility.
  * @param {string[]} petIds
  * @param {string|null} viewerUserId
  * @returns {Promise<Map<string, { owner_id: string, is_looking_for_companion: boolean }>>}
@@ -238,14 +235,9 @@ export async function fetchPetDiscoveryMap(petIds, viewerUserId = null) {
 }
 
 /**
- * Returns true when a pet may appear to the viewer in feed/discover contexts.
+ * Feed/profile visibility for a pet.
+ * Companion opt-in is Discover-only — never hide community feed/profile rows.
  */
-export function isPetVisibleToViewer(petMeta, viewerUserId) {
-  if (!petMeta) {
-    return true;
-  }
-  if (viewerUserId && String(petMeta.owner_id) === String(viewerUserId)) {
-    return true;
-  }
-  return petMeta.is_looking_for_companion === true;
+export function isPetVisibleToViewer(_petMeta, _viewerUserId) {
+  return true;
 }

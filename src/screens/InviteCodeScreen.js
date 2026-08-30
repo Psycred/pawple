@@ -130,9 +130,9 @@ export default function InviteCodeScreen({ navigation }) {
               accessibilityRole="link"
               accessibilityLabel="Open Terms of Service"
             >
-              Terms of Service
-            </Text>{' '}
-            and{' '}
+              Terms
+            </Text>
+            {', '}
             <Text
               style={styles.consentLink}
               onPress={() => navigation.navigate('PrivacyPolicy')}
@@ -140,6 +140,15 @@ export default function InviteCodeScreen({ navigation }) {
               accessibilityLabel="Open Privacy Policy"
             >
               Privacy Policy
+            </Text>
+            {', and '}
+            <Text
+              style={styles.consentLink}
+              onPress={() => navigation.navigate('CommunityGuidelines')}
+              accessibilityRole="link"
+              accessibilityLabel="Open Community Guidelines"
+            >
+              Community Guidelines
             </Text>
             .
           </Text>

@@ -62,30 +62,30 @@ export default function UserSheet(props) {
     Alert.alert('Feedback', 'Email composer is unavailable on this device.');
   };
 
+  const navigateLegal = (screen) => {
+    const stackNav = navigation.getParent?.()?.getParent?.();
+    if (stackNav?.navigate) {
+      stackNav.navigate(screen);
+      return;
+    }
+    navigation.navigate(screen);
+  };
+
   const handleTermsPolicy = () => {
     console.log('[Settings] Opened Terms & Privacy Policy');
+    // Canonical screens only — retired conflicting Legal route content.
     Alert.alert('Legal', 'Choose what to read', [
       {
-        text: 'Terms & Conditions',
-        onPress: () => {
-          const stackNav = navigation.getParent?.()?.getParent?.();
-          if (stackNav?.navigate) {
-            stackNav.navigate('Legal', { type: 'terms' });
-            return;
-          }
-          navigation.navigate('Legal', { type: 'terms' });
-        },
+        text: 'Terms of Service',
+        onPress: () => navigateLegal('TermsOfService'),
       },
       {
         text: 'Privacy Policy',
-        onPress: () => {
-          const stackNav = navigation.getParent?.()?.getParent?.();
-          if (stackNav?.navigate) {
-            stackNav.navigate('Legal', { type: 'privacy' });
-            return;
-          }
-          navigation.navigate('Legal', { type: 'privacy' });
-        },
+        onPress: () => navigateLegal('PrivacyPolicy'),
+      },
+      {
+        text: 'Community Guidelines',
+        onPress: () => navigateLegal('CommunityGuidelines'),
       },
       { text: 'Cancel', style: 'cancel' },
     ]);

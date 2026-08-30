@@ -6,17 +6,31 @@ import { theme } from '../config/theme';
 import { buildPetAttribution, buildShareMetaLine, shareMoment } from '../lib/shareUtils';
 import { buildPetEntries } from '../utils/resolveFeedPet';
 import ActionBar from './ActionBar';
+import BlockConfirmSheet from './BlockConfirmSheet';
+import ContentSafetyMenu from './ContentSafetyMenu';
 import PostCard from './PostCard';
+import ReportSheet from './ReportSheet';
 import ShareCard from './ShareCard';
 
 /**
  * Feed moment: calm memory card + heart/share outside (no metrics).
+ * Quiet more → report / block (PAW-47). Own moments hide safety actions.
  */
-export default function MomentCard({ moment, userPets = [], initialLiked = false, onLikeToggle }) {
+export default function MomentCard({
+  moment,
+  userPets = [],
+  initialLiked = false,
+  onLikeToggle,
+  viewerUserId = null,
+  onPetBlocked,
+}) {
   const navigation = useNavigation();
   const { setPet } = useActivePet();
   const [liked, setLiked] = useState(initialLiked);
   const [isShareActive, setIsShareActive] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [blockPetTarget, setBlockPetTarget] = useState(null);
   const shareCardRef = useRef(null);
   const shareInProgressRef = useRef(false);
 
@@ -44,6 +58,30 @@ export default function MomentCard({ moment, userPets = [], initialLiked = false
     () => ({ caption: post.caption ?? '', location: post.location, memory_date: post.date }),
     [post.caption, post.location, post.date],
   );
+
+  const isOwnMoment = useMemo(() => {
+    if (!viewerUserId || !moment?.user_id) {
+      return false;
+    }
+    return String(moment.user_id) === String(viewerUserId);
+  }, [moment?.user_id, viewerUserId]);
+
+  const blockablePets = useMemo(() => {
+    const ownedIds = new Set((userPets ?? []).map((p) => String(p.id)));
+    const ids = Array.isArray(moment?.pet_ids) ? moment.pet_ids : [];
+    const names = String(moment?.pet_names ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    return ids
+      .map((id, index) => ({
+        id: String(id),
+        name: names[index] || names[0] || 'Pet',
+      }))
+      .filter((pet) => pet.id && !ownedIds.has(pet.id));
+  }, [moment?.pet_ids, moment?.pet_names, userPets]);
+
+  const canShowSafety = Boolean(moment?.id) && !isOwnMoment;
 
   const handlePetPress = useCallback(
     async (petId) => {
@@ -97,6 +135,22 @@ export default function MomentCard({ moment, userPets = [], initialLiked = false
     }
   }, [moment?.created_at, moment?.id, post.caption, post.date, post.location, shareNames]);
 
+  const openMenu = useCallback(() => setMenuOpen(true), []);
+  const closeMenu = useCallback(() => setMenuOpen(false), []);
+
+  const openReport = useCallback(() => {
+    setMenuOpen(false);
+    setReportOpen(true);
+  }, []);
+
+  const openBlock = useCallback(() => {
+    setMenuOpen(false);
+    const first = blockablePets[0] ?? null;
+    if (first) {
+      setBlockPetTarget(first);
+    }
+  }, [blockablePets]);
+
   return (
     <View style={styles.wrap}>
       <PostCard
@@ -108,7 +162,12 @@ export default function MomentCard({ moment, userPets = [], initialLiked = false
         date={post.date}
         captionFontFamily={theme.fonts.feedCaptionHand}
       />
-      <ActionBar isLiked={liked} onLike={handleLike} onShare={handleShare} />
+      <ActionBar
+        isLiked={liked}
+        onLike={handleLike}
+        onShare={handleShare}
+        onMore={canShowSafety ? openMenu : undefined}
+      />
 
       {isShareActive ? (
         <View ref={shareCardRef} collapsable={false} style={styles.shareCardHost} pointerEvents="none">
@@ -121,6 +180,41 @@ export default function MomentCard({ moment, userPets = [], initialLiked = false
           />
         </View>
       ) : null}
+
+      <ContentSafetyMenu
+        visible={menuOpen}
+        title="Moment"
+        showReport
+        showBlock={blockablePets.length > 0}
+        blockLabel={
+          blockablePets.length === 1
+            ? `Block ${blockablePets[0].name}`
+            : 'Block pet'
+        }
+        onReport={openReport}
+        onBlock={openBlock}
+        onClose={closeMenu}
+      />
+
+      <ReportSheet
+        visible={reportOpen}
+        targetType="moment"
+        targetId={moment?.id}
+        reportedUserId={moment?.user_id}
+        blockablePets={blockablePets}
+        onClose={() => setReportOpen(false)}
+        onBlocked={(pet) => onPetBlocked?.(pet)}
+      />
+
+      <BlockConfirmSheet
+        visible={Boolean(blockPetTarget)}
+        pet={blockPetTarget}
+        onClose={() => setBlockPetTarget(null)}
+        onBlocked={(pet) => {
+          onPetBlocked?.(pet);
+          setBlockPetTarget(null);
+        }}
+      />
     </View>
   );
 }

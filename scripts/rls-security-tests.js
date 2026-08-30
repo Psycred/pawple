@@ -1,5 +1,6 @@
 /**
- * PAW-20 / A4: Role-based RLS and RPC security tests (Product Contract §7, §10, §13).
+ * PAW-20 / PAW-44: Role-based RLS and RPC security tests
+ * (Product Contract §7, §10, §13 + Honesty & Safety model B + G).
  *
  * Requires a Supabase project with migrations applied (staging scratch or local):
  *   SUPABASE_URL=https://xxx.supabase.co
@@ -9,8 +10,8 @@
  * Usage:
  *   npm run test:rls
  *
- * Creates two ephemeral test users, seeds minimal rows, asserts cross-tenant boundaries,
- * then deletes test auth users via service role.
+ * Creates two ephemeral test users, seeds minimal rows, asserts cross-tenant
+ * boundaries and anon denial, then deletes test auth users via service role.
  */
 
 const { createClient } = require('@supabase/supabase-js');
@@ -76,7 +77,7 @@ async function main() {
 
   const createdUserIds = [];
 
-  console.log('PAW-20 RLS security test suite');
+  console.log('PAW-44 RLS security test suite (B + G + report/block)');
   console.log('Target:', SUPABASE_URL);
   console.log('');
 
@@ -122,7 +123,18 @@ async function main() {
       email: TEST_EMAIL_B,
     });
 
-    // Seed pets: B has private + discoverable
+    // Service role writes exact coordinates (client roles must not SELECT them).
+    const { error: locSeedErr } = await admin
+      .from('profiles')
+      .update({
+        last_location_lat: 12.9716,
+        last_location_lng: 77.5946,
+        location_updated_at: new Date().toISOString(),
+      })
+      .eq('id', userBId);
+    assertNoError(locSeedErr, 'Service role can write profiles.last_location_*');
+
+    // Seed pets: companion flag is display-only (G) — both remain readable
     const { data: petAPrivate, error: petAErr } = await clientA
       .from('pets')
       .insert({
@@ -134,27 +146,27 @@ async function main() {
       .single();
     assertNoError(petAErr, 'User A creates own pet');
 
-    const { data: petBPrivate, error: petBPrivateErr } = await clientB
+    const { data: petBCompanionOff, error: petBOffErr } = await clientB
       .from('pets')
       .insert({
         owner_id: userBId,
-        name: 'Pet B Private',
+        name: 'Pet B Companion Off',
         is_looking_for_companion: false,
       })
       .select('id')
       .single();
-    assertNoError(petBPrivateErr, 'User B creates private pet');
+    assertNoError(petBOffErr, 'User B creates pet with companion=false');
 
-    const { data: petBPublic, error: petBPublicErr } = await clientB
+    const { data: petBCompanionOn, error: petBOnErr } = await clientB
       .from('pets')
       .insert({
         owner_id: userBId,
-        name: 'Pet B Discoverable',
+        name: 'Pet B Companion On',
         is_looking_for_companion: true,
       })
       .select('id')
       .single();
-    assertNoError(petBPublicErr, 'User B creates discoverable pet');
+    assertNoError(petBOnErr, 'User B creates pet with companion=true');
 
     const { data: momentA, error: momentAErr } = await clientA
       .from('moments')
@@ -176,13 +188,63 @@ async function main() {
         date: '2026-06-01',
         start_time: '10:00:00',
         end_time: '12:00:00',
+        location_lat: 12.97,
+        location_lng: 77.59,
       })
-      .select('id')
+      .select('id, location_lat, location_lng')
       .single();
     assertNoError(meetupBErr, 'User B creates meetup');
 
     console.log('');
-    console.log('Profiles');
+    console.log('Anon / public denial (B)');
+
+    const { data: anonProfiles, error: anonProfilesErr } = await anonClient
+      .from('profiles')
+      .select('id')
+      .limit(1);
+    assert(
+      Boolean(anonProfilesErr) || (anonProfiles ?? []).length === 0,
+      'Anonymous cannot read profiles',
+    );
+
+    const { data: anonPets, error: anonPetsErr } = await anonClient
+      .from('pets')
+      .select('id')
+      .limit(1);
+    assert(
+      Boolean(anonPetsErr) || (anonPets ?? []).length === 0,
+      'Anonymous cannot read pets',
+    );
+
+    const { data: anonMeetups, error: anonMeetupsErr } = await anonClient
+      .from('meetups')
+      .select('id')
+      .limit(1);
+    assert(
+      Boolean(anonMeetupsErr) || (anonMeetups ?? []).length === 0,
+      'Anonymous cannot read meetups',
+    );
+
+    const { data: anonHosts, error: anonHostsErr } = await anonClient
+      .from('meetup_hosts')
+      .select('id')
+      .limit(1);
+    assert(
+      Boolean(anonHostsErr) || (anonHosts ?? []).length === 0,
+      'Anonymous cannot read meetup_hosts',
+    );
+
+    const { data: anonParts, error: anonPartsErr } = await anonClient
+      .from('meetup_participants')
+      .select('id')
+      .limit(1);
+    assert(
+      Boolean(anonPartsErr) || (anonParts ?? []).length === 0,
+      'Anonymous cannot read meetup_participants',
+    );
+
+    console.log('');
+    console.log('Profiles + coordinate exposure (B)');
 
     const { error: profileCrossUpdateErr } = await clientA
       .from('profiles')
@@ -190,29 +252,48 @@ async function main() {
       .eq('id', userBId);
     assertError(profileCrossUpdateErr, 'User A cannot update User B profile');
 
+    const { data: locLeak, error: locLeakErr } = await clientA
+      .from('profiles')
+      .select('id, last_location_lat, last_location_lng, location_updated_at')
+      .eq('id', userBId)
+      .maybeSingle();
+    assertError(locLeakErr, 'Authenticated cannot SELECT profiles.last_location_* columns');
+    assert(
+      !locLeak || (locLeak.last_location_lat == null && locLeak.last_location_lng == null),
+      'last_location_* not returned to authenticated clients',
+    );
+
+    const { data: safeProfile, error: safeProfileErr } = await clientA
+      .from('profiles')
+      .select('id, name, city')
+      .eq('id', userBId)
+      .maybeSingle();
+    assertNoError(safeProfileErr, 'Authenticated can read non-location profile fields');
+    assert(Boolean(safeProfile), 'User A can read User B public profile fields');
+
     console.log('');
-    console.log('Pets');
+    console.log('Pets (G — companion does not gate visibility)');
 
-    const { data: hiddenPet, error: hiddenPetErr } = await clientA
+    const { data: companionOffPet, error: companionOffErr } = await clientA
       .from('pets')
-      .select('id')
-      .eq('id', petBPrivate.id)
+      .select('id, is_looking_for_companion')
+      .eq('id', petBCompanionOff.id)
       .maybeSingle();
-    assertNoError(hiddenPetErr, 'Private pet query returns without server error');
-    assert(!hiddenPet, 'User A cannot read User B private pet');
+    assertNoError(companionOffErr, 'companion=false pet query succeeds');
+    assert(Boolean(companionOffPet), 'User A can read User B pet when companion=false (G)');
 
-    const { data: visiblePet, error: visiblePetErr } = await clientA
+    const { data: companionOnPet, error: companionOnErr } = await clientA
       .from('pets')
-      .select('id')
-      .eq('id', petBPublic.id)
+      .select('id, is_looking_for_companion')
+      .eq('id', petBCompanionOn.id)
       .maybeSingle();
-    assertNoError(visiblePetErr, 'Discoverable pet query returns without server error');
-    assert(Boolean(visiblePet), 'User A can read User B discoverable pet');
+    assertNoError(companionOnErr, 'companion=true pet query succeeds');
+    assert(Boolean(companionOnPet), 'User A can read User B pet when companion=true');
 
     const { error: petCrossUpdateErr } = await clientA
       .from('pets')
       .update({ name: 'Stolen' })
-      .eq('id', petBPublic.id);
+      .eq('id', petBCompanionOn.id);
     assert(
       !petCrossUpdateErr || petCrossUpdateErr.code === 'PGRST116' || petCrossUpdateErr.details?.includes('0 rows'),
       'User A cannot update User B pet',
@@ -255,17 +336,30 @@ async function main() {
     assertNoError(likeOwnErr, 'User A can like own-visible moment');
 
     console.log('');
-    console.log('Meetups (Product Contract §7)');
+    console.log('Meetups (Product Contract §7 + B venue)');
+
+    assert(
+      meetupB?.location_lat != null && meetupB?.location_lng != null,
+      'Meetup venue coordinates readable by authenticated creator',
+    );
+
+    const { data: meetupVenue, error: meetupVenueErr } = await clientA
+      .from('meetups')
+      .select('id, location_lat, location_lng')
+      .eq('id', meetupB.id)
+      .maybeSingle();
+    assertNoError(meetupVenueErr, 'Authenticated non-creator can read meetup venue');
+    assert(Boolean(meetupVenue), 'Meetup venue row visible to authenticated users');
 
     const { error: hostForeignPetErr } = await clientA.from('meetup_hosts').insert({
       meetup_id: meetupB.id,
-      pet_id: petBPrivate.id,
+      pet_id: petBCompanionOff.id,
     });
     assertError(hostForeignPetErr, 'User A cannot host meetup with User B pet');
 
     const { error: rsvpForeignPetErr } = await clientA.from('meetup_participants').insert({
       meetup_id: meetupB.id,
-      pet_id: petBPrivate.id,
+      pet_id: petBCompanionOff.id,
     });
     assertError(rsvpForeignPetErr, 'User A cannot RSVP User B pet to meetup');
 
@@ -283,7 +377,7 @@ async function main() {
     assert((participantsList ?? []).length >= 1, 'Meetup participant rows visible on details screen');
 
     console.log('');
-    console.log('RPC grants (Product Contract §10)');
+    console.log('RPC grants (Product Contract §10 + B)');
 
     const { error: anonDeleteErr } = await anonClient.rpc('delete_user_account');
     assertError(anonDeleteErr, 'Anonymous cannot call delete_user_account');
@@ -291,10 +385,79 @@ async function main() {
     const { error: anonExportErr } = await anonClient.rpc('export_user_data');
     assertError(anonExportErr, 'Anonymous cannot call export_user_data');
 
+    const { error: anonCountErr } = await anonClient.rpc('get_meetup_participant_count', {
+      meetup_uuid: meetupB.id,
+    });
+    assertError(anonCountErr, 'Anonymous cannot call get_meetup_participant_count');
+
+    const { error: anonHostedErr } = await anonClient.rpc('get_pet_hosted_count', {
+      target_pet_id: petBCompanionOff.id,
+    });
+    assertError(anonHostedErr, 'Anonymous cannot call get_pet_hosted_count');
+
     const { data: exportData, error: exportErr } = await clientA.rpc('export_user_data');
     assertNoError(exportErr, 'Authenticated user can call export_user_data');
     assert(exportData?.ok === true, 'export_user_data returns ok for authenticated caller');
     assert(String(exportData?.user_id) === String(userAId), 'export_user_data scopes to caller only');
+
+    console.log('');
+    console.log('Reports + pet_blocks (F schema for PAW-47)');
+
+    const { data: reportRow, error: reportErr } = await clientA.from('reports').insert({
+      reporter_user_id: userAId,
+      reporter_pet_id: petAPrivate.id,
+      target_type: 'meetup',
+      target_id: meetupB.id,
+      reported_user_id: userBId,
+      reason: 'test',
+      details: 'RLS suite',
+    }).select('id').single();
+    assertNoError(reportErr, 'User A can insert own report');
+    assert(Boolean(reportRow), 'Report row created');
+
+    const { data: ownReports, error: ownReportsErr } = await clientA
+      .from('reports')
+      .select('id')
+      .eq('id', reportRow.id);
+    assertNoError(ownReportsErr, 'User A can select own reports');
+    assert((ownReports ?? []).length === 1, 'Own report visible to reporter');
+
+    const { data: crossReports, error: crossReportsErr } = await clientB
+      .from('reports')
+      .select('id')
+      .eq('id', reportRow.id);
+    assertNoError(crossReportsErr, 'Cross-user report query does not error');
+    assert((crossReports ?? []).length === 0, 'User B cannot read User A reports');
+
+    const { error: foreignPetReportErr } = await clientA.from('reports').insert({
+      reporter_user_id: userAId,
+      reporter_pet_id: petBCompanionOff.id,
+      target_type: 'moment',
+      target_id: momentA.id,
+      reported_user_id: userBId,
+      reason: 'stolen pet',
+    });
+    assertError(foreignPetReportErr, 'User A cannot file report in name of User B pet');
+
+    const { data: blockRow, error: blockErr } = await clientA.from('pet_blocks').insert({
+      blocker_user_id: userAId,
+      blocked_pet_id: petBCompanionOff.id,
+    }).select('id').single();
+    assertNoError(blockErr, 'User A can block a pet');
+    assert(Boolean(blockRow), 'Block row created');
+
+    const { data: crossBlocks, error: crossBlocksErr } = await clientB
+      .from('pet_blocks')
+      .select('id')
+      .eq('id', blockRow.id);
+    assertNoError(crossBlocksErr, 'Cross-user block query does not error');
+    assert((crossBlocks ?? []).length === 0, 'User B cannot read User A blocks');
+
+    const { error: deleteBlockErr } = await clientA
+      .from('pet_blocks')
+      .delete()
+      .eq('id', blockRow.id);
+    assertNoError(deleteBlockErr, 'User A can delete own block');
 
     console.log('');
     console.log('Invites');

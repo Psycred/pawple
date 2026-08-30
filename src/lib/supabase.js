@@ -1,23 +1,23 @@
 /**
  * =====================================================================
- * SUPABASE STORAGE POLICIES - PHASE 1 SECURITY CHECKLIST
+ * SUPABASE STORAGE POLICIES (PAW-45)
  * =====================================================================
- * These policies MUST be configured manually in the Supabase Dashboard
- * under Storage -> [Bucket Name] -> Policies.
+ * Source of truth: supabase/migrations/20260830110000_storage_bucket_policies.sql
+ * Do not reconfigure these in the Dashboard unless intentionally overriding;
+ * prefer updating the migration so environments stay reproducible.
  *
- * 1. MOMENTS BUCKET:
- *    - INSERT: Target 'authenticated'. WITH CHECK: (storage.foldername(name))[1] = auth.uid()::text
- *    - SELECT: Target 'public' (leave blank if UI requires). USING: true
- *    - DELETE: Target 'authenticated'. USING: (storage.foldername(name))[1] = auth.uid()::text
+ * Buckets: moments, pet-photos
+ * Path convention: `${userId}/${Date.now()}.<ext>` (first folder = auth.uid())
  *
- * 2. PET-PHOTOS BUCKET:
- *    - INSERT: Target 'authenticated'. WITH CHECK: (storage.foldername(name))[1] = auth.uid()::text
- *    - SELECT: Target 'public' (leave blank if UI requires). USING: true
- *    - DELETE: Target 'authenticated'. USING: (storage.foldername(name))[1] = auth.uid()::text
+ * Owner-scoped writes (authenticated):
+ *   INSERT / UPDATE / DELETE when (storage.foldername(name))[1] = auth.uid()::text
  *
- * 3. BUCKET SETTINGS (Both Buckets):
- *    - Public bucket: ON (Toggle enabled)
- *    - Restrict file size: ON -> 5242880 bytes (5 MB)
+ * Beta residual (accepted):
+ *   Buckets are public; SELECT is open so Image can load getPublicUrl() URLs.
+ *   Public object URLs are not authenticated-only media. Owner-scoped writes
+ *   still block cross-user upload/overwrite/delete.
+ *
+ * Bucket settings (migration): public ON; file_size_limit 5 MB when column exists.
  * =====================================================================
  */
 

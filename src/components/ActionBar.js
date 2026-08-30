@@ -71,8 +71,9 @@ function runGentleHeartbeat(scale) {
 
 /**
  * Heart + share row — lives outside the post card (calm, left-aligned, no counts).
+ * Optional quiet “more” for report/block (PAW-47) — no engagement metrics.
  */
-export default function ActionBar({ isLiked, onLike, onShare }) {
+export default function ActionBar({ isLiked, onLike, onShare, onMore }) {
   const scale = useRef(new Animated.Value(1)).current;
 
   const handleLike = () => {
@@ -99,14 +100,26 @@ export default function ActionBar({ isLiked, onLike, onShare }) {
         </Animated.View>
       </Pressable>
 
-      <Pressable
-        onPress={onShare}
-        style={({ pressed }) => [styles.button, pressed && styles.pressed]}
-        accessibilityRole="button"
-        accessibilityLabel="Share memory"
-      >
-        <Feather name="share" size={theme.feed.shareSize} color={theme.feed.actionIconColor} />
-      </Pressable>
+      <View style={styles.rightActions}>
+        <Pressable
+          onPress={onShare}
+          style={({ pressed }) => [styles.button, pressed && styles.pressed]}
+          accessibilityRole="button"
+          accessibilityLabel="Share memory"
+        >
+          <Feather name="share" size={theme.feed.shareSize} color={theme.feed.actionIconColor} />
+        </Pressable>
+        {onMore ? (
+          <Pressable
+            onPress={onMore}
+            style={({ pressed }) => [styles.button, pressed && styles.pressed]}
+            accessibilityRole="button"
+            accessibilityLabel="More"
+          >
+            <Feather name="more-horizontal" size={22} color={theme.feed.actionIconColor} />
+          </Pressable>
+        ) : null}
+      </View>
     </View>
   );
 }
@@ -119,6 +132,10 @@ const styles = StyleSheet.create({
     width: '100%',
     marginTop: theme.feed.actionRowMarginTop,
     paddingHorizontal: theme.feed.frameGap,
+  },
+  rightActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   button: {
     minWidth: 44,

@@ -9,16 +9,16 @@ export default function LegalConsentRow() {
   return (
     <View style={styles.row}>
       <Text style={styles.baseText}>
-        By tapping 'Create Profile', you agree to our{' '}
+        By tapping 'Create Profile', you confirm you are 18 or older and agree to our{' '}
         <Text
           style={styles.linkText}
           accessibilityRole="link"
           accessibilityLabel="Open Terms of Service"
           onPress={() => navigation.navigate('TermsOfService')}
         >
-          Terms of Service
-        </Text>{' '}
-        and{' '}
+          Terms
+        </Text>
+        {', '}
         <Text
           style={styles.linkText}
           accessibilityRole="link"
@@ -26,6 +26,15 @@ export default function LegalConsentRow() {
           onPress={() => navigation.navigate('PrivacyPolicy')}
         >
           Privacy Policy
+        </Text>
+        {', and '}
+        <Text
+          style={styles.linkText}
+          accessibilityRole="link"
+          accessibilityLabel="Open Community Guidelines"
+          onPress={() => navigation.navigate('CommunityGuidelines')}
+        >
+          Community Guidelines
         </Text>
         .
       </Text>

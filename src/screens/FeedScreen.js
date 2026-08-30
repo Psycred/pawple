@@ -32,11 +32,12 @@ import {
   fetchUserFeedLocation,
   sortFeedMoments,
 } from '../services/moments';
-import { fetchMeetups, filterShowablePublicMeetups, isDemoMeetupId } from '../services/meetups';
+import { fetchMeetups, filterShowablePublicMeetups, isDemoMeetupId, extractMeetupHostPetIds } from '../services/meetups';
+import { fetchBlockedPetIds, isBlockedByPetIds } from '../services/blocks';
 import { getCachedLocation } from '../lib/locationManager';
 import { supabase } from '../lib/supabase';
 import { useMeetupFeedLogic } from '../hooks/useMeetupFeedLogic';
-import { computeMeetupDistanceKm, enrichMeetupWithMockCoords } from '../utils/locationUtils';
+import { withHonestMeetupDistance } from '../utils/distanceUtils';
 
 /** Inject a meetup suggestion after every Nth moment in the main vertical feed. */
 const MEETUP_INJECTION_INTERVAL = 9;
@@ -67,6 +68,7 @@ export default function FeedScreen() {
   const [pendingMoments, setPendingMoments] = useState([]);
   const [likedIds, setLikedIds] = useState(new Set());
   const [userPets, setUserPets] = useState([]);
+  const [blockedPetIds, setBlockedPetIds] = useState(() => new Set());
   const [userFeedLocation, setUserFeedLocation] = useState(null);
   const [currentUserId, setCurrentUserId] = useState(null);
   const [momentPage, setMomentPage] = useState(0);
@@ -105,7 +107,7 @@ export default function FeedScreen() {
       // Viewer coordinates for meetup "X km away" — cached only, never prompts here.
       const viewerCoords = await getCachedLocation().catch(() => null);
 
-      const [meetupsData, momentsPageResult, likesRes, petsRes] = await Promise.all([
+      const [meetupsData, momentsPageResult, likesRes, petsRes, blockedIds] = await Promise.all([
         fetchMeetups(),
         fetchFeedMoments(user?.id, feedLocation, 0, DEFAULT_FEED_MOMENT_PAGE_LIMIT),
         user?.id
@@ -118,6 +120,10 @@ export default function FeedScreen() {
               .eq('owner_id', user.id)
               .order('created_at', { ascending: true })
           : Promise.resolve({ data: [], error: null }),
+        user?.id ? fetchBlockedPetIds().catch((err) => {
+          console.error('[Supabase]', err);
+          return [];
+        }) : Promise.resolve([]),
       ]);
 
       if (likesRes.error) {
@@ -131,6 +137,7 @@ export default function FeedScreen() {
       const firstMomentPage = momentsPageResult?.moments ?? [];
       const likedMomentIds = likesRes.error ? [] : (likesRes.data ?? []).map((row) => row.moment_id);
       const viewerPets = petsRes.error ? [] : petsRes.data ?? [];
+      const blockedSet = new Set((blockedIds ?? []).map(String));
 
       // Meetups stay complete because carousel and inline ordering require global proximity.
       let nextMeetups = realMeetups;
@@ -162,25 +169,19 @@ export default function FeedScreen() {
         ),
       );
 
-      // Mock venue coords + distance so cards always show "📍 X km away" in dev.
-      nextMeetups = nextMeetups.map((m, i) => {
-        const enriched = enrichMeetupWithMockCoords(m, i);
-        const preset = Number(
-          m.distanceKm ?? m.distance_km,
-        );
-        if (Number.isFinite(preset) && preset > 0) {
-          return { ...enriched, distanceKm: preset };
-        }
-        const distanceKm = computeMeetupDistanceKm(
-          enriched,
-          viewerCoords?.latitude,
-          viewerCoords?.longitude,
-        );
-        if (distanceKm == null || distanceKm < 0.1) {
-          return enriched;
-        }
-        return { ...enriched, distanceKm };
-      });
+      // Honest distance only — omit when GPS or venue coords are missing.
+      nextMeetups = nextMeetups.map((m) =>
+        withHonestMeetupDistance(m, viewerCoords),
+      );
+
+      // Hide meetups hosted by blocked pets (client filter; RLS does not filter blocks).
+      nextMeetups = nextMeetups.filter(
+        (m) => !isBlockedByPetIds(extractMeetupHostPetIds(m), blockedSet),
+      );
+
+      const visibleMoments = firstMomentPage.filter(
+        (m) => !isBlockedByPetIds(m?.pet_ids ?? [], blockedSet),
+      );
 
       if (generation !== feedGenerationRef.current) {
         return;
@@ -189,7 +190,8 @@ export default function FeedScreen() {
       setCurrentUserId(user?.id ?? null);
       setUserFeedLocation(feedLocation);
       setMeetups(nextMeetups);
-      setRealMoments(firstMomentPage);
+      setRealMoments(visibleMoments);
+      setBlockedPetIds(blockedSet);
       momentPageRef.current = 0;
       hasMoreMomentsRef.current = Boolean(momentsPageResult?.hasMore);
       setMomentPage(0);
@@ -267,7 +269,14 @@ export default function FeedScreen() {
         return;
       }
 
-      setRealMoments((current) => appendUniqueMoments(current, result?.moments ?? []));
+      setRealMoments((current) =>
+        appendUniqueMoments(
+          current,
+          (result?.moments ?? []).filter(
+            (m) => !isBlockedByPetIds(m?.pet_ids ?? [], blockedPetIds),
+          ),
+        ),
+      );
       momentPageRef.current = nextPage;
       hasMoreMomentsRef.current = Boolean(result?.hasMore);
       setMomentPage(nextPage);
@@ -278,7 +287,28 @@ export default function FeedScreen() {
       loadingMoreMomentsRef.current = false;
       setLoadingMoreMoments(false);
     }
-  }, [currentUserId, hasMoreMoments, momentPage, userFeedLocation]);
+  }, [blockedPetIds, currentUserId, hasMoreMoments, momentPage, userFeedLocation]);
+
+  const handlePetBlocked = useCallback((pet) => {
+    const petId = String(pet?.id ?? '');
+    if (!petId) {
+      return;
+    }
+    setBlockedPetIds((prev) => {
+      const next = new Set(prev);
+      next.add(petId);
+      return next;
+    });
+    setRealMoments((prev) =>
+      prev.filter((m) => !isBlockedByPetIds(m?.pet_ids ?? [], [petId])),
+    );
+    setPendingMoments((prev) =>
+      prev.filter((m) => !isBlockedByPetIds(m?.pet_ids ?? [], [petId])),
+    );
+    setMeetups((prev) =>
+      prev.filter((m) => !isBlockedByPetIds(extractMeetupHostPetIds(m), [petId])),
+    );
+  }, []);
 
   const demoMoments = useMemo(
     () => (USE_DEMO_FEED_WHEN_EMPTY ? getDemoMomentsForFeed() : []),
@@ -291,21 +321,24 @@ export default function FeedScreen() {
 
   // Merge optimistic moments above fetched ones; dedupe so a refetch never doubles a card.
   const mergedMoments = useMemo(() => {
-    if (!pendingMoments.length) {
-      return feedMoments;
-    }
-    const seen = new Set();
-    const merged = [];
-    for (const m of [...pendingMoments, ...feedMoments]) {
-      const key = String(m?.id);
-      if (seen.has(key)) {
-        continue;
+    const source = (() => {
+      if (!pendingMoments.length) {
+        return feedMoments;
       }
-      seen.add(key);
-      merged.push(m);
-    }
-    return sortFeedMoments(merged, userFeedLocation);
-  }, [feedMoments, pendingMoments, userFeedLocation]);
+      const seen = new Set();
+      const merged = [];
+      for (const m of [...pendingMoments, ...feedMoments]) {
+        const key = String(m?.id);
+        if (seen.has(key)) {
+          continue;
+        }
+        seen.add(key);
+        merged.push(m);
+      }
+      return sortFeedMoments(merged, userFeedLocation);
+    })();
+    return source.filter((m) => !isBlockedByPetIds(m?.pet_ids ?? [], blockedPetIds));
+  }, [blockedPetIds, feedMoments, pendingMoments, userFeedLocation]);
 
   const useExpandedDemoFeed = USE_DEMO_FEED_WHEN_EMPTY && DEMO_FEED_SHOW_ALL_MEETUPS;
 
@@ -406,8 +439,10 @@ export default function FeedScreen() {
           <MomentCard
             moment={moment}
             userPets={userPets}
+            viewerUserId={currentUserId}
             initialLiked={likedIds.has(String(moment.id))}
             onLikeToggle={handleLikeToggle}
+            onPetBlocked={handlePetBlocked}
           />
         );
       }
@@ -420,7 +455,7 @@ export default function FeedScreen() {
         />
       );
     },
-    [currentUserId, handleLikeToggle, likedIds, userPets],
+    [currentUserId, handleLikeToggle, handlePetBlocked, likedIds, userPets],
   );
 
   const keyExtractor = useCallback((row) => String(row.key), []);

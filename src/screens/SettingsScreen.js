@@ -210,6 +210,11 @@ export default function SettingsScreen({ navigation }) {
                 exportingData ? <ActivityIndicator size="small" color={theme.colors.text.muted.light} /> : undefined
               }
             />
+            <SettingRow
+              icon="eye-off"
+              title="Blocked pets"
+              onPress={() => navigation.navigate('PrivacySettings')}
+            />
           </View>
         </View>
 
@@ -246,6 +251,11 @@ export default function SettingsScreen({ navigation }) {
               onPress={() => navigation.navigate('TermsOfService')}
             />
             <SettingRow icon="shield" title="Privacy Policy" onPress={() => navigation.navigate('PrivacyPolicy')} />
+            <SettingRow
+              icon="book-open"
+              title="Community Guidelines"
+              onPress={() => navigation.navigate('CommunityGuidelines')}
+            />
             <SettingRow
               icon="mail"
               title="Contact Support"

@@ -9,7 +9,7 @@ import {
   isDemoMeetupId,
 } from '../services/meetups';
 import { formatLocalTime, formatShortWeekday } from '../utils/formatMomentDate';
-import { getMockDistance } from '../utils/distanceUtils';
+import { formatDistanceLabel } from '../utils/distanceUtils';
 import MeetupPetJoinSheet from './MeetupPetJoinSheet';
 
 const CARD_BG = '#FFFCF8';
@@ -101,12 +101,11 @@ export default function MeetupCard({
     return '';
   }, [meetup?.open_to, meetup?.custom_breed_spec]);
 
+  // Honest omit when GPS/venue distance is missing — never invent a km figure.
   const distanceLabel = useMemo(() => {
     const fromRow = Number(meetup?.distanceKm ?? meetup?.distance_km);
-    const km =
-      Number.isFinite(fromRow) && fromRow > 0 ? fromRow.toFixed(1) : getMockDistance();
-    return `${km} km away`;
-  }, [meetup?.distanceKm, meetup?.distance_km, meetup?.id]);
+    return formatDistanceLabel(Number.isFinite(fromRow) ? fromRow : null);
+  }, [meetup?.distanceKm, meetup?.distance_km]);
 
   const limit = useMemo(() => {
     const raw = meetup?.participation_limit;
@@ -294,18 +293,24 @@ export default function MeetupCard({
           </Text>
         ) : null}
 
-        <View style={styles.locationRow}>
-          <Text style={styles.distanceText} numberOfLines={1} allowFontScaling>
-            {distanceLabel}
-          </Text>
-          {chipLabel ? (
-            <View style={styles.visibilityChip}>
-              <Text style={styles.visibilityChipText} numberOfLines={1} allowFontScaling>
-                {chipLabel}
+        {distanceLabel || chipLabel ? (
+          <View style={styles.locationRow}>
+            {distanceLabel ? (
+              <Text style={styles.distanceText} numberOfLines={1} allowFontScaling>
+                {distanceLabel}
               </Text>
-            </View>
-          ) : null}
-        </View>
+            ) : (
+              <View style={styles.distanceText} />
+            )}
+            {chipLabel ? (
+              <View style={styles.visibilityChip}>
+                <Text style={styles.visibilityChipText} numberOfLines={1} allowFontScaling>
+                  {chipLabel}
+                </Text>
+              </View>
+            ) : null}
+          </View>
+        ) : null}
 
         {hostPets.length > 0 ? (
           <View style={styles.hostsSection}>

@@ -15,6 +15,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MeetupDetailsSkeleton from '../components/MeetupDetailsSkeleton';
 import MeetupPetJoinSheet from '../components/MeetupPetJoinSheet';
 import ParticipantModal from '../components/ParticipantModal';
+import ContentSafetyMenu from '../components/ContentSafetyMenu';
+import ReportSheet from '../components/ReportSheet';
+import BlockConfirmSheet from '../components/BlockConfirmSheet';
 import ScreenWrapper from '../components/ScreenWrapper';
 import { theme } from '../config/theme';
 import { isDemoContentEnabled } from '../config/environment';
@@ -44,8 +47,10 @@ import {
   parseTimeOnDate,
 } from '../utils/formatMomentDate';
 import { extractHostPetNames, formatHostPetNames } from '../utils/meetupHostDisplay';
-import { computeMeetupDistanceKm, enrichMeetupWithMockCoords } from '../utils/locationUtils';
-import { getMockDistance } from '../utils/distanceUtils';
+import {
+  computeHonestMeetupDistanceKm,
+  formatDistanceLabel,
+} from '../utils/distanceUtils';
 
 const SCREEN_BG = '#FFFCF8';
 const PRIMARY_TEXT = '#3A312E';
@@ -135,6 +140,9 @@ export default function MeetupDetailsScreen({ navigation, route }) {
   const [joinSheetOpen, setJoinSheetOpen] = useState(false);
   const [leaveSheetOpen, setLeaveSheetOpen] = useState(false);
   const [distanceKm, setDistanceKm] = useState(null);
+  const [safetyMenuOpen, setSafetyMenuOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [blockPetTarget, setBlockPetTarget] = useState(null);
 
   const loadMeetup = useCallback(async () => {
     setLoading(true);
@@ -192,13 +200,13 @@ export default function MeetupDetailsScreen({ navigation, route }) {
       }
 
       const viewerCoords = await getCachedLocation().catch(() => null);
-      const enriched = enrichMeetupWithMockCoords(row, 0);
       const preset = Number(row.distanceKm ?? row.distance_km);
-      let km = Number.isFinite(preset) && preset > 0 ? preset : null;
+      let km = Number.isFinite(preset) && preset >= 0 ? preset : null;
 
+      // Only real venue + viewer GPS — no mock venue/user fallbacks.
       if (km == null) {
-        km = computeMeetupDistanceKm(
-          enriched,
+        km = computeHonestMeetupDistanceKm(
+          row,
           viewerCoords?.latitude,
           viewerCoords?.longitude,
         );
@@ -290,6 +298,30 @@ export default function MeetupDetailsScreen({ navigation, route }) {
     return formatHostPetNames(names);
   }, [meetup]);
 
+  const blockableHostPets = useMemo(() => {
+    const owned = new Set(ownedPetIds.map(String));
+    return (meetup?.meetup_hosts ?? [])
+      .map((row) => {
+        const pet = row?.pets ?? null;
+        const id = String(row?.pet_id ?? pet?.id ?? '');
+        if (!id || owned.has(id)) {
+          return null;
+        }
+        return {
+          id,
+          name: pet?.name || 'Pet',
+        };
+      })
+      .filter(Boolean);
+  }, [meetup?.meetup_hosts, ownedPetIds]);
+
+  const canReportMeetup = Boolean(
+    meetup?.id &&
+      meetup?.user_id &&
+      currentUserId &&
+      String(meetup.user_id) !== String(currentUserId),
+  );
+
   const whenDay = useMemo(
     () => formatSmartMeetupDay(meetup?.date),
     [meetup?.date],
@@ -311,12 +343,10 @@ export default function MeetupDetailsScreen({ navigation, route }) {
 
   const descriptionText = meetup?.description?.trim() || '';
 
-  const distanceLabel = useMemo(() => {
-    if (distanceKm != null && distanceKm > 0) {
-      return `${distanceKm.toFixed(1)} km away`;
-    }
-    return `${getMockDistance()} km away`;
-  }, [distanceKm]);
+  const distanceLabel = useMemo(
+    () => formatDistanceLabel(distanceKm),
+    [distanceKm],
+  );
 
   const previewPets = participantPets.slice(0, 3);
 
@@ -478,6 +508,13 @@ export default function MeetupDetailsScreen({ navigation, route }) {
       {isCreatorOrHost ? (
         <HeaderIconButton name="edit-2" label="Edit meetup" onPress={handleEdit} />
       ) : null}
+      {canReportMeetup || blockableHostPets.length > 0 ? (
+        <HeaderIconButton
+          name="more-horizontal"
+          label="More"
+          onPress={() => setSafetyMenuOpen(true)}
+        />
+      ) : null}
     </View>
   );
 
@@ -552,9 +589,13 @@ export default function MeetupDetailsScreen({ navigation, route }) {
         </Text>
 
         <View style={styles.metaRow}>
-          <Text style={styles.distanceText} allowFontScaling>
-            {distanceLabel}
-          </Text>
+          {distanceLabel ? (
+            <Text style={styles.distanceText} allowFontScaling>
+              {distanceLabel}
+            </Text>
+          ) : (
+            <View style={styles.distanceText} />
+          )}
           {openToLabel ? (
             <View style={styles.openToChip}>
               <Text style={styles.openToChipText} numberOfLines={1} allowFontScaling>
@@ -677,6 +718,14 @@ export default function MeetupDetailsScreen({ navigation, route }) {
         visible={participantsOpen}
         count={participantCount}
         participants={participantPets}
+        ownedPetIds={ownedPetIds}
+        onBlockPet={(pet) => {
+          setParticipantsOpen(false);
+          setBlockPetTarget({
+            id: pet.id,
+            name: pet.name || 'Pet',
+          });
+        }}
         onClose={() => setParticipantsOpen(false)}
       />
 
@@ -693,6 +742,43 @@ export default function MeetupDetailsScreen({ navigation, route }) {
         meetup={meetup}
         onClose={() => setLeaveSheetOpen(false)}
         onSuccess={handleJoinSheetSuccess}
+      />
+
+      <ContentSafetyMenu
+        visible={safetyMenuOpen}
+        title="Meetup"
+        showReport={canReportMeetup}
+        showBlock={blockableHostPets.length > 0}
+        blockLabel={
+          blockableHostPets.length === 1
+            ? `Block ${blockableHostPets[0].name}`
+            : 'Block host'
+        }
+        onReport={() => {
+          setSafetyMenuOpen(false);
+          setReportOpen(true);
+        }}
+        onBlock={() => {
+          setSafetyMenuOpen(false);
+          setBlockPetTarget(blockableHostPets[0] ?? null);
+        }}
+        onClose={() => setSafetyMenuOpen(false)}
+      />
+
+      <ReportSheet
+        visible={reportOpen}
+        targetType="meetup"
+        targetId={meetup?.id}
+        reportedUserId={meetup?.user_id}
+        blockablePets={blockableHostPets}
+        onClose={() => setReportOpen(false)}
+      />
+
+      <BlockConfirmSheet
+        visible={Boolean(blockPetTarget)}
+        pet={blockPetTarget}
+        onClose={() => setBlockPetTarget(null)}
+        onBlocked={() => setBlockPetTarget(null)}
       />
     </ScreenWrapper>
   );

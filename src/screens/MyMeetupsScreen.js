@@ -27,7 +27,7 @@ import {
   fetchPetParticipatingMeetups,
   sortMeetupsByDateAsc,
 } from '../services/meetups';
-import { computeMeetupDistanceKm, enrichMeetupWithMockCoords } from '../utils/locationUtils';
+import { withHonestMeetupDistance } from '../utils/distanceUtils';
 
 const SCREEN_BG = '#FFFCF8';
 const SEGMENT_CONTAINER = '#F5F5F5';
@@ -46,22 +46,7 @@ const TABS = [
 ];
 
 function enrichMeetupsWithDistance(meetups, viewerCoords) {
-  return meetups.map((m, i) => {
-    const enriched = enrichMeetupWithMockCoords(m, i);
-    const preset = Number(m.distanceKm ?? m.distance_km);
-    if (Number.isFinite(preset) && preset > 0) {
-      return { ...enriched, distanceKm: preset };
-    }
-    const distanceKm = computeMeetupDistanceKm(
-      enriched,
-      viewerCoords?.latitude,
-      viewerCoords?.longitude,
-    );
-    if (distanceKm == null || distanceKm < 0.1) {
-      return enriched;
-    }
-    return { ...enriched, distanceKm };
-  });
+  return meetups.map((m) => withHonestMeetupDistance(m, viewerCoords));
 }
 
 /** Deduplicate meetup rows by id, then sort soonest-first. */

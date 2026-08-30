@@ -16,7 +16,7 @@ const SECONDARY_TEXT = '#6B625C';
 const DIVIDER = '#F1E8DF';
 const SAGE = '#9EB8A0';
 
-function ParticipantRow({ pet }) {
+function ParticipantRow({ pet, onBlock }) {
   const initial = pet?.name?.charAt(0)?.toUpperCase() ?? '?';
 
   return (
@@ -36,15 +36,37 @@ function ParticipantRow({ pet }) {
           </Text>
         ) : null}
       </View>
+      {onBlock ? (
+        <Pressable
+          onPress={() => onBlock(pet)}
+          hitSlop={8}
+          style={({ pressed }) => [styles.blockBtn, pressed && styles.pressed]}
+          accessibilityRole="button"
+          accessibilityLabel={`Block ${pet?.name || 'pet'}`}
+        >
+          <Text style={styles.blockBtnText} allowFontScaling>
+            Block
+          </Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 }
 
 /**
  * Bottom sheet listing all meetup participants.
+ * Optional per-row Block for other pets (PAW-47).
  */
-export default function ParticipantModal({ visible, count = 0, participants = [], onClose }) {
+export default function ParticipantModal({
+  visible,
+  count = 0,
+  participants = [],
+  ownedPetIds = [],
+  onBlockPet,
+  onClose,
+}) {
   const insets = useSafeAreaInsets();
+  const owned = new Set((ownedPetIds ?? []).map(String));
 
   return (
     <Modal
@@ -70,9 +92,19 @@ export default function ParticipantModal({ visible, count = 0, participants = []
               No one has joined yet.
             </Text>
           ) : (
-            participants.map((pet) => (
-              <ParticipantRow key={String(pet.id)} pet={pet} />
-            ))
+            participants.map((pet) => {
+              const canBlock =
+                typeof onBlockPet === 'function' &&
+                pet?.id &&
+                !owned.has(String(pet.id));
+              return (
+                <ParticipantRow
+                  key={String(pet.id)}
+                  pet={pet}
+                  onBlock={canBlock ? onBlockPet : undefined}
+                />
+              );
+            })
           )}
         </ScrollView>
 
@@ -98,11 +130,11 @@ const styles = StyleSheet.create({
   },
   sheet: {
     backgroundColor: SCREEN_BG,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
     paddingHorizontal: 24,
     paddingTop: 12,
-    maxHeight: '72%',
+    maxHeight: '78%',
   },
   handle: {
     alignSelf: 'center',
@@ -110,17 +142,16 @@ const styles = StyleSheet.create({
     height: 4,
     borderRadius: 2,
     backgroundColor: DIVIDER,
-    marginBottom: 20,
+    marginBottom: 16,
   },
   title: {
     fontFamily: theme.fonts.semibold,
-    fontSize: 18,
-    lineHeight: 24,
+    fontSize: 20,
     color: PRIMARY_TEXT,
-    marginBottom: 16,
+    marginBottom: 12,
   },
   list: {
-    flexGrow: 0,
+    maxHeight: 360,
   },
   listContent: {
     paddingBottom: 8,
@@ -136,52 +167,61 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#EEF5EE',
+    backgroundColor: SAGE,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
   },
   avatarInitial: {
     fontFamily: theme.fonts.medium,
-    fontSize: 15,
-    color: SAGE,
+    fontSize: 16,
+    color: '#FFFFFF',
   },
   rowText: {
     flex: 1,
+    minWidth: 0,
   },
   petName: {
     fontFamily: theme.fonts.medium,
     fontSize: 16,
-    lineHeight: 22,
     color: PRIMARY_TEXT,
   },
   petBreed: {
     fontFamily: theme.fonts.body,
     fontSize: 14,
-    lineHeight: 20,
     color: SECONDARY_TEXT,
     marginTop: 2,
   },
+  blockBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  blockBtnText: {
+    fontFamily: theme.fonts.medium,
+    fontSize: 14,
+    color: SECONDARY_TEXT,
+  },
   emptyText: {
     fontFamily: theme.fonts.body,
-    fontSize: 15,
+    fontSize: 16,
     color: SECONDARY_TEXT,
-    paddingVertical: 16,
+    paddingVertical: 24,
+    textAlign: 'center',
   },
   closeButton: {
-    marginTop: 16,
+    marginTop: 12,
     minHeight: 48,
-    borderRadius: theme.borderRadius.full,
+    borderRadius: 999,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#EEF5EE',
+    backgroundColor: SAGE,
   },
   closeButtonText: {
     fontFamily: theme.fonts.semibold,
     fontSize: 16,
-    color: SAGE,
+    color: '#FFFFFF',
   },
   pressed: {
-    opacity: theme.opacity.pressedUi,
+    opacity: 0.88,
   },
 });

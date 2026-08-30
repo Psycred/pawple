@@ -373,6 +373,8 @@ export default function CreateMomentScreen() {
         memory_date: formatMomentDate(momentDate),
         created_at: moment.created_at ?? new Date().toISOString(),
         pet_names: selectedPets.map((p) => p.name).join(', '),
+        user_id: user.id,
+        pet_ids: selectedPetIds.map(String),
       };
 
       // [FLOW] Step 8 — subtle success + auto-return to Feed with the new card at top.
