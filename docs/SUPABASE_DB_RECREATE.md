@@ -103,7 +103,15 @@ npm run test:rls
 
 ### Storage policies
 
-Storage bucket policies (`moments`, `pet-photos`) remain dashboard-managed per `src/lib/supabase.js`. Codify in a future migration when PAW-4 storage inventory is finalized. RLS tests do not cover Storage in this pass.
+Codified in `supabase/migrations/20260830110000_storage_bucket_policies.sql` (PAW-45).
+
+| Concern | Behaviour |
+|---------|-----------|
+| Writes | Owner-scoped INSERT/UPDATE/DELETE under `{auth.uid()}/` for `moments` and `pet-photos` |
+| Reads | Public SELECT (Beta residual for `getPublicUrl` / React Native `Image`) |
+| Client comment | `src/lib/supabase.js` points at the migration as source of truth |
+
+**Accepted Beta residual:** public buckets + public object URLs remain so feed/profile images render without signed-URL plumbing. This is intentional live-intent parity, not authenticated-only media. Tightening to private buckets/signed URLs needs a separate CTO-scoped change. RLS table tests still do not exercise Storage API in this pass.
 
 ## Production recreate (CEO-gated)
 
@@ -126,7 +134,7 @@ Production schema changes are **forward-only**:
 
 ## Beta gate checklist
 
-- [ ] All 29 migrations apply cleanly from empty DB
+- [ ] All migrations apply cleanly from empty DB (includes PAW-45 storage policies)
 - [ ] `npm run test:rls` passes on staging scratch
-- [ ] Storage policies documented/applied on staging (separate A2 task)
+- [ ] Storage policy migration applied on staging/prod (not Dashboard-only)
 - [ ] No external beta users until both checks pass
