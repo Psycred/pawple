@@ -211,6 +211,7 @@ The owner may opt their pet into mating discovery after pet creation. It is not 
 - Every authenticated user may own multiple pets.
 - Exactly one owned pet may be active in normal app use.
 - Active-pet state is owned exclusively by `ActivePetContext` and persisted per user.
+- The third bottom tab displays the active pet's name, with `Pets` as the fallback.
 - Restored active-pet IDs must be checked for ownership.
 - Adding a pet does not automatically replace the active pet unless it is the first pet.
 - Editing preserves identity and existing relationships.
@@ -224,6 +225,9 @@ The owner may opt their pet into mating discovery after pet creation. It is not 
 - A pet is eligible for mating discovery only when its owner has opted that pet into mating discovery.
 - Pet profiles may show traits and a short mating description to support human evaluation.
 - Traits must never become matching eligibility or ranking criteria.
+- The pet profile bio displays Hosted and Participated counts derived from
+  `meetup_hosts` and `meetup_participants`; development-only demo RSVP
+  contributions are session-local and reset on app restart.
 
 ## 6. Moment contract
 
@@ -283,17 +287,37 @@ The owner may opt their pet into mating discovery after pet creation. It is not 
 - A mating candidate is eligible only when the selected radius requirement can be satisfied.
 - If location or distance is unavailable, Pawple must not claim that the candidate is within range.
 
-## 9. Notification contract
+## 9. Notification contract (design locked; implementation deferred)
 
-Real push notifications are optional and deferred for beta.
+Implementation is deferred to Beta Prep.
 
-Therefore:
+### Events and recipients
 
-- Pawple must not claim that meetup, mating, connection, or other reminders are active.
-- It must not ask users to enable notifications unless a functional push-delivery path exists.
-- The onboarding completion screen may retain a simple continue action, but not a misleading permission prompt.
-- No token registration or `notification_enabled` promise is required for the initial beta.
-- If push is introduced later, permission, Pawple preference, device registration, and delivery must all be implemented together.
+- join → creator/host
+- leave → creator/host
+- cancel → all participants/joiners
+- edit (time/place) → all participants/joiners
+- capacity full → creator/host
+- co-participant joins or leaves → nobody except the creator/host
+
+### Principles
+
+- Notify people about events that affect their plans; never about other people's routine RSVP activity (calm by design).
+- The creator does not receive a notification for actions they initiated (e.g., their own cancellation).
+- Multi-pet actions batch into one notification.
+- Respect `profiles.notification_enabled` for push delivery.
+
+### Cancellation semantics
+
+- Every joiner receives one notification, e.g. "Peter's meetup at Kanatal has been cancelled by the host."
+- The notification deep-links to the relevant Meetup's cancelled state (Meetup Details renders the cancelled banner); if ever not navigable, to a cancelled-event explanation.
+- Simultaneously the cancelled Meetup disappears from Going, Hosting, Feed, and active Community counts per §7 rules.
+
+### Canonical architecture
+
+- `notifications` table (actor, recipient, type, payload, entity refs, `read_at`) + `device_tokens` table + Expo push delivery; in-app notification surface later.
+- No ad-hoc notification paths.
+- Until the notification pipeline is implemented, no UI copy may promise notifications.
 
 ## 10. Account lifecycle contract
 
@@ -331,6 +355,7 @@ Deletion must be authenticated, server-controlled, atomic where possible, retrya
 
 - Uses a local or dedicated development Supabase project.
 - Demo fixtures and development authentication are allowed only behind explicit flags.
+- Demo RSVP simulation is `__DEV__`-gated, session-only, and resets on app restart.
 - Mating/matching fixtures may be used for testing only when explicitly enabled.
 - Production credentials are forbidden.
 
@@ -433,6 +458,7 @@ Pawple is ready for a production closed beta only when:
 - [ ] Production never fabricates content, mating candidates, venues, or distance.
 - [ ] Location denial/unavailability produces an honest degraded experience.
 - [ ] Notification UI makes no promise beyond implemented capability.
+- [ ] Notification pipeline per §9 is implemented (records, push delivery, and deep links), including cancellation notifications to all joiners.
 - [ ] Export returns the user’s actual canonical data.
 - [ ] Delete Account removes the Auth identity, database data, relationships, mating/interest data, and media.
 - [ ] Development, staging, and production are isolated.

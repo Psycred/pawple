@@ -221,6 +221,32 @@ Functional leaders independently handle ordinary decisions within their
 domains. Routine decisions should not be escalated merely for the sake of
 escalation.
 
+## Execution lanes
+
+The fast lane uses a direct Cursor prompt without a ticket for UI text, labels,
+styling, read-only queries, local state, and single-screen fixes.
+
+Read-only queries are fast-lane eligible against the development environment
+only. Any read or write against staging or production is ticket-lane.
+
+The ticket lane uses the Paperclip organization for schema, RLS, migrations,
+database writes, context APIs, navigation and routing, Feed composition, Auth,
+Storage, and parallel work.
+
+Where a change matches both a fast-lane and a ticket-lane category, the ticket
+lane takes precedence.
+
+The QA Auditor is appointed by the Founder & Managing Director and holds an
+independent veto over any diff that violates the Product Contract,
+`.cursorrules` prohibitions, or a ticket's explicit constraints. A veto blocks
+merge. Overriding it requires explicit Founder & Managing Director approval.
+
+QA cannot override the Founder.
+
+If the environment prevents material verification, state exactly
+what could not be verified and why. The Founder decides whether to
+accept the residual risk. QA does not invent conditional sign-offs.
+
 ## 10. Product Contract authority
 
 The Pawple Beta Architecture & Product Contract remains the authoritative
