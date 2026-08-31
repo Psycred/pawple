@@ -1,20 +1,22 @@
 # Pawple Mating Discovery — Mental Model & Presentation Spec
 
 **Issue:** PAW-18 (Workstream E2) — canonical E2 spec (consolidates PAW-13)  
-**Status:** Rev 3 — Founder principles incorporated; **Founder sign-off required** before E3/E4/E5  
-**Author:** CTO (architecture-aligned product/UX spec)  
+**Status:** Rev 4 — **Founder AUTHORIZED** (PAW-7, 2026-08-30) with reciprocal-Paw + introduction-chat amendments  
+**Author:** CTO (architecture-aligned product/UX spec); Rev 4 amendments by CEO per Founder authorization  
 **CEO assessments:** `docs/PAWPLE_MATING_DISCOVERY_CEO_ASSESSMENT.md`, `docs/PAWPLE_MATING_DISCOVERY_FOUNDER_REASSESSMENT.md`  
-**Date:** 28 Aug 2026 (rev 3 same day)
+**Date:** 28 Aug 2026 (rev 3); **30 Aug 2026 (rev 4)**
 
 **Authoritative inputs:**
 
+- PAW-7 Founder authorization — **Mating System (pet-centric, consent-gated)** (comment `00d919c3`, 2026-08-30) — **binding for rev 4**
 - PAW-7 issue document `mating-founder-principles` — **Founder Mating Product Principles** (rev 1)
 - PAW-2 Founder decision — **Option B+** (supply-first **internal** sequencing; not user-facing mental model)
 - `docs/PAW2_MATING_PRODUCT_PRINCIPLE.md` (rev 1)
 - `docs/PAWPLE_BETA_ARCHITECTURE_PRODUCT_CONTRACT.md` — mating eligibility and Paw rules
 - `docs/PAWPLE_OPERATING_AND_DECISION_GOVERNANCE.md` §11 — Phase 1 mating boundary
+- `docs/CURRENT.md` — Mating wave authorization
 
-This document does **not** amend the Product Contract. It defines presentation, navigation, and interaction within contract bounds.
+This document defines presentation, navigation, interaction, consent, and introduction-chat scope within Founder authorization. Product Contract mating sections should be aligned in a future contract update; **CURRENT.md Mating wave is the execution authority now.**
 
 ---
 
@@ -23,10 +25,23 @@ This document does **not** amend the Product Contract. It defines presentation, 
 Define how Pawple presents **mating discovery for a specific pet** so that:
 
 1. The experience is unmistakably Pawple — calm, pet-first, trustworthy — and **not** a dating-app pattern adapted for pets.
-2. Engineering (E3 schema, E4 eligibility, E5 discovery UI) can implement without inventing product behaviour.
+2. Engineering (E3 schema, E4 eligibility, E5 discovery UI, reciprocal Paw, introduction chat) can implement without inventing product behaviour.
 3. Design/UX can execute visual treatment within Pawple’s established systems when a Design/UX agent is available.
 
-**Pre-engineering gate:** E3/E4/E5 must not begin until **Founder sign-off** on this document (rev 3).
+**Pre-engineering gate:** Engineering begins only after (a) this **rev 4** is recorded, (b) CTO architecture proposal, and (c) QA pre-implementation security/privacy/safety recommendations. Final QA SIGN-OFF/VETO gates the wave. **No commits until Founder decides.**
+
+### Rev 4 amendments (Founder Mating System authorization — 30 Aug 2026)
+
+| # | Amendment | Section |
+|---|-----------|---------|
+| 1 | **Transparent Paw** — requested owner sees who Pawed and may open the requesting pet’s **full profile** before deciding | §7.5 |
+| 2 | **Reciprocal consent** — owner Paws back (informed) or calm **no-response** (not harsh rejection UI) | §7.6 |
+| 3 | **Mutual Paw → introduction chat** between the two pet parents | §7.7 |
+| 4 | **Chat scope** — mating-introduction channel **only**; unlocked after mutual Paw; **not** general open DMs | §7.7 |
+| 5 | **Chat safety (Phase 1)** — guidance + report/block only; no AI message scanning; Pawple-voice disclaimer at chat open | §7.7 |
+| 6 | **Legal honesty** — Terms, Privacy, Community Guidelines must reflect scoped introduction chat (replace “no DMs” claims) | §7.8, CURRENT.md |
+| 7 | **Copy** — “Open to Companionship” remains unchanged | §5 |
+| 8 | Discovery remains calm, pet-profile-first, supply-first internal, **no swipe / card deck / browse-Paw-browse loop** | §2, §6, §10 |
 
 ### Rev 3 amendments (Founder principles — 28 Aug 2026)
 
@@ -95,7 +110,9 @@ As a responsible pet parent, I want to discover whether suitable mating opportun
 | Waiting | **Exploring** | Opted in, zero opportunities | Calm state — no suitable opportunity yet for [Pet Name]; not broken matching |
 | Evaluation | **Understanding** | ≥1 opportunity | Orient around [Pet Name] → explore opportunities → open full profile |
 | Interest | **Expressing interest** | After evaluation | **Paw** — genuine interest after understanding; no dismiss/hide loop |
-| Visibility | **Interest in [Pet Name]** | Interest recorded | Other owner sees context on About tab; post-interest chat/consent **undecided** |
+| Visibility | **Interest in [Pet Name]** | Interest recorded | Other owner sees **who** Pawed (transparent); may open full requesting pet profile before deciding |
+| Reciprocal | **Informed consent** | Receiver decides | **Paw back** (mutual) **or** calm no-response — never harsh reject UI |
+| Introduction | **Introduction chat** | After **mutual Paw** only | Mating-introduction channel between the two pet parents — **not** open DMs |
 
 ### 2.5 Thoughtful journey (Founder — required sequence)
 
@@ -330,14 +347,54 @@ Do not reuse the purple heart for mating interest.
 - **List row:** No Paw control — exploration rows navigate to profile only.  
 - **Rationale (rev 3):** Prevents browse → Paw → browse shallow loop; reinforces understand → evaluate → express interest.
 
-### 7.5 Receiver visibility (Beta minimum)
+### 7.5 Receiver visibility — transparent Paw (rev 4 — binding)
 
 When pet B’s owner has opted in, and pet A (active pet) Paws B:
 
-- B’s owner can see that **A expressed interest** toward B — in a calm **Interest in [Pet Name]** subsection on the owner **About** tab (§9.4).  
-- Receiver sees: interested pet’s name, photo, mating description, link to profile.  
-- **No** chat, no phone reveal, no automatic “connection” celebration in Beta.  
-- Post-interest consent model remains contract-undecided; Beta validates interest signalling only.
+- The Paw is **transparent, not hidden**. B’s owner sees **who** Pawed B.  
+- Surface: calm **Interest in [Pet Name]** on the owner **About** tab (§9.4) — not discovery-screen inbox.  
+- Receiver sees: requesting pet’s name, photo, mating description, and can open the requesting pet’s **full profile** to evaluate before deciding.  
+- **No** automatic “match” celebration, no phone reveal, no forced response.  
+- **No** harsh reject / decline / “pass” button as primary UX.
+
+### 7.6 Reciprocal consent — Paw back or calm silence (rev 4 — binding)
+
+After seeing who Pawed and reviewing the full profile, the requested owner may:
+
+1. **Paw back** — informed reciprocal consent (same Paw semantics, on the requesting pet’s profile after understanding).  
+2. **Simply not respond** — calm no-response pattern. Interest may remain quietly visible or age without urgency; **do not** invent a loud rejection, “declined,” or ghosting-shame UI.
+
+**Mutual Paw** = both directions of interest exist for the pet pair (A→B and B→A). Only then unlock introduction chat (§7.7).
+
+Un-Paw remains allowed; if mutual state breaks, chat access must revoke or freeze per CTO architecture (defense in depth).
+
+### 7.7 Introduction chat (rev 4 — binding)
+
+**Unlock:** Mutual Paw only.
+
+**Scope:** A **mating-introduction channel** between the two pet parents for that consented pet pair — **only**.  
+**Not authorized:** general open DMs, meetup group chat as mating chat, broadcast messaging, or chat with non-mutual pairs.
+
+**Phase-1 chat safety (Founder):**
+
+- Guidance + existing **report/block** wiring — **no AI message scanning**  
+- At chat open, show a **Pawple-voice disclaimer** stating, in calm compressed language:  
+  - Sharing personal details (address, phone, exact meeting spot) is at users’ discretion  
+  - Pawple encourages **public, pet-friendly** first meetups  
+  - Pawple is **not responsible** for chat exchanges  
+- Do not overload with legal essays; keep Pawple calm and honest
+
+**Copy tone:** Introduction, not dating inbox. No “It’s a Match!” fireworks. Prefer quiet unlock: e.g. `Introduction` / `With [Pet Name]’s parent`.
+
+### 7.8 Legal honesty (rev 4 — required before ship)
+
+Honesty & Safety legal copy currently states **no DMs**. Mating introduction chat **must** be reflected in:
+
+- Terms of Service  
+- Privacy Policy  
+- Community Guidelines v1  
+
+Scope the language tightly: consent-gated introduction after mutual Paw; not open messaging. Full legal safety — no compromise. Coordinate with legal ticket in the Mating wave.
 
 ---
 
@@ -459,7 +516,11 @@ Do **not** implement in Beta discovery UX:
 - Dismiss / pass / hide candidate forever  
 - Fabricated candidates or implied hidden supply  
 - Match counts or “X likes you” engagement patterns  
-- Chat or DM as part of discovery (undecided contract item)  
+- Chat or open DM **inside discovery** or without mutual Paw  
+- General-purpose DMs / open messaging (introduction chat after mutual Paw is authorized — §7.7)  
+- Harsh reject / decline / pass UI for incoming Paws (use calm no-response)  
+- Hidden / non-transparent Paw (receiver must see who Pawed)  
+- AI message scanning / automated chat moderation  
 - Human names on discovery rows  
 - Double paw emojis or loud emoji decoration  
 - Paw on list rows (Beta)  
@@ -469,6 +530,7 @@ Do **not** implement in Beta discovery UX:
 - Mating description on exploration list rows  
 - Hero-adjacent Paw (quick-like placement)  
 - Browse → Paw → browse as optimised primary loop  
+- “It’s a Match!” / fireworks / match-economy celebration  
 
 ---
 
@@ -492,12 +554,15 @@ These are **constraints** for engineering; schema and API design are E3/E4 deliv
 1. **Opt-in flag:** Migrate from `is_looking_for_companion` to mating-specific column or rename with migration — single canonical opt-in.  
 2. **Mating description:** Persist on `pets` (or approved normalized field) — max length aligned with §5.2.B.  
 3. **Radius preference:** User/profile-level field; used by eligibility query only — not meetup radius.  
-4. **Interest records:** Separate table — viewer pet, candidate pet, timestamps; unique constraint per pair direction; RLS owner-scoped.  
+4. **Interest records:** Separate table — viewer pet, candidate pet, timestamps; unique constraint per pair direction; RLS owner-scoped; **transparent** to the requested pet’s owner.  
 5. **Eligibility query:** Server-side (E4) — breed, sex, opt-in, radius; no client-side-only filtering for security.  
 6. **Paw does not hide:** No “dismissed” or “hidden_candidates” table in Beta.  
-7. **Location:** Use contract location rules — approximate, honest distance; no fabrication.  
-8. **Active pet:** All discovery queries keyed to active pet id + owner auth.  
-9. **Feed visibility:** Moment visibility rules for opted-in pets may remain; mating discovery is separate from feed companion flag semantics after migration.
+7. **Mutual Paw detection:** Server-authoritative when both directions exist; unlocks introduction chat only then.  
+8. **Introduction chat:** Consent-gated channel tied to the mutual pet pair; revoke/freeze if mutual Paw breaks; report/block wiring; no AI scanning in Phase 1.  
+9. **Location:** Use contract location rules — approximate, honest distance; no fabrication.  
+10. **Active pet:** All discovery queries keyed to active pet id + owner auth.  
+11. **Feed visibility:** Companion flag remains display-only; must not gate mating visibility (CURRENT (G)).  
+12. **Age:** Mating remains **18+** account holders only (Phase 1 India).
 
 ---
 
@@ -510,26 +575,32 @@ Design/UX + Engineering can mark discovery complete when:
 - [ ] Discovery: orientation panel + To explore list + profile evaluation — no swipe stack  
 - [ ] Eligibility matches contract only — no extra filters in UI  
 - [ ] Paw on profile only, below evaluation context — distinct from moment heart; no list-row Paw; no permanent hide  
-- [ ] Receiver sees **Interest in [Pet Name]** on About tab only — no discovery-screen inbox  
+- [ ] Receiver sees **Interest in [Pet Name]** on About tab only — transparent who Pawed; full profile openable before deciding  
+- [ ] Reciprocal: Paw back **or** calm no-response — no harsh reject UI  
+- [ ] Mutual Paw unlocks **introduction chat only** — not open DMs; disclaimer at open; report/block available  
+- [ ] Legal copy reflects scoped introduction chat (Terms / Privacy / Guidelines)  
 - [ ] Discovery screen: orient + explore + scarcity only — no inbound interest or dual-tab layout  
 - [ ] Zero opportunities → honest exploration empty state — not supply-building or empty deck  
 - [ ] Not opted in → supply prompt — not fake candidates  
 - [ ] No new bottom tab; progressive disclosure entry points only  
 - [ ] No fabricated distance or candidates in production  
 - [ ] Legacy “companion” user strings removed from mating surfaces  
+- [ ] “Open to Companionship” string unchanged where it appears as Founder-locked copy  
 
 ---
 
-## 13. Out of scope (Beta)
+## 13. Out of scope (this Mating wave)
 
-Per Product Contract — intentionally undecided or deferred:
+Deferred or frozen unless Founder expands CURRENT.md:
 
-- Post-interest consent model (mutual Paw required? acceptance flow?)  
-- Chat, messaging, or contact exchange  
-- Push notifications for new candidates  
-- Advanced matching criteria beyond contract  
+- General open DMs / non-mating chat  
+- Push notifications for new interest or chat  
+- AI message scanning / automated moderation  
+- Advanced matching criteria beyond breed / sex / user-selected distance  
 - Multi-pet simultaneous discovery UI  
 - Breeder verification, health document upload, or marketplace mechanics  
+- Harsh reject / pass UI for incoming Paws  
+- Swipe decks, match economy, compatibility scores  
 
 ---
 
@@ -541,16 +612,25 @@ Per Product Contract — intentionally undecided or deferred:
 | 2 | CEO | Assessment — `PAWPLE_MATING_DISCOVERY_CEO_ASSESSMENT.md` | Done |
 | 3 | CTO | Rev 2 amendments merged | Done |
 | 4 | CEO | Founder principles reassessment — rev 3 proposed | Done |
-| 5 | Founder | Sign-off on rev 3 | **Pending** |
-| 6 | Engineering | E3 + E4 after Founder sign-off; E5 after foundations | Blocked |
+| 5 | Founder | Sign-off **with amendments** (transparent Paw, reciprocal consent, introduction chat) | **Done — 30 Aug 2026** |
+| 6 | CEO | Rev 4 amendments recorded in this document | **Done** |
+| 7 | QA | Pre-implementation security/privacy/safety recommendations | Ticketed |
+| 8 | CTO | Architecture: reciprocal-Paw state, consent-gated chat, report/block | Ticketed |
+| 9 | Frontend | Legal copy update for introduction chat | Ticketed |
+| 10 | Eng | E3/E4/E5 + chat after gates 7–8 | Blocked on CTO + QA pre-recs |
+| 11 | QA | Wave SIGN-OFF / VETO | Final gate |
 
-**On Founder approval:** Unlock E3/E3b/E4 supply + eligibility, then E5/E6 discovery UI.
+**On Founder approval (recorded):** Unlock sequenced Mating wave per CURRENT.md. **No commits until Founder decides.**
 
 ---
 
-## 16. Review history (28 Aug 2026)
+## 16. Review history
 
-### CTO Founder review report
+### Rev 4 (30 Aug 2026) — Founder Mating System authorization
+
+Source: PAW-7 comment `00d919c3`. Supersedes mating freeze. Core flow: calm discovery → transparent Paw → full-profile evaluation by receiver → Paw back or calm silence → mutual Paw unlocks introduction chat (scoped, not open DMs) + Phase-1 safety disclaimer + report/block. Legal must stay honest. “Open to Companionship” unchanged.
+
+### CTO Founder review report (28 Aug 2026)
 
 Posted on PAW-18 — end-to-end experience, mental model, dating-app drift watchpoints.
 
@@ -562,7 +642,7 @@ See `docs/PAWPLE_MATING_DISCOVERY_CEO_ASSESSMENT.md`. Directionally approved wit
 2. **Interested on About tab only** (not on discovery screen)  
 3. **Discovery screen:** eligible list + scarcity only — no browse/inbox dual layout  
 
-### Rev 3 end-to-end experience (proposed)
+### Rev 3 end-to-end experience
 
 1. **Mating intent:** About → **Mating** — opt-in, About mating, Distance, **For [Pet Name]** link, **Interest in [Pet Name]** subsection.  
 2. **Discovery:** **For [Pet Name]** — orientation panel (active pet) + **To explore** list or scarcity only.  
@@ -570,21 +650,28 @@ See `docs/PAWPLE_MATING_DISCOVERY_CEO_ASSESSMENT.md`. Directionally approved wit
 4. **Interest:** Paw below evaluation context on profile — sage paw, not purple heart.  
 5. **Receiver:** Incoming interest in About **Interest in [Pet Name]** — not on discovery screen.
 
-### Key surfaces (rev 3)
+### Rev 4 end-to-end experience (additive)
+
+6. **Transparent evaluation:** Receiver opens requesting pet’s full profile before deciding.  
+7. **Reciprocal:** Paw back (mutual) or calm no-response.  
+8. **Introduction chat:** Unlocks only after mutual Paw; disclaimer + report/block; not open DMs.  
+9. **Legal:** Terms / Privacy / Guidelines updated for scoped introduction chat.
+
+### Key surfaces (rev 4)
 
 | Surface | Role |
 |---------|------|
 | Pet About → Mating | Mating intent + Interest in [Pet Name] (receiver) |
 | For [Pet Name] | Orient (active pet) + To explore or scarcity |
 | Foreign pet profile | Understanding + Paw (post-evaluation placement) |
+| Introduction chat | Mutual-Paw-only channel between pet parents |
 | Edit Pet | Mating intent parity |
-
-**Founder sign-off on rev 3 pending** — E3/E4/E5 remain blocked until recorded on PAW-18.
 
 ---
 
 ## 15. Related documents
 
+- `docs/CURRENT.md` — Mating wave Founder authorization  
 - `docs/PAW2_MATING_PRODUCT_PRINCIPLE.md`  
 - `docs/PAWPLE_BETA_ARCHITECTURE_PRODUCT_CONTRACT.md` § Pet mating/matching  
 - `docs/PAWPLE_BETA_MVP_EXECUTION_PLAN.md` — Workstream E  

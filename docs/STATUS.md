@@ -5,74 +5,61 @@ It does NOT supersede Founder authorization in CURRENT.md.
 
 ## Current State
 
-**Wave:** Honesty & Safety — **QA SIGN-OFF (PAW-49)** — complete pending Founder commit decision  
-**Prior waves:** Correctness (PAW-34 SIGN-OFF) · Fast Lane restore (PAW-38 SIGN-OFF) — closed  
-**Commits:** **hold** until Founder decides  
-**Comprehensive app audit:** **COMPLETE** — `docs/PAWPLE_COMPREHENSIVE_AUDIT_CEO_REPORT.md`  
-**Authority:** `docs/CURRENT.md` (Honesty & Safety wave) + Founder Decision Package v3 + Age Unblock decision
+**Active wave:** Mating System — **QA SIGN-OFF** (PAW-69, 2026-08-31)  
+**Spec:** `docs/PAWPLE_MATING_DISCOVERY_SPEC.md` **rev 4**  
+**Prior wave:** Honesty & Safety — QA SIGN-OFF (PAW-49) · committed locally (`4406e7a`)  
+**Commits (Mating):** **hold** — awaiting Founder decision  
+**Store:** Still blocked until **PAW-52** staging smoke passes  
 
-## In Progress
+**Parallel advisory:** PAW-70 (Legal & Compliance Counsel) — India teen accounts / DPDP research — **in_progress** · Phase 1 remains **18+**
 
-| Track | Status |
-|-------|--------|
-| Honesty & Safety wave | **COMPLETE** — PAW-41..51 done; PAW-49 **SIGN-OFF** |
-| Age (C) | **18+ only** Phase 1 India — PAW-48 done |
-| Tiered age research (future) | **PAW-51 done** — research only; no implementation authorized |
-| Correctness wave / Fast Lane | Closed (not reopened) |
+## Mating wave — final sequencing
 
-## Honesty & Safety wave (authorized scope)
+| Order | Issue | Work | Owner | Status |
+|-------|-------|------|--------|--------|
+| 0 | — | Spec rev 4 | CEO | **done** |
+| 1 | PAW-57 | Pre-impl security/privacy/safety recommendations | QA | **done** |
+| 1 | PAW-58 | Architecture | CTO | **done** |
+| 2 | PAW-59 | Legal copy (introduction chat) | Frontend | **done** |
+| 3 | PAW-60 | Backend migration + RLS | Backend | **done** |
+| 3 | PAW-61 | Frontend discovery/Paw/chat | Frontend | **done** |
+| 4 | PAW-62 | QA gate | QA | **VETO** |
+| 5 | PAW-64–66 | VETO remediation (age sync, reports, chat block) | Frontend | **done** ✓ |
+| 6 | PAW-67 | QA re-gate | QA | **VETO** (1 residual) |
+| 7 | PAW-68 | `MatingSection` inbound block wiring | Frontend | **done** ✓ |
+| 8 | PAW-69 | QA re-gate | QA | **SIGN-OFF** ✓ |
+
+**PAW-18:** done (Founder sign-off with amendments)  
+**Mating wave:** QA-closed · workspace complete · completion report `docs/MATING_SYSTEM_WAVE_COMPLETION.md` · no Founder commit yet
+
+## Advisory track (Founder-authorized 2026-08-31)
 
 | Issue | Work | Owner | Status |
 |-------|------|--------|--------|
-| PAW-41 | CTO sequencing | CTO | **done** |
-| PAW-42 | Age research (C) | QA | **done** |
-| PAW-50 | Founder age eligibility decision | Founder | **done** — 18+ |
-| PAW-43 | Frontend honesty | Frontend | **done** |
-| PAW-44 | Backend RLS + coordinates + companion visibility | Backend | **done** |
-| PAW-45 | Storage policies in migrations | Backend | **done** |
-| PAW-46 | Legal/privacy + Community Guidelines v1 (18+) | Frontend / CTO | **done** |
-| PAW-47 | Report + block | Frontend | **done** |
-| PAW-48 | **18+ age gate** | Frontend | **done** |
-| PAW-49 | QA wave gate | QA Auditor | **done — SIGN-OFF** |
-| PAW-51 | Future tiered age architecture research | CEO + QA | **done** (research only) |
+| PAW-70 | India teen accounts / DPDP / Pawple Teen blueprint | Legal & Compliance Counsel | **in_progress** |
 
-**Not authorized:** mating engineering · chat · push · phone/password · life-record · AI moderation · age-tiering implementation · commits until Founder decides  
-**PAW-7:** Honesty & Safety wave closed at QA; awaiting Founder commit decision
+Agent: **Legal & Compliance Counsel** (reports to CEO) — research & recommendation only; no implementation.
 
-## Founder Decisions
+## QA observations (non-blocking — Founder decision)
 
-- **CURRENT.md (2026-08-30):** Correctness wave (closed)
-- **Founder Decision Package v3 (2026-08-30)** — reflected in CURRENT.md (A–G)
-- **Age & Honesty Wave Unblock (2026-08-30):** Phase 1 India **18+ ONLY**; future tiered-age research only (PAW-51); wave items (1)–(6) authorized; no commits until Founder decides
-- No commits until Founder decides
-- CI reminder duty: when staging/F3/CI next authorized, remind Founder to wire `SUPABASE_SERVICE_ROLE_KEY`
+- Radius presets: UI/DB 5/10/25/50 km vs spec §5.2.C 10/25/50/100 — engineering drift  
+- Live Supabase migration + RLS smoke not run in QA environment  
+- No mating-specific automated tests  
+- Interim `age_attested_adult` sync not store-grade KYC (PAW-53 backlog)
 
-## Deferred / Frozen
+## Honesty residuals (backlog)
 
-- Mating E3/E4/E5 — PAW-18
-- "Open to Companionship" string — unchanged
-- Public pet-profile life-record — after Honesty & Safety wave
-- Age-tiering implementation — after PAW-51 research + Founder authorization
-- Chat / push / phone-password auth / AI moderation
-- "Happening now" Feed visibility
-- Paw-T00y — leave frozen unless required for authorized item
+| Issue | Purpose |
+|-------|---------|
+| PAW-52 | Staging smoke (blocks store) |
+| PAW-53 | Server-side age attestation hardening (pre-store) |
+| PAW-54 | Cleanup dead locationUtils mocks |
 
-## Recommendations — Founder Decision Required
+## Founder Decisions pending
 
-1. **Commit decision** for Honesty & Safety wave (QA SIGN-OFF received) — question open on PAW-7
-2. Review **PAW-51** tiered-age research (`tiered-age-architecture-research` on PAW-51) — future phase only; Phase 1 stays 18+
-3. Apply Honesty migrations to staging + run `test:rls` before prod (QA residual)
-4. Life-record wave after this P0 wave
-5. PAW-18 mating sign-off when ready
-6. Age-tiering implementation — only after Founder CURRENT.md auth following PAW-51
-
-## Last QA Sign-off
-
-**Correctness wave:** SIGN-OFF — PAW-34  
-**Fast Lane restore:** SIGN-OFF — PAW-38  
-**Comprehensive audit:** audit-task complete (PAW-39); not product SIGN-OFF  
-**Honesty & Safety wave:** **SIGN-OFF — PAW-49** (2026-08-30). Blockers: none. Residual: live RLS not run in QA env; age gate is device-local AsyncStorage (not server-attested); storage public SELECT residual; dead mock helpers in locationUtils remain unused.
+- **Mating wave commit** — QA SIGN-OFF (PAW-69); hold until Founder authorizes local commit  
+- **Teen accounts / DPDP** — advisory only (PAW-70); does not change Phase 1 18+ gate  
 
 ## Last Updated
 
-2026-08-30 — Honesty & Safety wave QA SIGN-OFF (PAW-49); CEO consolidated report posted; awaiting Founder commit decision
+2026-08-31 — Mating completion report posted; PAW-7 in_review on Founder commit card
