@@ -2,6 +2,9 @@
  * Canonical in-app legal copy for Phase 1 / Beta.
  * Kept in one place so Terms, Privacy, Guidelines, and retired Legal routes stay aligned.
  * Voice: calm, short, honest about what Pawple actually does today.
+ *
+ * Mating wave (rev 4): introduction chat after mutual Paw is a scoped exception
+ * to “no open DMs” — never claim general messaging.
  */
 
 export const LEGAL_LAST_UPDATED = 'August 2026';
@@ -40,12 +43,16 @@ export const termsSections = [
     body: 'Meetups are organized by pet parents. Attendance requires an 18+ account holder. Pawple does not supervise events or guarantee safety. You are responsible for your pet and your choices. Attend thoughtfully.',
   },
   {
+    title: 'Mating introduction chat',
+    body: 'When you opt a pet into mating discovery and two pets share mutual Paw interest, Pawple may unlock a mating-introduction chat between those two pet parents only. That channel is for introduction after consent—not an open inbox or general direct messages. Sharing personal details (address, phone, exact meeting spot) is at your discretion. Pawple encourages public, pet-friendly first meetups and is not responsible for chat exchanges or offline meetings arranged through them. Report and block are available. Phase 1 does not use AI message scanning.',
+  },
+  {
     title: 'What Pawple is not',
-    body: 'Phase 1 does not include direct messages, push notifications as a product feature, phone or password accounts, marketplace, or AI moderation.',
+    body: 'Phase 1 does not include general direct messages or an open messaging inbox, push notifications as a product feature, phone or password accounts, marketplace, or AI moderation.',
   },
   {
     title: 'Safety',
-    body: 'We may remove content or restrict accounts that break these Terms or the Community Guidelines. Reports are reviewed by people on the Pawple team.',
+    body: 'We may remove content or restrict accounts that break these Terms or the Community Guidelines. Reports are reviewed by people on the Pawple team. We do not claim guaranteed safety, verified breeders, or AI-protected chats.',
   },
   {
     title: 'Ending your account',
@@ -68,7 +75,7 @@ export const privacySections = [
   },
   {
     title: 'What we collect',
-    body: 'Account: email and name from Apple or Google sign-in, plus the profile details you add.\nPets: name, breed, age, photos, and other details you choose to share.\nContent: Moments, captions, journals, meetup posts you create or join.\nApproximate location: a coarse area you control for discovery and Meetups—not exact GPS shared with other users.\nDevice and usage: basic technical data needed to run and improve the app (for example crash and session signals).',
+    body: 'Account: email and name from Apple or Google sign-in, plus the profile details you add.\nPets: name, breed, age, photos, and other details you choose to share.\nContent: Moments, captions, journals, meetup posts you create or join.\nMating: opt-in and interest (Paw) records when you use mating discovery, plus messages you send in a consent-gated mating-introduction chat after mutual Paw.\nApproximate location: a coarse area you control for discovery and Meetups—not exact GPS shared with other users.\nDevice and usage: basic technical data needed to run and improve the app (for example crash and session signals).',
   },
   {
     title: 'What we do not collect for sign-in',
@@ -76,11 +83,11 @@ export const privacySections = [
   },
   {
     title: 'How we use information',
-    body: 'To run your account and pet profiles, show Moments and Meetups, support invite-only access, power mating discovery when you opt a pet in, keep the service secure, and meet legal duties.',
+    body: 'To run your account and pet profiles, show Moments and Meetups, support invite-only access, power mating discovery when you opt a pet in, unlock and operate consent-gated introduction chat after mutual Paw, keep the service secure, and meet legal duties.',
   },
   {
     title: 'What we do not do',
-    body: 'We do not sell your personal data. Phase 1 has no direct messages and does not offer push notifications as a product feature. We do not use AI moderation.',
+    body: 'We do not sell your personal data. Phase 1 does not offer general direct messages or an open inbox, and does not offer push notifications as a product feature. We do not use AI moderation or AI message scanning.',
   },
   {
     title: 'Location',
@@ -88,7 +95,7 @@ export const privacySections = [
   },
   {
     title: 'Sharing',
-    body: 'Other members see what you place on a pet’s public profile and content you share in the community. We use trusted service providers (hosting, auth, storage) only to operate Pawple. We may disclose information when the law requires it.',
+    body: 'Other members see what you place on a pet’s public profile and content you share in the community. Mating-introduction chat messages are visible only to the two pet parents in that consented channel (and to Pawple when needed for safety review or legal duty). We use trusted service providers (hosting, auth, storage) only to operate Pawple. We may disclose information when the law requires it.',
   },
   {
     title: 'Retention and deletion',
@@ -100,7 +107,7 @@ export const privacySections = [
   },
   {
     title: 'Your choices',
-    body: 'Edit profile and pet details anytime. Adjust location preferences. Export or delete your account from Settings.',
+    body: 'Edit profile and pet details anytime. Adjust location preferences. Opt pets out of mating discovery. Export or delete your account from Settings.',
   },
   {
     title: 'Age and minors',
@@ -139,12 +146,16 @@ export const guidelinesSections = [
     body: 'Meetup attendance requires an 18+ account holder. Be considerate at gatherings. Supervise your pet. Leave places as you found them. Pawple does not supervise Meetups.',
   },
   {
+    title: 'Mating introduction chat',
+    body: 'After mutual Paw, Pawple may unlock a mating-introduction chat between the two pet parents only—not general messaging. Keep it respectful and pet-centric. Do not harass, solicit, or pressure. Sharing personal details is your choice; prefer public, pet-friendly first meetups. Pawple is not responsible for chat exchanges or offline meetings. Use report and block if something feels wrong.',
+  },
+  {
     title: 'How we enforce (Phase 1)',
-    body: 'Safety is report-driven. Reports are reviewed by people on the Pawple team. There is a clear path to appeal. We do not claim AI moderation.',
+    body: 'Safety is report-driven. Reports are reviewed by people on the Pawple team. There is a clear path to appeal. We do not claim AI moderation or AI message scanning.',
   },
   {
     title: 'Reports',
-    body: 'Reports are filed for the pets involved and flag the human account for review. Mating session reports come later.',
+    body: 'Reports are filed for the pets involved and flag the human account for review. You can report Moments, Meetups, mating interest, and introduction chat.',
   },
   {
     title: 'Contact',

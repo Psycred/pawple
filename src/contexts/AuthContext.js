@@ -3,6 +3,7 @@ import * as Linking from 'expo-linking';
 import { supabase } from '../config/supabase';
 import { createSessionFromUrl, isAuthCallbackUrl, signInWithOAuthProvider } from '../lib/oauth';
 import { getPendingInvite } from '../lib/onboardingInvite';
+import { syncAgeAttestationToProfile } from '../lib/ageAttestationSync';
 
 const AuthContext = createContext();
 
@@ -100,6 +101,7 @@ export function AuthProvider({ children }) {
       }
       setProfileLoading(true);
       try {
+        await syncAgeAttestationToProfile(user.id);
         const {
           hasProfile: nextHasProfile,
           hasCompletedOnboarding: nextHasCompletedOnboarding,
@@ -140,6 +142,7 @@ export function AuthProvider({ children }) {
     }
     setProfileLoading(true);
     try {
+      await syncAgeAttestationToProfile(user.id);
       const result = await checkUserProfile(user.id);
       setHasProfile(result.hasProfile);
       setHasCompletedOnboarding(result.hasCompletedOnboarding);

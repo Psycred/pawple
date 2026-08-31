@@ -1,7 +1,7 @@
 /**
- * Phase-1 content reports (Founder F / PAW-47).
+ * Phase-1 content reports (Founder F / PAW-47 + Mating wave PAW-60/61).
  * Filed in the name of a reporter pet; flags the human account (reported_user_id).
- * Mating-session targets are deferred — schema only allows moment | meetup.
+ * Targets: moment | meetup | mating_interest | introduction_chat (Backend contract).
  */
 
 import { supabase } from '../config/supabase';
@@ -20,12 +20,16 @@ export const REPORT_REASONS = [
 export const REPORT_TARGET_TYPES = Object.freeze({
   moment: 'moment',
   meetup: 'meetup',
+  mating_interest: 'mating_interest',
+  introduction_chat: 'introduction_chat',
 });
+
+const ALLOWED_TARGET_TYPES = new Set(Object.values(REPORT_TARGET_TYPES));
 
 /**
  * @param {{
  *   reporterPetId: string,
- *   targetType: 'moment' | 'meetup',
+ *   targetType: 'moment' | 'meetup' | 'mating_interest' | 'introduction_chat',
  *   targetId: string,
  *   reportedUserId: string,
  *   reason: string,
@@ -50,7 +54,7 @@ export async function createReport(input) {
   if (!reporterPetId) {
     throw new Error('Choose a pet to report as.');
   }
-  if (targetType !== 'moment' && targetType !== 'meetup') {
+  if (!ALLOWED_TARGET_TYPES.has(targetType)) {
     throw new Error('Unsupported report target.');
   }
   if (!targetId) {

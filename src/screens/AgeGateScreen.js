@@ -17,6 +17,7 @@ import {
   MINIMUM_ACCOUNT_AGE,
   recordAgeGatePass,
 } from '../lib/ageGate';
+import { syncAgeAttestationAfterLocalPass } from '../lib/ageAttestationSync';
 
 function formatBirthDate(date) {
   try {
@@ -60,6 +61,7 @@ export default function AgeGateScreen({ onPassed }) {
     setSubmitting(true);
     try {
       await recordAgeGatePass(birthDate);
+      await syncAgeAttestationAfterLocalPass();
       setDenied(false);
       // Parent remounts navigator with Auth / signed-in route once eligible.
       if (typeof onPassed === 'function') {

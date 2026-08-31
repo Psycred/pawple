@@ -53,8 +53,8 @@ export async function hasPassedAgeGate() {
 }
 
 /**
- * Persist a successful gate. Stores birth date (ISO date) for auditability
- * on-device; not synced to Supabase in Phase 1.
+ * Persist a successful gate. Stores birth date (ISO date) for auditability on-device.
+ * Server attestation is synced separately via ageAttestationSync when authenticated.
  */
 export async function recordAgeGatePass(birthDate) {
   if (!isEligibleBirthDate(birthDate)) {

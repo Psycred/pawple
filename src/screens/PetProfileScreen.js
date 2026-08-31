@@ -14,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import AppHeader from '../components/AppHeader';
 import MomentCard from '../components/MomentCard';
+import MatingSection from '../components/MatingSection';
 import PetCompanionCommunitySection from '../components/PetCompanionCommunitySection';
 import PetProfileMeetupsSection from '../components/PetProfileMeetupsSection';
 import { theme } from '../config/theme';
@@ -22,7 +23,6 @@ import { useActivePet } from '../contexts/ActivePetContext';
 import { fetchMomentsForPet, formatMomentDisplayDate } from '../services/moments';
 import {
   fetchPetProfile,
-  updatePetCompanionDiscovery,
 } from '../services/pets';
 import { getPetTypeDisplayLabel } from '../utils/petDisplay';
 
@@ -137,7 +137,7 @@ function PetProfileHero({ pet, ownerCity, lookingForCompanion, petTraits = [] })
       {lookingForCompanion ? (
         <View style={styles.companionBadge}>
           <Text style={styles.companionBadgeText} allowFontScaling>
-            🟢 Open to Companionship
+            Open to Companionship
           </Text>
         </View>
       ) : null}
@@ -219,7 +219,7 @@ export default function PetProfileScreen() {
   const [participatedCount, setParticipatedCount] = useState(0);
   const [isOwner, setIsOwner] = useState(true);
   const [lookingForCompanion, setLookingForCompanion] = useState(false);
-  const [companionSaving, setCompanionSaving] = useState(false);
+  const [matingDescription, setMatingDescription] = useState('');
   const [loading, setLoading] = useState(true);
   const [profileHidden, setProfileHidden] = useState(false);
   const [petTraits, setPetTraits] = useState([]);
@@ -252,6 +252,7 @@ export default function PetProfileScreen() {
       setParticipatedCount(profileData.participated_count ?? 0);
       setIsOwner(Boolean(profileData.isOwner));
       setLookingForCompanion(Boolean(profileData.pet?.is_looking_for_companion));
+      setMatingDescription(profileData.pet?.mating_description ?? '');
 
       const petMoments = await fetchMomentsForPet(activePetId);
       setPosts(petMoments);
@@ -266,26 +267,6 @@ export default function PetProfileScreen() {
     useCallback(() => {
       loadProfile();
     }, [loadProfile]),
-  );
-
-  const handleCompanionToggle = useCallback(
-    async (nextValue) => {
-      if (!activePetId || !isOwner || companionSaving) {
-        return;
-      }
-      const previous = lookingForCompanion;
-      setLookingForCompanion(nextValue);
-      setCompanionSaving(true);
-      try {
-        await updatePetCompanionDiscovery(activePetId, nextValue);
-      } catch (error) {
-        console.error('[PetProfile] companion toggle failed', error);
-        setLookingForCompanion(previous);
-      } finally {
-        setCompanionSaving(false);
-      }
-    },
-    [activePetId, companionSaving, isOwner, lookingForCompanion],
   );
 
   const details = useMemo(() => {
@@ -402,13 +383,27 @@ export default function PetProfileScreen() {
         contentContainerStyle={styles.aboutContent}
         showsVerticalScrollIndicator={false}
       >
-        <PetCompanionCommunitySection
-          showToggle={isOwner}
-          showCommunity={false}
-          lookingForCompanion={lookingForCompanion}
-          onToggle={handleCompanionToggle}
-          toggleDisabled={companionSaving}
-        />
+        {isOwner && activePetId ? (
+          <MatingSection
+            petId={activePetId}
+            petName={pet?.name}
+            lookingForCompanion={lookingForCompanion}
+            matingDescription={matingDescription}
+            onCompanionChange={setLookingForCompanion}
+            onDescriptionChange={setMatingDescription}
+          />
+        ) : null}
+
+        {!isOwner && pet?.mating_description ? (
+          <View style={styles.matingReadOnly}>
+            <Text style={styles.sectionTitle} allowFontScaling>
+              About mating
+            </Text>
+            <Text style={styles.matingReadOnlyBody} allowFontScaling>
+              {pet.mating_description}
+            </Text>
+          </View>
+        ) : null}
 
         <Text style={styles.sectionTitle} allowFontScaling>
           Details
@@ -663,5 +658,14 @@ const styles = StyleSheet.create({
     fontSize: theme.fontSizes.md,
     color: theme.colors.text.muted.light,
     textAlign: 'center',
+  },
+  matingReadOnly: {
+    marginBottom: 32,
+  },
+  matingReadOnlyBody: {
+    fontFamily: theme.fonts.body,
+    fontSize: theme.fontSizes.md,
+    lineHeight: 22,
+    color: theme.colors.text.secondary.light,
   },
 });

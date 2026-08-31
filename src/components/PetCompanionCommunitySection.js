@@ -3,10 +3,11 @@ import { StyleSheet, Switch, Text, View } from 'react-native';
 import { theme } from '../config/theme';
 
 const COMPANION_HELPER =
-  'Turn this on to let other pet parents find and connect with you.';
+  'Turn this on so suitable mating opportunities can include this pet.';
 
 /**
  * Owner-only companion discovery toggle + subtle community meetup counts.
+ * Toggle copy locked to "Open to Companionship" (CURRENT.md Mating wave).
  */
 export default function PetCompanionCommunitySection({
   showToggle = false,
@@ -24,7 +25,7 @@ export default function PetCompanionCommunitySection({
         <View style={styles.companionBlock}>
           <View style={styles.companionRow}>
             <Text style={styles.companionLabel} allowFontScaling>
-              Looking for a Companion
+              Open to Companionship
             </Text>
             <Switch
               value={lookingForCompanion}
@@ -35,13 +36,10 @@ export default function PetCompanionCommunitySection({
                 true: theme.colors.brand.sage.light,
               }}
               thumbColor={theme.colors.background.card}
-              accessibilityLabel="Looking for a companion"
+              accessibilityLabel="Open to Companionship"
               accessibilityHint={COMPANION_HELPER}
             />
           </View>
-          <Text style={styles.companionHelper} allowFontScaling>
-            {COMPANION_HELPER}
-          </Text>
         </View>
       ) : null}
 
@@ -92,7 +90,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: theme.spacing.sm,
   },
   companionLabel: {
     flex: 1,
@@ -100,12 +97,6 @@ const styles = StyleSheet.create({
     fontFamily: theme.fonts.medium,
     fontSize: theme.fontSizes.md,
     color: theme.colors.text.primary.light,
-  },
-  companionHelper: {
-    fontFamily: theme.fonts.body,
-    fontSize: theme.fontSizes.sm,
-    lineHeight: Math.round(theme.fontSizes.sm * theme.lineHeights.normal),
-    color: theme.colors.text.muted.light,
   },
   sectionHeader: {
     flexDirection: 'row',

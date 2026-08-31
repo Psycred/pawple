@@ -20,11 +20,10 @@ const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 /**
- * Calm progressive report sheet for Moments and Meetups.
+ * Calm progressive report sheet for Moments, Meetups, pets, and introduction chat.
  * Reports are filed as the active (or first) pet; flags the human account.
- * Mating-session reports are deferred — note only, no mating UI.
  *
- * @param {'moment'|'meetup'} targetType
+ * @param {'moment'|'meetup'|'mating_interest'|'introduction_chat'} targetType
  * @param {{ id: string, name?: string }[]} [blockablePets] other pets on the content
  */
 export default function ReportSheet({
@@ -196,7 +195,11 @@ export default function ReportSheet({
       ? 'Thank you'
       : targetType === 'meetup'
         ? 'Report meetup'
-        : 'Report moment';
+        : targetType === 'mating_interest'
+          ? 'Report interest'
+          : targetType === 'introduction_chat'
+            ? 'Report introduction'
+            : 'Report moment';
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
@@ -246,9 +249,6 @@ export default function ReportSheet({
                 );
               })}
             </ScrollView>
-            <Text style={styles.deferredNote} allowFontScaling>
-              Mating session reports come later.
-            </Text>
           </>
         ) : null}
 

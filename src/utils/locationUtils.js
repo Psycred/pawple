@@ -1,6 +1,7 @@
 /**
- * Distance helpers for meetup cards, with mock fallbacks so distances still
- * render in development when GPS is denied/unavailable.
+ * Distance helpers for meetup cards.
+ * When viewer GPS is unavailable, distance falls back to a fixed mock user
+ * location so UI can still render — meetup coords are never fabricated.
  */
 
 // Mock "current" location for development (Cubbon Park, Bangalore).
@@ -29,53 +30,14 @@ export function getMockLocation() {
 }
 
 /**
- * Stable mock coordinates near the city center, seeded so a given meetup always
- * maps to the same spot (used when a meetup has no real coordinates).
+ * Bangalore-area mock venues for demo/seed data only.
+ * Production Feed paths must never attach these to real meetup rows.
  */
-export function getMockMeetupCoords(seed = 0) {
-  const h = hashSeed(seed);
-  const latOffset = ((h % 100) / 100 - 0.5) * 0.08; // ~±4.4 km
-  const lngOffset = (((h >> 3) % 100) / 100 - 0.5) * 0.08;
-  return {
-    latitude: MOCK_USER_LOCATION.latitude + latOffset,
-    longitude: MOCK_USER_LOCATION.longitude + lngOffset,
-  };
-}
-
-function hashSeed(seed) {
-  const str = String(seed);
-  let h = 0;
-  for (let i = 0; i < str.length; i += 1) {
-    h = (h * 31 + str.charCodeAt(i)) | 0;
-  }
-  return Math.abs(h) || 1;
-}
-
-/** Bangalore-area mock venues — offset from mock user so distance is never 0 km. */
 export const MOCK_MEETUP_VENUES = [
   { location_lat: 12.985, location_lng: 77.61 },
   { location_lat: 12.98, location_lng: 77.6 },
   { location_lat: 12.965, location_lng: 77.59 },
 ];
-
-function hasMeetupCoords(meetup) {
-  const lat = Number(meetup?.location_lat ?? meetup?.lat);
-  const lng = Number(meetup?.location_lng ?? meetup?.lng);
-  return Number.isFinite(lat) && Number.isFinite(lng);
-}
-
-/** Attach mock venue coordinates when a meetup row has none (testing / legacy rows). */
-export function enrichMeetupWithMockCoords(meetup, index = 0) {
-  if (hasMeetupCoords(meetup)) {
-    return meetup;
-  }
-  const venue = MOCK_MEETUP_VENUES[index % MOCK_MEETUP_VENUES.length];
-  return {
-    ...meetup,
-    location_lat: venue.location_lat,
-    location_lng: venue.location_lng,
-  };
-}
 
 /** Precompute distanceKm for a meetup using viewer GPS or mock user location. */
 export function computeMeetupDistanceKm(meetup, viewerLat, viewerLng) {

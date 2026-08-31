@@ -10,10 +10,10 @@ import {
 } from '../data/demoMeetupRsvp';
 
 const PET_PROFILE_SELECT =
-  'id, owner_id, name, pet_type, pet_type_custom, breed, age, gender, vaccinated, bio, photo_url, is_looking_for_companion, traits';
+  'id, owner_id, name, pet_type, pet_type_custom, breed, age, gender, vaccinated, bio, photo_url, is_looking_for_companion, mating_description, traits';
 
 const PET_DISCOVERY_SELECT =
-  'id, owner_id, name, pet_type, breed, age, gender, photo_url, is_looking_for_companion';
+  'id, owner_id, name, pet_type, breed, age, gender, photo_url, is_looking_for_companion, mating_description';
 
 function isPetOwner(pet, viewerUserId) {
   return Boolean(

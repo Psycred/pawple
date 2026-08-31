@@ -21,6 +21,7 @@ import AgeGateScreen from './src/screens/AgeGateScreen';
 import AuthScreen from './src/screens/AuthScreen';
 import InviteCodeScreen from './src/screens/InviteCodeScreen';
 import { hasPassedAgeGate } from './src/lib/ageGate';
+import { syncAgeAttestationToProfile } from './src/lib/ageAttestationSync';
 import LegalScreen from './src/screens/LegalScreen';
 import LocationSettingsScreen from './src/screens/LocationSettingsScreen';
 import ManagePetsScreen from './src/screens/ManagePetsScreen';
@@ -39,6 +40,9 @@ import MeetupDetailsScreen from './src/screens/MeetupDetailsScreen';
 import MyMeetupsScreen from './src/screens/MyMeetupsScreen';
 import PublicUserProfileScreen from './src/screens/PublicUserProfileScreen';
 import CreateMomentScreen from './src/screens/CreateMomentScreen';
+import MatingDiscoveryScreen from './src/screens/MatingDiscoveryScreen';
+import MatingIntroductionChatScreen from './src/screens/MatingIntroductionChatScreen';
+import ViewPetProfileScreen from './src/screens/ViewPetProfileScreen';
 import { AuthProvider, useAuth } from './src/contexts/AuthContext';
 import { ActivePetProvider, useActivePet } from './src/contexts/ActivePetContext';
 import { refreshProfileLocationOnAppOpen } from './src/lib/profileLocation';
@@ -124,6 +128,7 @@ function AppNavigator() {
       return;
     }
     refreshProfileLocationOnAppOpen(user.id);
+    syncAgeAttestationToProfile(user.id);
   }, [ageGatePassed, authLoading, hasCompletedOnboarding, profileLoading, user?.id]);
 
   if (ageGateLoading || authLoading || (user && profileLoading) || (user && petLoading)) {
@@ -335,6 +340,21 @@ function AppNavigator() {
         <Stack.Screen
           name="PublicUserProfileScreen"
           component={PublicUserProfileScreen}
+          options={{ headerShown: false, animation: 'slide_from_right' }}
+        />
+        <Stack.Screen
+          name="MatingDiscoveryScreen"
+          component={MatingDiscoveryScreen}
+          options={{ headerShown: false, animation: 'slide_from_right' }}
+        />
+        <Stack.Screen
+          name="ViewPetProfileScreen"
+          component={ViewPetProfileScreen}
+          options={{ headerShown: false, animation: 'slide_from_right' }}
+        />
+        <Stack.Screen
+          name="MatingIntroductionChatScreen"
+          component={MatingIntroductionChatScreen}
           options={{ headerShown: false, animation: 'slide_from_right' }}
         />
       </Stack.Navigator>
