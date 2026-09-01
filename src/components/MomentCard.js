@@ -1,5 +1,5 @@
 import { useNavigation } from '@react-navigation/native';
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useActivePet } from '../contexts/ActivePetContext';
 import { theme } from '../config/theme';
@@ -33,6 +33,10 @@ export default function MomentCard({
   const [blockPetTarget, setBlockPetTarget] = useState(null);
   const shareCardRef = useRef(null);
   const shareInProgressRef = useRef(false);
+
+  useEffect(() => {
+    setLiked(initialLiked);
+  }, [initialLiked, moment?.id]);
 
   const post = useMemo(
     () => ({

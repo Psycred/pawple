@@ -55,9 +55,8 @@
  * @property {Array<{pet_id: string, pets?: object}>} [meetup_hosts]
  * @property {Array<{pet_id: string, joined_at?: string, pets?: object}>} [meetup_participants]
  * @property {string} [hosted_by_line]
- * @property {number|null} [location_lat]
- * @property {number|null} [location_lng]
  * @property {string|null} [google_maps_link]
+ * @property {string} [city]
  * @property {number|null} [participation_limit]
  * @property {MeetupOpenTo|null} [open_to]
  * @property {string|null} [custom_breed_spec]
@@ -76,8 +75,7 @@
  * @property {string} [customBreedSpec]
  * @property {string} [googleMapsLink]
  * @property {number|null} [participationLimit]
- * @property {number|null} [locationLat]
- * @property {number|null} [locationLng]
+ * @property {string} [city] — bulletin-board locality (server-set at insert)
  */
 
 import { supabase } from '../config/supabase';
@@ -90,8 +88,11 @@ import {
   getMeetupStartTimestamp,
   isShowablePublicMeetup,
 } from '../lib/meetupPublicFilter';
+import { filterMeetupsByViewerCity } from '../utils/cityUtils';
 import { validateOptionalGoogleMapsLink } from '../utils/mapLinkValidation';
 import { formatMeetupHostedByLine } from '../utils/meetupHostDisplay';
+
+export { filterMeetupsByViewerCity };
 
 export {
   filterShowablePublicMeetups,
@@ -162,8 +163,6 @@ export function buildMeetupInsertPayload(input) {
     custom_breed_spec: customBreedSpec,
     google_maps_link: mapsLink,
     participation_limit: limitResult.value,
-    location_lat: input.locationLat ?? null,
-    location_lng: input.locationLng ?? null,
   };
 }
 
@@ -193,8 +192,6 @@ export function buildMeetupUpdatePayload(input) {
     custom_breed_spec: customBreedSpec,
     google_maps_link: mapsLink,
     participation_limit: limitResult.value,
-    location_lat: input.locationLat ?? null,
-    location_lng: input.locationLng ?? null,
   };
 }
 
@@ -437,8 +434,6 @@ export async function createMeetup(input) {
 
   const optionalColumns = [
     'participation_limit',
-    'location_lat',
-    'location_lng',
     'google_maps_link',
     'open_to',
     'custom_breed_spec',
@@ -530,8 +525,6 @@ export async function updateMeetup(meetupId, input) {
 
   const optionalColumns = [
     'participation_limit',
-    'location_lat',
-    'location_lng',
     'google_maps_link',
     'open_to',
     'custom_breed_spec',

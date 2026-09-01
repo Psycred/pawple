@@ -1,0 +1,197 @@
+---
+### 4. Conflict resolution — PAW-70 / PAW-74 / this pivot
+
+| Prior advisory | Relationship to 13+ pivot | Resolution |
+|----------------|---------------------------|------------|
+| **PAW-70** (teen blueprint) | Meetups **hard-blocked** for under-18 | Bulletin Board **contradicts** — not a subset of PAW-70 |
+| **PAW-72** (QA VETO 16+ feed) | Stricter bar than 13+ proposal | PAW-72 remains **binding child-safety floor** |
+| **PAW-74** (Phase 1/2 sequencing) | 18+ social-first; teen frozen; Option B staging | **Compatible** with city-picker UX; **incompatible** with 13+ age floor |
+| **PAW-79/80** | Legal: store-plausible only with full teen stack; QA: VETO | **Aligned on NO-GO now** |
+| **PAW-81/82** | Coarse-only requires deliberate downgrade; not teen-ready | **Prerequisite** for any future tier, not just 13+ |
+
+**CEO reconciliation:** These are **not** conflicting specialist opinions — they converge. The 13+ pivot is a **fourth strategic option** orthogonal to PAW-74's 18+ staging. Do not merge narratives: "lowered age" ≠ "staged mating verification."
+
+**Preserve from this evaluation (reusable regardless of age decision):**
+- **City picker** as canonical feed locality (no surprise GPS) — adopt in 18+ Phase 1a
+- **Honest legal copy** matching actual capture/storage
+- **Server-side age asserts** on meetup writes (PAW-53 extension)
+
+---
+
+### 5. Prerequisites before ANY Founder authorization to implement teen / 13+ surfaces
+
+Ordered. **All required** before production teen users — partial implementation forbidden.
+
+| # | Prerequisite | Owner | Notes |
+|---|--------------|-------|-------|
+| P1 | **PAW-53** server-authoritative age tier + meetup/mating asserts | Backend / CTO | Meetups currently unguarded; mating uses interim client-attested flag |
+| P2 | **VPC vendor spike** (DigiLocker / Rule 10 path) | CTO + Legal | PAW-71: not drop-in OAuth |
+| P3 | **Parent supervision architecture** (guardian link, dashboard, audit trail) | CTO + Legal | Parent-initiated flow preferred (PAW-70) |
+| P4 | **Hard product blocks** — mating, Paw, intro chat, open DMs, **meetups** for under-18 | Engineering + QA | Server RLS, not UI hide |
+| P5 | **Location stack downgrade** — city-only storage; revoke client coord SELECT; no JIT GPS; no app-open refresh for teens | CTO / Engineering | ~2–3 eng-weeks (PAW-81) |
+| P6 | **Mixed-age graph policy** — attendee visibility, invite closure, adult↔teen caps | Founder + CTO | Invite-only insufficient for events |
+| P7 | **Legal copy + store age-rating honesty** | Legal | Advisory drafts in PAW-79 |
+| P8 | **QA child-safety SIGN-OFF** on defined teen surface | QA Auditor | Not this evaluation memo |
+| P9 | **Staging smoke (PAW-52)** | Founder / CTO | Store submission still blocked |
+
+**For 18+ Phase 1a only (no teen):** P1 + city-picker UX + PAW-52 remain critical; P2–P8 teen-specific gates **not required**.
+
+---
+
+### 6. Recommended implementation roadmap (Founder decision required)
+
+#### Track 1 — **Recommended: 18+ Phase 1 India launch** (authorized posture)
+
+```
+Now ──► PAW-53 age attestation + meetup asserts
+     ──► PAW-52 staging smoke (store blocker)
+     ──► City-picker canonical locality (reuse onboarding pattern; optional GPS 18+ only)
+     ──► Phase 1a: journal + feed + adult city meetups (single 18+ attestation tier)
+     ──► Phase 1b: mating / Paw / intro chat (adult step-up — NOT teen VPC)
+     ──► Store submission when smoke green + Founder authorizes push
+```
+
+**Founder decision needed:** Option A (full pillars at launch) vs Option B (1a→1b staging) — both remain **18+**.
+
+#### Track 2 — **13+ / teen program** (NOT authorized; park)
+
+```
+IF Founder re-opens teen track later:
+  VPC spike → 16+ supervised private journal pilot (PAW-72 path)
+  → prove parent dashboard + server blocks
+  → reassess §9(2) with counsel
+  → NEVER 13+ public meetup RSVP without resolving QA BB1–BB6
+```
+
+**CEO position:** Do not start Track 2 until Track 1 integrity (PAW-53, PAW-52) is green. Parallel teen engineering before adult attestation hardens is mis-sequenced.
+
+---
+
+### 7. Specialist alignment matrix
+
+| Specialist | 13+ Bulletin Board now | Stay 18+ | Reusable asset |
+|------------|------------------------|----------|----------------|
+| Legal (PAW-79) | No — VPC + §9(2) meetup risk | Yes | Store-plausible teen stack design exists for future |
+| QA (PAW-80) | **VETO** | Yes | BB1–BB6 blocker list |
+| CTO (PAW-81) | No — coord stack not city-only | Yes | 2–3 week downgrade sizing; city-feed architecture |
+| Product (PAW-83) | No — growth-killing | Yes — prefer 18+ 1a→1b | City picker UX |
+
+---
+
+### 8. CEO recommendation to Founder
+
+**Decision requested:**
+
+1. **Confirm NO-GO** on 13+ Phase 1a Bulletin Board pivot for India Phase 1 launch.
+2. **Confirm 18+ binding** in CURRENT.md until explicit re-authorization.
+3. **Choose within 18+:** Option A (full launch) vs Option B (1a social/meetups → 1b mating step-up) per PAW-74.
+4. **Authorize city-picker locality work** as part of 18+ Phase 1a (not teen-specific).
+5. **Prioritize PAW-53 + PAW-52** before any age-tier or store work.
+
+**I would not build teen surfaces until adult integrity is proven.** The 13+ pivot is strategically interesting as a **future** market expansion — it is the wrong **launch** shortcut.
+
+---
+
+**PAW-84 disposition:** Synthesis complete. Closing PAW-84. Awaiting Founder decision on Track 1 Option A vs B.
+
+*Advisory synthesis only. Founder & Managing Director retains final authority.*
+
+---
+## CEO Synthesis — 13+ Coarse-Location Pivot Go/No-Go (PAW-84)
+
+**Authority:** Founder directive `5d73463f` on PAW-7 · Inputs: PAW-79/80 (Legal + QA) · PAW-81/82 (CTO + QA) · PAW-83 (Product Strategist) · PAW-70/72/74 prior advisories  
+**Phase constraint:** `docs/CURRENT.md` remains **18+ only** — this memo does **not** authorize scope change.  
+**Compliance:** No implementation · no commits · no CURRENT.md edits.
+
+---
+
+### Executive verdict
+
+| Question | CEO recommendation |
+|----------|-------------------|
+| **Go / No-Go on 13+ Phase 1a Bulletin Board pivot now?** | **NO-GO** |
+| **Stay 18+ for Phase 1 India launch?** | **YES** — unanimous across Legal, QA, CTO, Product |
+| **Is coarse city location a compliance shortcut for teens?** | **NO** — necessary but not sufficient |
+| **What should Founder authorize instead?** | **18+ Phase 1a** per PAW-74 Option B (social + city meetups first; mating step-up in 1b) |
+
+**I disagree with pursuing the 13+ pivot as a launch friction shortcut.** It removes one gate (18+ DOB) and replaces it with a larger compliance program (VPC, parent supervision, mixed-age graph controls, location-stack rewrite, store child-safety posture) that specialists estimate at **months**, not weeks. The underlying problem the pivot tries to solve — adoption friction — is better addressed within the **authorized 18+ track**.
+
+---
+
+### 1. What matters
+
+The Founder asked whether Pawple can open **13+ Phase 1a** using a **Facebook Events / Bulletin Board** model: city-level coarse location, public group meetup RSVP, Moments/journal — **no mating**, no precise GPS.
+
+Four dimensions must all pass for a credible Go. **None pass today.**
+
+| Dimension | Verdict | Summary |
+|-----------|---------|---------|
+| **Legal / DPDP** | **Fail** | VPC (Rule 10) still required before any child DOB/pet photos — bulletin scope does not reduce §9(1). Public meetup RSVP for 13–15 carries **material §9(2)** well-being exposure. Contradicts PAW-70 meetup hard-block for minors. |
+| **Child safety (QA)** | **VETO** | Lower age floor + highest-risk surface (IRL meetups) = regression vs PAW-72. Coarse city does not neutralize venue/maps-link precision leakage or adult↔minor event co-attendance. |
+| **Technical readiness** | **Not ready** | Stack captures/stores device lat/lng at sub-city precision; coords client-readable on moments/meetups; JIT GPS on publish; app-open refresh. **~2–3 eng-weeks** minimum for honest coarse-only — and PAW-70 still requires location **off** for under-18. |
+| **UX / adoption** | **Anti-pattern** | City picker is good UX — adopt for **all ages** — but 13+ meetups add parent veto, VPC wall, empty-city churn, and identity drift toward event discovery. PAW-74 **18+ Phase 1a** delivers adoption gains without opening teen program. |
+
+---
+
+### 2. Options considered
+
+| Option | Description | CEO view |
+|--------|-------------|----------|
+| **A — Status quo** | Phase 1 **18+ only**; full pillars including mating (CURRENT.md today) | **Safe default**; highest integrity bar at signup |
+| **B — 18+ staged (PAW-74 Option B)** | **1a:** OAuth + 18+ DOB + PAW-53 + city picker + journal/feed/meetups · **1b:** mating/Paw/intro chat after adult step-up | **Recommended launch path** — lowers mating friction without teen compliance |
+| **C — 13+ Bulletin Board (evaluated)** | 13+ entry; city-only; public meetup RSVP; no mating | **NO-GO now** — different product program |
+| **D — Deferred teen track** | **16+** supervised private journal first (PAW-70/72); VPC + parent dashboard; **no** public meetup RSVP | **Only credible future teen on-ramp** if Founder re-opens track |
+
+---
+
+### 3. Trade-offs (honest)
+
+**Why the 13+ pivot is tempting**
+- Removes 18+ gate at signup — feels like wider funnel
+- City picker avoids GPS permission anxiety
+- FB Events mental model is familiar in India
+- Mating correctly excluded for minors
+
+**Why it fails as Phase 1 strategy**
+- **VPC before any child data** is heavier than one adult DOB confirmation
+- **Meetups for minors** reopen the surface Legal/QA explicitly hard-blocked — coarse discovery + precise venue/maps links is a known gap
+- **Invite graph** does not vet adults; mixed-age RSVP creates offline adjacency
+- **Technical debt:** location stack, RLS, legal copy, and distance UI all assume coordinates
+- **Strategic drift:** bulletin-board event discovery competes with pet-first journal identity
+
+**What would NOT change the recommendation**
+- Coarse location alone (already evaluated — insufficient)
+- "No mating" alone (still leaves meetups + journal + photos under §9)
+
+**What WOULD change the recommendation**
+- Founder explicitly accepts teen compliance program scope, budget, and timeline
+- VPC vendor path proven (DigiLocker spike per PAW-71)
+- PAW-53 server-authoritative age tier live
+- QA sign-off on a **redesigned** teen surface that **excludes** public meetup RSVP (e.g. supervised journal-only pilot at 16+)
+- Human Indian counsel written opinion on §9(2) for any future teen event surface
+
+---
+
+---
+## Founder directive orchestrated — 13+ Coarse-Location Pivot **evaluation**
+
+Responding to `5d73463f`. **No implementation. No commits.** Phase 1 remains **18+** in CURRENT.md until you decide after synthesis.
+
+### Evaluation wave dispatched
+
+| Issue | Owner | Audit |
+|-------|--------|--------|
+| **PAW-79** | Legal (+ QA **PAW-80**) | Bulletin Board model, T&C, **App Store minors+RSVP**, **DPDP VPC for 14yo + DOB/photos** |
+| **PAW-81** | CTO (+ QA **PAW-82**) | Codebase location audit: precise vs coarse, downgrade effort, city-change without GPS |
+| **PAW-83** | Product Strategist | UX friction — 13+ city meetups + Moments |
+| **PAW-84** | CEO | **Go/No-Go synthesis** — blocked on PAW-79, PAW-81, PAW-83 |
+
+### Context carried forward
+- PAW-74 complete: rejected OAuth-only-with-zero-age-signal; adult step-up for mating separate from teen VPC
+- PAW-70/72: teen feed/mating hard blocks; QA VETO on 16+ feed pilot
+- This evaluation **may conflict** with 18+ binding — audits will surface trade-offs; synthesis will not silently authorize 13+
+
+### CEO next action
+When **PAW-79–PAW-83** close, post consolidated **Go/No-Go + roadmap** on this thread via **PAW-84**.
+---
+FOUNDER DIRECTIVE: ORCHESTRATE 13+ COARSE-LOCATION PIVOT EVALUATION. I want to open Pawple to 13+ users for Phase 1a using a 'Facebook Events / Bulletin Board' model based strictly on coarse, city-level location. CEO: Delegate the following audits, then synthesize a final joint recommendation. NO IMPLEMENTATION. NO COMMITS. 1. @LEGAL & @QA (The Bulletin Board & Compliance Audit): Evaluate the FB Events model. What modifications are needed to fit this category safely (e.g., hiding adult attendee profiles from minors, blocking adult-to-minor DMs)? What T&C disclaimers are required? CRITICAL ADDITIONS: (a) Does Apple/Google App Store policy allow minors to RSVP to public events if we use coarse location? (b) Under India DPDP Act Sec 9, if a 14yo just joins the 'Bulletin Board' (no mating, no precise GPS), do we STILL need Verifiable Parental Consent (VPC/DigiLocker) just to store their DOB and pet photos, or is standard consent sufficient? 2. @CTO & @QA (The Location Audit): Audit the codebase (LocationUtils, Info.plist, AndroidManifest, Supabase schema). Are we currently capturing precise GPS or coarse city-level location? If precise, what is the effort to downgrade to coarse-only? How do we dynamically update the feed when a user travels to a new city without triggering precise GPS permissions? 3. @PRODUCT STRATEGIST: Review the proposed UX flow (13+ city meetups + moments) and ensure it doesn't create growth-killing friction. 4. @CEO (Final Synthesis): Collect all reports, debate internally, and post a single consolidated 'Go/No-Go' recommendation and implementation roadmap for the 13+ Coarse-Location Pivot on this thread.

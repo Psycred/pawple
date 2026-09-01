@@ -130,6 +130,12 @@ Motion should feel subtle, soft, natural, emotionally invisible.
 
 **Avoid:** aggressive movement, heavy spring, flashy transitions.
 
+## Active-pet bottom-tab labels
+
+Bottom-tab labels showing a pet name use Inter, consistent with `.cursorrules`
+typography. Truncate names with an ellipsis beyond approximately 12 characters,
+and fall back to the static label when no active pet exists.
+
 ## Implementation note
 
 Prefer **theme tokens** and **semantic names** (e.g. `screenPaddingHorizontal`, `sectionGapLarge`) when adding these values to `theme.js`, so screens stay aligned with this document as the single source of truth for composition intent.

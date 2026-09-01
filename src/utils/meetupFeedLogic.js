@@ -1,51 +1,45 @@
 /**
  * Meetup carousel + main-feed sorting for FeedScreen.
  *
- * Carousel: user's meetup (if any) + 2 nearest others.
- * Vertical feed: nine Moments followed by the next-nearest Meetup.
+ * Phase 1a: city-scoped bulletin board — sort by soonest start, not km distance.
+ * Carousel: user's meetup (if any) + next soonest others in the same city.
+ * Vertical feed: nine Moments followed by the next-soonest Meetup.
  */
 
-export const MEETUP_FEED_RADIUS_KM = 50;
+import { getMeetupStartTimestamp } from '../lib/meetupPublicFilter';
+
 export const MEETUP_RECENT_WINDOW = 3;
 export const MEETUP_CAROUSEL_SIZE = 3;
 export const DEFAULT_MEETUP_INJECTION_INTERVAL = 9;
 
-/** Read precomputed distance from enriched meetup rows. */
-export function getMeetupDistanceKm(meetup) {
-  const n = Number(meetup?.distanceKm ?? meetup?.distance_km ?? meetup?.distance);
-  return Number.isFinite(n) && n >= 0 ? n : null;
+/** @deprecated Bulletin board no longer uses km radius — kept for test imports. */
+export const MEETUP_FEED_RADIUS_KM = 50;
+
+function getMeetupSortTimestamp(meetup) {
+  return getMeetupStartTimestamp(meetup) ?? Number.MAX_SAFE_INTEGER;
 }
 
-/** Closest first; meetups without a distance sink to the end. */
+/** Soonest first; unparseable dates sink to the end. */
+export function sortMeetupsByStartTime(meetups = []) {
+  return [...meetups].sort(
+    (a, b) => getMeetupSortTimestamp(a) - getMeetupSortTimestamp(b),
+  );
+}
+
+/** @deprecated Use sortMeetupsByStartTime — distance labels removed in Phase 1a. */
 export function sortMeetupsByDistance(meetups) {
-  return [...meetups].sort((a, b) => {
-    const da = getMeetupDistanceKm(a);
-    const db = getMeetupDistanceKm(b);
-    if (da == null && db == null) {
-      return 0;
-    }
-    if (da == null) {
-      return 1;
-    }
-    if (db == null) {
-      return -1;
-    }
-    return da - db;
-  });
+  return sortMeetupsByStartTime(meetups);
 }
 
-/** Meetups strictly inside the radius, sorted closest-first. */
-export function filterMeetupsWithinRadius(meetups, radiusKm = MEETUP_FEED_RADIUS_KM) {
-  return sortMeetupsByDistance(meetups).filter((m) => {
-    const d = getMeetupDistanceKm(m);
-    return d != null && d <= radiusKm;
-  });
+/** @deprecated Radius filtering removed — city filter happens upstream. */
+export function filterMeetupsWithinRadius(meetups, _radiusKm = MEETUP_FEED_RADIUS_KM) {
+  return sortMeetupsByStartTime(meetups);
 }
 
 /**
  * Top carousel (max `carouselSize`, default 3):
- * 0 = user's own meetup (nearest if they have several),
- * 1–2 = next nearest excluding own; or 3 nearest when no own meetup.
+ * 0 = user's own meetup (soonest if they have several),
+ * 1–2 = next soonest excluding own; or 3 soonest when no own meetup.
  */
 export function buildCarouselMeetups(meetups, currentUserId, carouselSize = MEETUP_CAROUSEL_SIZE) {
   if (!meetups?.length) {
@@ -53,7 +47,7 @@ export function buildCarouselMeetups(meetups, currentUserId, carouselSize = MEET
   }
 
   const cap = Math.max(1, Number(carouselSize) || MEETUP_CAROUSEL_SIZE);
-  const sorted = sortMeetupsByDistance(meetups);
+  const sorted = sortMeetupsByStartTime(meetups);
   const ownMeetups = currentUserId
     ? sorted.filter((m) => String(m?.user_id) === String(currentUserId))
     : [];
@@ -75,10 +69,10 @@ export function buildCarouselMeetups(meetups, currentUserId, carouselSize = MEET
   };
 }
 
-/** Phase A queue: within radius, closest first, carousel meetups removed. */
-export function buildPhaseAQueue(meetups, carouselIds, radiusKm = MEETUP_FEED_RADIUS_KM) {
+/** @deprecated Phase A queue used km radius — city filter is upstream now. */
+export function buildPhaseAQueue(meetups, carouselIds, _radiusKm = MEETUP_FEED_RADIUS_KM) {
   const carouselIdSet = new Set(carouselIds.map(String));
-  return filterMeetupsWithinRadius(meetups, radiusKm).filter(
+  return sortMeetupsByStartTime(meetups).filter(
     (m) => !carouselIdSet.has(String(m.id)),
   );
 }
@@ -111,7 +105,7 @@ export function pickRandomMeetup(allMeetups, recentlySeenIds, disableCooldown = 
   return pool[Math.floor(Math.random() * pool.length)];
 }
 
-/** Build the strict 9 Moments → next-nearest Meetup vertical sequence. */
+/** Build the strict 9 Moments → next-soonest Meetup vertical sequence. */
 export function buildMeetupInjectionRows({
   moments = [],
   allMeetups = [],
@@ -120,7 +114,7 @@ export function buildMeetupInjectionRows({
   recentWindowSize = MEETUP_RECENT_WINDOW,
 }) {
   const carouselIdSet = new Set(carouselIds.map(String));
-  const inlineMeetups = sortMeetupsByDistance(allMeetups).filter(
+  const inlineMeetups = sortMeetupsByStartTime(allMeetups).filter(
     (meetup) => !carouselIdSet.has(String(meetup.id)),
   );
   const recentlySeen = [...carouselIds.map(String)];

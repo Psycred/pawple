@@ -8,17 +8,10 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Feather } from '@expo/vector-icons';
-import * as Location from 'expo-location';
 import { supabase } from '../config/supabase';
 import { theme } from '../config/theme';
 import { useAuth } from '../contexts/AuthContext';
-import {
-  APPROXIMATE_LOCATION_OPTIONS,
-  fetchApproximateCoords,
-  saveLatestProfileLocation,
-} from '../lib/profileLocation';
+import { normalizeCityForSave, normalizeCityKey } from '../utils/cityUtils';
 
 export default function OnboardingUserScreen({ navigation, route }) {
   const { pendingInviteCode } = useAuth();
@@ -26,10 +19,6 @@ export default function OnboardingUserScreen({ navigation, route }) {
   const [fullName, setFullName] = useState('');
   const [city, setCity] = useState('');
   const [saving, setSaving] = useState(false);
-  const [locationLoading, setLocationLoading] = useState(false);
-  /** profile = name/city form; location = custom pre-prompt (onboarding only). */
-  const [phase, setPhase] = useState('profile');
-  const [pendingNav, setPendingNav] = useState(null);
 
   useEffect(() => {
     const checkSession = async () => {
@@ -64,7 +53,7 @@ export default function OnboardingUserScreen({ navigation, route }) {
       {
         id: user.id,
         name: name.trim(),
-        city: cityValue.trim(),
+        city: cityValue,
         email: user.email ?? null,
         updated_at: new Date().toISOString(),
       },
@@ -79,48 +68,32 @@ export default function OnboardingUserScreen({ navigation, route }) {
     return user.id;
   };
 
-  const goToPets = (navParams) => {
-    navigation.navigate('OnboardingPets', navParams);
-  };
-
-  const proceedAfterProfileSave = async (userId, navParams) => {
-    const { status } = await Location.getForegroundPermissionsAsync();
-
-    if (status === 'undetermined') {
-      setPendingNav(navParams);
-      setPhase('location');
-      return;
+  const handleCityBlur = () => {
+    const normalized = normalizeCityForSave(city);
+    if (normalized && normalized !== city) {
+      setCity(normalized);
     }
-
-    if (status === 'granted') {
-      const coords = await fetchApproximateCoords();
-      if (coords) {
-        await saveLatestProfileLocation(userId, coords);
-      }
-    }
-
-    goToPets(navParams);
   };
 
   const handleNextPress = async () => {
     const trimmedName = fullName.trim();
-    const trimmedCity = city.trim();
+    const normalizedCity = normalizeCityForSave(city);
 
-    if (!trimmedName || !trimmedCity) {
+    if (!trimmedName || !normalizeCityKey(normalizedCity)) {
       Alert.alert('Missing Info', 'Please enter your full name and city.');
       return;
     }
 
     const navParams = {
       fullName: trimmedName,
-      city: trimmedCity,
+      city: normalizedCity,
       inviteCode: routeInviteCode ?? '',
     };
 
     setSaving(true);
     try {
-      const userId = await saveUserProfile(trimmedName, trimmedCity);
-      await proceedAfterProfileSave(userId, navParams);
+      await saveUserProfile(trimmedName, normalizedCity);
+      navigation.navigate('OnboardingPets', navParams);
     } catch (error) {
       console.log('[OnboardingUser] Profile save error:', error);
       Alert.alert('Error', 'Could not save your profile. Please try again.');
@@ -128,99 +101,6 @@ export default function OnboardingUserScreen({ navigation, route }) {
       setSaving(false);
     }
   };
-
-  const finishLocationStep = () => {
-    if (pendingNav) {
-      goToPets(pendingNav);
-    }
-  };
-
-  const handleAllowLocation = async () => {
-    setLocationLoading(true);
-    try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-
-      if (status === 'granted') {
-        const position = await Location.getCurrentPositionAsync(APPROXIMATE_LOCATION_OPTIONS);
-        const latitude = Number(position?.coords?.latitude);
-        const longitude = Number(position?.coords?.longitude);
-
-        if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
-          const {
-            data: { user },
-          } = await supabase.auth.getUser();
-          if (user?.id) {
-            await saveLatestProfileLocation(user.id, { latitude, longitude });
-          }
-          console.log('[Location] Approximate location obtained');
-        }
-      } else {
-        console.log('[Location] Permission:', status);
-      }
-    } catch (error) {
-      console.log('[Location] Error:', error);
-    } finally {
-      setLocationLoading(false);
-      finishLocationStep();
-    }
-  };
-
-  const handleSkipLocation = () => {
-    if (locationLoading) {
-      return;
-    }
-    finishLocationStep();
-  };
-
-  if (phase === 'location') {
-    return (
-      <SafeAreaView style={styles.locationSafe}>
-        <View style={styles.locationContainer}>
-          <View style={styles.iconWrap}>
-            <Feather
-              name="map-pin"
-              size={theme.fontSizes.xxxl - theme.spacing.xs}
-              color={theme.colors.background.screen}
-            />
-          </View>
-          <Text style={styles.locationTitle}>Help Pawple feel local</Text>
-          <Text style={styles.locationBody}>
-            Discover nearby meetups, playmates and pet-friendly events.
-          </Text>
-          <Text style={styles.locationNote}>
-            We use your approximate location (city-level) to personalize your experience. We never track your exact
-            location or store location history.
-          </Text>
-
-          <Pressable
-            onPress={handleAllowLocation}
-            disabled={locationLoading}
-            style={({ pressed }) => [
-              styles.allowButton,
-              pressed && styles.buttonPressed,
-              locationLoading && styles.buttonDisabled,
-            ]}
-            accessibilityRole="button"
-            accessibilityLabel="Allow location"
-          >
-            <Text style={styles.allowButtonText}>
-              {locationLoading ? 'One calm moment...' : 'Allow location'}
-            </Text>
-          </Pressable>
-
-          <Pressable
-            onPress={handleSkipLocation}
-            disabled={locationLoading}
-            style={({ pressed }) => [styles.skipButton, pressed && styles.buttonPressed]}
-            accessibilityRole="button"
-            accessibilityLabel="Skip for now"
-          >
-            <Text style={styles.skipText}>Skip for now</Text>
-          </Pressable>
-        </View>
-      </SafeAreaView>
-    );
-  }
 
   return (
     <View style={styles.container}>
@@ -244,6 +124,9 @@ export default function OnboardingUserScreen({ navigation, route }) {
           placeholderTextColor={theme.colors.text.muted.light}
           value={city}
           onChangeText={setCity}
+          onBlur={handleCityBlur}
+          autoCapitalize="words"
+          autoCorrect={false}
         />
 
         <Pressable
@@ -331,76 +214,5 @@ const styles = StyleSheet.create({
     fontSize: theme.fontSizes.md,
     color: theme.components.button.primaryText,
     fontWeight: theme.fontWeights.semibold,
-  },
-  locationSafe: {
-    flex: 1,
-    backgroundColor: theme.colors.background.screen,
-  },
-  locationContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: theme.spacing.xxl,
-    paddingVertical: theme.spacing.xxxl,
-  },
-  iconWrap: {
-    width: theme.spacing.xxxl + theme.spacing.md + theme.spacing.xs,
-    height: theme.spacing.xxxl + theme.spacing.md + theme.spacing.xs,
-    borderRadius: theme.spacing.xxxl - theme.spacing.md,
-    backgroundColor: theme.colors.brand.sage.light,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: theme.spacing.xl,
-  },
-  locationTitle: {
-    fontFamily: theme.fonts.heading,
-    fontSize: theme.fontSizes.xxl,
-    color: theme.colors.text.primary.light,
-    textAlign: 'center',
-    marginBottom: theme.spacing.md,
-  },
-  locationBody: {
-    fontFamily: theme.fonts.body,
-    fontSize: theme.fontSizes.md,
-    color: theme.colors.text.muted.light,
-    textAlign: 'center',
-    lineHeight: 22,
-    marginBottom: theme.spacing.md,
-  },
-  locationNote: {
-    fontFamily: 'Inter-Regular',
-    fontSize: theme.fontSizes.sm,
-    color: theme.colors.text.muted.light,
-    textAlign: 'center',
-    lineHeight: 20,
-    marginBottom: theme.spacing.xxl,
-  },
-  allowButton: {
-    minHeight: theme.components.button.minHeight,
-    borderRadius: theme.components.button.borderRadius,
-    backgroundColor: theme.colors.brand.sage.light,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: theme.components.button.paddingVertical,
-    paddingHorizontal: theme.components.button.paddingHorizontal,
-    width: '100%',
-  },
-  allowButtonText: {
-    fontFamily: theme.fonts.body,
-    fontSize: theme.fontSizes.md,
-    color: theme.colors.text.inverse.value,
-    fontWeight: theme.fontWeights.semibold,
-  },
-  skipButton: {
-    marginTop: theme.spacing.md,
-    alignSelf: 'center',
-    paddingVertical: theme.spacing.sm,
-    paddingHorizontal: theme.spacing.md,
-  },
-  skipText: {
-    fontFamily: 'Inter-Regular',
-    fontSize: theme.fontSizes.sm,
-    color: theme.colors.text.muted.light,
-    textDecorationLine: 'underline',
   },
 });

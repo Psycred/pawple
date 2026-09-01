@@ -12,7 +12,9 @@ import { supabase } from '../config/supabase';
  * Image processing: services/imageProcessor.js; storage: lib/supabase.js.
  *
  * moments(id, user_id, image_url, caption, moment_date, location,
- *         pet_ids uuid[], pet_names text, location_lat, location_lng, created_at)
+ *         pet_ids uuid[], pet_names text, created_at)
+ *
+ * Phase 1a: optional `location` is user-entered caption text only — no GPS coords on insert.
  */
 
 /** Phase 1: never link more than two pets to a single moment. */
@@ -148,11 +150,6 @@ function normalizePetNamesForInsert(petNames) {
   return names.length === 1 ? names[0] : names.join(', ');
 }
 
-function normalizeCoord(value) {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : null;
-}
-
 /** Insert the single moment record and return the created row. */
 export async function createMoment({
   userId,
@@ -162,16 +159,10 @@ export async function createMoment({
   location,
   petIds = [],
   petNames,
-  lat,
-  lng,
-  location_lat,
-  location_lng,
 }) {
   // Phase 1: [selectedPet.id]. Phase 2-ready: up to two UUIDs, never hardcoded.
   const normalizedPetIds = [...new Set(petIds.filter(Boolean).map(String))].slice(0, MAX_MOMENT_PETS);
   const petNamesText = normalizePetNamesForInsert(petNames);
-  const latValue = normalizeCoord(location_lat ?? lat);
-  const lngValue = normalizeCoord(location_lng ?? lng);
 
   const basePayload = {
     user_id: userId,
@@ -181,8 +172,6 @@ export async function createMoment({
     location: location?.trim() || null,
     pet_ids: normalizedPetIds,
     pet_names: petNamesText,
-    location_lat: latValue,
-    location_lng: lngValue,
     created_at: new Date().toISOString(),
   };
 
@@ -198,10 +187,6 @@ export async function createMoment({
     } else if (/pet_ids/i.test(msg)) {
       console.warn('[Moment] moments.pet_ids column missing — retrying without it.');
       const { pet_ids, ...rest } = basePayload;
-      response = await supabase.from('moments').insert(rest).select().single();
-    } else if (/location_lat|location_lng/i.test(msg)) {
-      console.warn('[Moment] moments location_lat/lng columns missing — retrying without coords.');
-      const { location_lat: _lat, location_lng: _lng, ...rest } = basePayload;
       response = await supabase.from('moments').insert(rest).select().single();
     }
   }

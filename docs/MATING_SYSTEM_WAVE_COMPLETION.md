@@ -5,7 +5,7 @@
 **QA gate:** PAW-69 — **SIGN-OFF** (supersedes PAW-62 VETO, PAW-67 VETO)  
 **Spec:** `docs/PAWPLE_MATING_DISCOVERY_SPEC.md` **rev 4**  
 **Authority:** `docs/CURRENT.md` (Mating System wave)  
-**Commits:** Hold until Founder decides  
+**Commits:** Committed locally (`8649c5f`, `dd64e24`) per Founder 2026-08-31  
 
 ---
 
@@ -99,8 +99,14 @@ Frozen items untouched: Paw-T00y / invite bypass, meetup RSVP/cancel logic, noti
 
 ---
 
+## Founder decision (post-SIGN-OFF)
+
+**Radius (Phase 1, binding):** Automatic 0–100 km, closest-first; no radius UI. **PAW-73 done** (2026-08-31).
+
+---
+
 ## Founder decision needed
 
-**Authorize local commit of Mating System wave changes?** (or hold / request further review)
+~~Authorize local commit~~ — **Done** (Founder 2026-08-31).
 
-CEO will not commit or push until Founder decides via the open question card on PAW-7.
+**Next:** PAW-52 staging smoke before store.

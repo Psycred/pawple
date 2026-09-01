@@ -1,8 +1,8 @@
-import { hasPassedAgeGate } from './ageGate';
+import { getStoredBirthDate, hasPassedAgeGate } from './ageGate';
 import { supabase } from '../config/supabase';
 
 /**
- * Mirror device-local age gate success to profiles.age_attested_adult when signed in.
+ * Mirror device-local age gate success to server attestation via RPC when signed in.
  * Update-only — never creates a bare profile row (would break onboarding routing).
  * Idempotent and best-effort; server remains fail-closed until this succeeds.
  *
@@ -19,6 +19,11 @@ export async function syncAgeAttestationToProfile(userId) {
       return false;
     }
 
+    const birthDate = await getStoredBirthDate();
+    if (!birthDate) {
+      return false;
+    }
+
     const {
       data: { user },
     } = await supabase.auth.getUser();
@@ -28,7 +33,7 @@ export async function syncAgeAttestationToProfile(userId) {
 
     const { data: existing, error: readError } = await supabase
       .from('profiles')
-      .select('age_attested_adult')
+      .select('age_attested_adult, account_tier')
       .eq('id', userId)
       .maybeSingle();
 
@@ -41,24 +46,20 @@ export async function syncAgeAttestationToProfile(userId) {
       return false;
     }
 
-    if (existing.age_attested_adult === true) {
+    if (existing.age_attested_adult === true && existing.account_tier === 'adult') {
       return true;
     }
 
-    const { error: updateError } = await supabase
-      .from('profiles')
-      .update({
-        age_attested_adult: true,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', userId);
+    const { data: attestation, error: rpcError } = await supabase.rpc('attest_adult_account', {
+      p_birth_date: birthDate,
+    });
 
-    if (updateError) {
-      console.error('[Supabase]', updateError);
+    if (rpcError) {
+      console.error('[Supabase]', rpcError);
       return false;
     }
 
-    return true;
+    return attestation?.ok === true && attestation?.age_attested_adult === true;
   } catch (error) {
     console.error('[AgeGate] syncAgeAttestationToProfile failed', error);
     return false;

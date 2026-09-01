@@ -16,7 +16,7 @@ import LoadErrorRetry from '../components/LoadErrorRetry';
 import MeetupCard from '../components/MeetupCard';
 import MomentCard from '../components/MomentCard';
 import { theme } from '../config/theme';
-import { isDemoContentEnabled } from '../config/environment';
+import { isDemoContentEnabled, isLocalDevRuntime } from '../config/environment';
 import {
   DEMO_FEED_CAROUSEL_SIZE,
   DEMO_FEED_SHOW_ALL_MEETUPS,
@@ -32,12 +32,10 @@ import {
   fetchUserFeedLocation,
   sortFeedMoments,
 } from '../services/moments';
-import { fetchMeetups, filterShowablePublicMeetups, isDemoMeetupId, extractMeetupHostPetIds } from '../services/meetups';
+import { fetchMeetups, filterMeetupsByViewerCity, filterShowablePublicMeetups, isDemoMeetupId, extractMeetupHostPetIds } from '../services/meetups';
 import { fetchBlockedPetIds, isBlockedByPetIds } from '../services/blocks';
-import { getCachedLocation } from '../lib/locationManager';
 import { supabase } from '../lib/supabase';
 import { useMeetupFeedLogic } from '../hooks/useMeetupFeedLogic';
-import { withHonestMeetupDistance } from '../utils/distanceUtils';
 
 /** Inject a meetup suggestion after every Nth moment in the main vertical feed. */
 const MEETUP_INJECTION_INTERVAL = 9;
@@ -75,6 +73,7 @@ export default function FeedScreen() {
   const [hasMoreMoments, setHasMoreMoments] = useState(true);
   const [loadingMoreMoments, setLoadingMoreMoments] = useState(false);
   const [loadError, setLoadError] = useState(false);
+  const [loadMoreError, setLoadMoreError] = useState(false);
   const hasCompletedInitialLoadRef = useRef(false);
   const feedGenerationRef = useRef(0);
   const feedLoadInProgressRef = useRef(false);
@@ -95,6 +94,7 @@ export default function FeedScreen() {
     }
     if (!isBackground) {
       setLoadError(false);
+      setLoadMoreError(false);
     }
 
     try {
@@ -103,9 +103,6 @@ export default function FeedScreen() {
       } = await supabase.auth.getUser();
 
       const feedLocation = user?.id ? await fetchUserFeedLocation(user.id) : null;
-
-      // Viewer coordinates for meetup "X km away" — cached only, never prompts here.
-      const viewerCoords = await getCachedLocation().catch(() => null);
 
       const [meetupsData, momentsPageResult, likesRes, petsRes, blockedIds] = await Promise.all([
         fetchMeetups(),
@@ -139,7 +136,7 @@ export default function FeedScreen() {
       const viewerPets = petsRes.error ? [] : petsRes.data ?? [];
       const blockedSet = new Set((blockedIds ?? []).map(String));
 
-      // Meetups stay complete because carousel and inline ordering require global proximity.
+      // Meetups are city-scoped for bulletin-board discovery (carousel + inline injection).
       let nextMeetups = realMeetups;
 
       if (USE_DEMO_FEED_WHEN_EMPTY) {
@@ -153,11 +150,13 @@ export default function FeedScreen() {
             ...demoMeetups.filter((d) => !realIds.has(String(d.id))),
           ];
         }
-        console.log('[FeedScreen] Demo meetups merged:', {
-          demoCount: demoMeetups.length,
-          realCount: realMeetups.length,
-          total: nextMeetups.length,
-        });
+        if (isLocalDevRuntime) {
+          console.log('[FeedScreen] Demo meetups merged:', {
+            demoCount: demoMeetups.length,
+            realCount: realMeetups.length,
+            total: nextMeetups.length,
+          });
+        }
       }
 
       // Apply session-local demo state, then keep only showable public meetups.
@@ -169,10 +168,8 @@ export default function FeedScreen() {
         ),
       );
 
-      // Honest distance only — omit when GPS or venue coords are missing.
-      nextMeetups = nextMeetups.map((m) =>
-        withHonestMeetupDistance(m, viewerCoords),
-      );
+      // Phase 1a bulletin board — same-city discovery only.
+      nextMeetups = filterMeetupsByViewerCity(nextMeetups, feedLocation?.city);
 
       // Hide meetups hosted by blocked pets (client filter; RLS does not filter blocks).
       nextMeetups = nextMeetups.filter(
@@ -255,6 +252,7 @@ export default function FeedScreen() {
     const generation = feedGenerationRef.current;
     loadingMoreMomentsRef.current = true;
     setLoadingMoreMoments(true);
+    setLoadMoreError(false);
 
     try {
       const result = await fetchFeedMoments(
@@ -283,6 +281,9 @@ export default function FeedScreen() {
       setHasMoreMoments(hasMoreMomentsRef.current);
     } catch (error) {
       console.error('[Supabase]', error);
+      if (generation === feedGenerationRef.current) {
+        setLoadMoreError(true);
+      }
     } finally {
       loadingMoreMomentsRef.current = false;
       setLoadingMoreMoments(false);
@@ -351,7 +352,7 @@ export default function FeedScreen() {
   });
 
   useEffect(() => {
-    if (loading) {
+    if (!isLocalDevRuntime || loading) {
       return;
     }
     const inlineMeetups = feedRows.filter((row) => row.type === 'meetup').length;
@@ -428,6 +429,8 @@ export default function FeedScreen() {
 
   const isEmpty = !loading && !loadError && meetups.length === 0 && mergedMoments.length === 0;
   const showCarousel = headerMeetups.length > 0;
+  const viewerCityMissing =
+    Boolean(currentUserId) && !loading && !String(userFeedLocation?.city ?? '').trim();
 
   const scrollBottomPad = theme.feed.shellPaddingBottom + Math.max(tabBarHeight - theme.spacing.lg, 0);
 
@@ -461,19 +464,30 @@ export default function FeedScreen() {
   const keyExtractor = useCallback((row) => String(row.key), []);
 
   const listHeaderComponent = useMemo(() => {
-    if (loading || isEmpty || !showCarousel) {
+    if (loading || isEmpty) {
       return null;
     }
 
     return (
       <>
-        <EventCarousel
-          data={headerMeetups}
-          maxSlides={useExpandedDemoFeed ? DEMO_FEED_CAROUSEL_SIZE : 3}
-          viewerPets={userPets}
-          viewerId={currentUserId}
-        />
-        <View style={styles.carouselGap} />
+        {viewerCityMissing ? (
+          <View style={styles.cityHintWrap}>
+            <Text style={styles.cityHintText} allowFontScaling>
+              Add your city in profile settings to discover local meetups.
+            </Text>
+          </View>
+        ) : null}
+        {showCarousel ? (
+          <>
+            <EventCarousel
+              data={headerMeetups}
+              maxSlides={useExpandedDemoFeed ? DEMO_FEED_CAROUSEL_SIZE : 3}
+              viewerPets={userPets}
+              viewerId={currentUserId}
+            />
+            <View style={styles.carouselGap} />
+          </>
+        ) : null}
       </>
     );
   }, [
@@ -484,6 +498,7 @@ export default function FeedScreen() {
     showCarousel,
     useExpandedDemoFeed,
     userPets,
+    viewerCityMissing,
   ]);
 
   const listEmptyComponent = useMemo(() => {
@@ -534,7 +549,32 @@ export default function FeedScreen() {
     );
   }, [isEmpty, loadError, loadFeed, loading, openCaptureMoment, openPlanMeetup]);
 
+  const retryLoadMore = useCallback(() => {
+    setLoadMoreError(false);
+    loadMore();
+  }, [loadMore]);
+
   const listFooterComponent = useMemo(() => {
+    if (loadMoreError) {
+      return (
+        <View style={styles.loadMoreErrorWrap}>
+          <Text style={styles.loadMoreErrorText} allowFontScaling>
+            Couldn&apos;t load more.
+          </Text>
+          <Pressable
+            onPress={retryLoadMore}
+            style={({ pressed }) => [styles.loadMoreRetry, pressed && styles.pillPressed]}
+            accessibilityRole="button"
+            accessibilityLabel="Try loading more moments"
+          >
+            <Text style={styles.loadMoreRetryText} allowFontScaling>
+              Try again
+            </Text>
+          </Pressable>
+        </View>
+      );
+    }
+
     if (!loadingMoreMoments) {
       return null;
     }
@@ -544,7 +584,7 @@ export default function FeedScreen() {
         <ActivityIndicator size="small" color={theme.colors.brand.sage.value} />
       </View>
     );
-  }, [loadingMoreMoments]);
+  }, [loadMoreError, loadingMoreMoments, retryLoadMore]);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
@@ -610,8 +650,44 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: theme.spacing.lg,
   },
+  loadMoreErrorWrap: {
+    alignItems: 'center',
+    paddingVertical: theme.spacing.lg,
+    gap: theme.spacing.sm,
+  },
+  loadMoreErrorText: {
+    fontFamily: theme.fonts.body,
+    fontSize: theme.fontSizes.sm,
+    lineHeight: Math.round(theme.fontSizes.sm * theme.lineHeights.normal),
+    color: theme.colors.text.secondary.light,
+    textAlign: 'center',
+  },
+  loadMoreRetry: {
+    minHeight: 44,
+    justifyContent: 'center',
+    paddingHorizontal: theme.spacing.md,
+  },
+  loadMoreRetryText: {
+    fontFamily: theme.fonts.medium,
+    fontSize: theme.fontSizes.md,
+    color: theme.colors.brand.sage.value,
+  },
   carouselGap: {
     height: theme.feed.carouselSectionGap,
+  },
+  cityHintWrap: {
+    marginBottom: theme.spacing.lg,
+    paddingVertical: theme.spacing.md,
+    paddingHorizontal: theme.spacing.lg,
+    borderRadius: theme.borderRadius.lg,
+    backgroundColor: theme.colors.background.card,
+  },
+  cityHintText: {
+    fontFamily: theme.fonts.body,
+    fontSize: theme.fontSizes.sm,
+    lineHeight: Math.round(theme.fontSizes.sm * theme.lineHeights.normal),
+    color: theme.colors.text.secondary.light,
+    textAlign: 'center',
   },
   emptyWrap: {
     flex: 1,

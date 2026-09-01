@@ -20,7 +20,6 @@ import ScreenWrapper from '../components/ScreenWrapper';
 import { useAuth } from '../contexts/AuthContext';
 import { useActivePet } from '../contexts/ActivePetContext';
 import { formatDayMonthYear, formatLocalTime } from '../utils/formatMomentDate';
-import { getValidLocation } from '../lib/locationManager';
 import { validateOptionalGoogleMapsLink } from '../utils/mapLinkValidation';
 import { createMeetup, extractMeetupHostPetIds, updateMeetup } from '../services/meetups';
 import { petTypeEmoji } from '../utils/petTypeEmoji';
@@ -192,6 +191,7 @@ export default function CreateMeetupScreen({ navigation, route }) {
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const [networkError, setNetworkError] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [profileCity, setProfileCity] = useState('');
 
   const { anims: shakeAnims, shakeField } = useFieldShake();
 
@@ -222,14 +222,21 @@ export default function CreateMeetupScreen({ navigation, route }) {
       return;
     }
     try {
-      const { data, error } = await supabase
-        .from('pets')
-        .select('id, name, photo_url, pet_type')
-        .eq('owner_id', user.id)
-        .order('created_at', { ascending: true });
+      const [{ data, error }, profileRes] = await Promise.all([
+        supabase
+          .from('pets')
+          .select('id, name, photo_url, pet_type')
+          .eq('owner_id', user.id)
+          .order('created_at', { ascending: true }),
+        supabase.from('profiles').select('city').eq('id', user.id).maybeSingle(),
+      ]);
       if (error) {
         throw error;
       }
+      if (profileRes.error) {
+        console.error('[Supabase]', profileRes.error);
+      }
+      setProfileCity(String(profileRes.data?.city ?? '').trim());
       setPets(data ?? []);
       if (isEditing && seedMeetup) {
         const hostIds = extractMeetupHostPetIds(seedMeetup);
@@ -392,6 +399,10 @@ export default function CreateMeetupScreen({ navigation, route }) {
     if (!user?.id) {
       return;
     }
+    if (!isEditing && !profileCity) {
+      showValidationToast('Add your city in profile settings first.');
+      return;
+    }
     setSaving(true);
     try {
       const parsedLimit = participationLimit.trim() ? parseInt(participationLimit, 10) : null;
@@ -408,33 +419,12 @@ export default function CreateMeetupScreen({ navigation, route }) {
       };
 
       if (isEditing && editMeetupId) {
-        await updateMeetup(editMeetupId, {
-          ...meetupInput,
-          locationLat: seedMeetup?.location_lat ?? null,
-          locationLng: seedMeetup?.location_lng ?? null,
-        });
+        await updateMeetup(editMeetupId, meetupInput);
         goBackAfterEdit();
         return;
       }
 
-      // Approximate meetup coordinates (used for "X km away" in the feed). Best-effort.
-      let coords = null;
-      try {
-        const locationResult = await getValidLocation({
-          reason: 'to show your meetup to nearby paws',
-          requestIfNeeded: true,
-          preferCache: true,
-        });
-        coords = locationResult.coords;
-      } catch (locErr) {
-        console.log('[Meetup] location capture skipped:', locErr?.message ?? locErr);
-      }
-
-      await createMeetup({
-        ...meetupInput,
-        locationLat: coords?.latitude ?? null,
-        locationLng: coords?.longitude ?? null,
-      });
+      await createMeetup(meetupInput);
       goFeed();
     } catch (err) {
       const errMessage = err?.message ?? '';

@@ -1,6 +1,6 @@
 /**
- * PAW-20 / PAW-44: Role-based RLS and RPC security tests
- * (Product Contract §7, §10, §13 + Honesty & Safety model B + G).
+ * PAW-20 / PAW-44 / PAW-96: Role-based RLS and RPC security tests
+ * (Product Contract §7, §10, §13 + Honesty & Safety model B + G + city-only bulletin coords).
  *
  * Requires a Supabase project with migrations applied (staging scratch or local):
  *   SUPABASE_URL=https://xxx.supabase.co
@@ -77,7 +77,7 @@ async function main() {
 
   const createdUserIds = [];
 
-  console.log('PAW-44 RLS security test suite (B + G + report/block)');
+  console.log('PAW-44 / PAW-96 RLS security test suite (B + G + bulletin coord revoke)');
   console.log('Target:', SUPABASE_URL);
   console.log('');
 
@@ -134,6 +134,60 @@ async function main() {
       .eq('id', userBId);
     assertNoError(locSeedErr, 'Service role can write profiles.last_location_*');
 
+    console.log('');
+    console.log('Age attestation (PAW-97)');
+
+    const ADULT_BIRTH_DATE = '1990-06-15';
+    const UNDERAGE_BIRTH_DATE = '2010-06-15';
+
+    const { error: forgeAgeErr } = await clientA
+      .from('profiles')
+      .update({ age_attested_adult: true })
+      .eq('id', userAId);
+    assertError(forgeAgeErr, 'User A cannot direct UPDATE profiles.age_attested_adult');
+
+    const { error: forgeTierErr } = await clientA
+      .from('profiles')
+      .update({ account_tier: 'teen' })
+      .eq('id', userAId);
+    assertError(forgeTierErr, 'User A cannot direct UPDATE profiles.account_tier');
+
+    const { error: meetupUnattestedErr } = await clientA.from('meetups').insert({
+      user_id: userAId,
+      title: 'Blocked Meetup',
+      date: '2026-07-01',
+      start_time: '10:00:00',
+      end_time: '12:00:00',
+    });
+    assertError(meetupUnattestedErr, 'Unattested user cannot create meetup');
+
+    const { error: underageRpcErr } = await clientA.rpc('attest_adult_account', {
+      p_birth_date: UNDERAGE_BIRTH_DATE,
+    });
+    assertError(underageRpcErr, 'attest_adult_account rejects under-18 birth date');
+
+    const { data: attestA, error: attestAErr } = await clientA.rpc('attest_adult_account', {
+      p_birth_date: ADULT_BIRTH_DATE,
+    });
+    assertNoError(attestAErr, 'User A can attest adult account via RPC');
+    assert(attestA?.ok === true, 'attest_adult_account returns ok for User A');
+
+    const { data: attestB, error: attestBErr } = await clientB.rpc('attest_adult_account', {
+      p_birth_date: ADULT_BIRTH_DATE,
+    });
+    assertNoError(attestBErr, 'User B can attest adult account via RPC');
+    assert(attestB?.ok === true, 'attest_adult_account returns ok for User B');
+
+    const { data: profileTierA, error: profileTierAErr } = await clientA
+      .from('profiles')
+      .select('account_tier, age_attested_adult, birth_date')
+      .eq('id', userAId)
+      .maybeSingle();
+    assertNoError(profileTierAErr, 'User A can read own attestation fields');
+    assert(profileTierA?.account_tier === 'adult', 'User A account_tier is adult');
+    assert(profileTierA?.age_attested_adult === true, 'User A age_attested_adult is true');
+    assert(profileTierA?.birth_date === ADULT_BIRTH_DATE, 'User A birth_date set server-side');
+
     // Seed pets: companion flag is display-only (G) — both remain readable
     const { data: petAPrivate, error: petAErr } = await clientA
       .from('pets')
@@ -175,6 +229,8 @@ async function main() {
         image_url: 'https://example.test/moment-a.jpg',
         caption: 'Moment A',
         moment_date: '2026-01-01',
+        location_lat: 12.9716,
+        location_lng: 77.5946,
       })
       .select('id')
       .single();
@@ -191,9 +247,13 @@ async function main() {
         location_lat: 12.97,
         location_lng: 77.59,
       })
-      .select('id, location_lat, location_lng')
+      .select('id, city')
       .single();
     assertNoError(meetupBErr, 'User B creates meetup');
+    assert(
+      meetupB?.city === 'City B',
+      'meetups.city derived from creator profiles.city at insert (PAW-96)',
+    );
 
     console.log('');
     console.log('Anon / public denial (B)');
@@ -300,7 +360,14 @@ async function main() {
     );
 
     console.log('');
-    console.log('Moments');
+    console.log('Moments + bulletin coord exposure (PAW-96)');
+
+    const { error: momentCoordSelectErr } = await clientA
+      .from('moments')
+      .select('id, location_lat, location_lng')
+      .eq('id', momentA.id)
+      .maybeSingle();
+    assertError(momentCoordSelectErr, 'Authenticated cannot SELECT moments.location_lat/lng');
 
     const { error: momentCrossUpdateErr } = await clientA
       .from('moments')
@@ -336,20 +403,23 @@ async function main() {
     assertNoError(likeOwnErr, 'User A can like own-visible moment');
 
     console.log('');
-    console.log('Meetups (Product Contract §7 + B venue)');
+    console.log('Meetups (Product Contract §7 + PAW-96 city-only)');
 
-    assert(
-      meetupB?.location_lat != null && meetupB?.location_lng != null,
-      'Meetup venue coordinates readable by authenticated creator',
-    );
-
-    const { data: meetupVenue, error: meetupVenueErr } = await clientA
+    const { error: meetupCoordSelectErr } = await clientA
       .from('meetups')
       .select('id, location_lat, location_lng')
       .eq('id', meetupB.id)
       .maybeSingle();
-    assertNoError(meetupVenueErr, 'Authenticated non-creator can read meetup venue');
-    assert(Boolean(meetupVenue), 'Meetup venue row visible to authenticated users');
+    assertError(meetupCoordSelectErr, 'Authenticated cannot SELECT meetups.location_lat/lng');
+
+    const { data: meetupVenue, error: meetupVenueErr } = await clientA
+      .from('meetups')
+      .select('id, city, title')
+      .eq('id', meetupB.id)
+      .maybeSingle();
+    assertNoError(meetupVenueErr, 'Authenticated non-creator can read meetup bulletin fields');
+    assert(Boolean(meetupVenue), 'Meetup row visible to authenticated users');
+    assert(meetupVenue?.city === 'City B', 'Meetup city visible for bulletin discovery');
 
     const { error: hostForeignPetErr } = await clientA.from('meetup_hosts').insert({
       meetup_id: meetupB.id,
@@ -458,6 +528,123 @@ async function main() {
       .delete()
       .eq('id', blockRow.id);
     assertNoError(deleteBlockErr, 'User A can delete own block');
+
+    console.log('');
+    console.log('Introduction chat — mutual Paw + link block (PAW-100)');
+
+    // Fail-closed age attestation required for mating RPCs / message INSERT.
+    const { error: ageAErr } = await admin
+      .from('profiles')
+      .update({ age_attested_adult: true })
+      .eq('id', userAId);
+    assertNoError(ageAErr, 'Service role sets User A age_attested_adult');
+
+    const { error: ageBErr } = await admin
+      .from('profiles')
+      .update({ age_attested_adult: true })
+      .eq('id', userBId);
+    assertNoError(ageBErr, 'Service role sets User B age_attested_adult');
+
+    const { error: locAErr } = await admin
+      .from('profiles')
+      .update({
+        last_location_lat: 12.972,
+        last_location_lng: 77.595,
+        location_updated_at: new Date().toISOString(),
+      })
+      .eq('id', userAId);
+    assertNoError(locAErr, 'Service role sets User A fresh location for mating RPCs');
+
+    const { data: petAMating, error: petAMatingErr } = await clientA
+      .from('pets')
+      .insert({
+        owner_id: userAId,
+        name: 'Pet A Mating',
+        breed: 'Labrador',
+        gender: 'male',
+        is_looking_for_companion: true,
+      })
+      .select('id')
+      .single();
+    assertNoError(petAMatingErr, 'User A creates mating-eligible pet');
+
+    const { data: petBMating, error: petBMatingErr } = await clientB
+      .from('pets')
+      .insert({
+        owner_id: userBId,
+        name: 'Pet B Mating',
+        breed: 'Labrador',
+        gender: 'female',
+        is_looking_for_companion: true,
+      })
+      .select('id')
+      .single();
+    assertNoError(petBMatingErr, 'User B creates mating-eligible pet');
+
+    const { error: pawABErr } = await clientA.rpc('express_paw', {
+      from_pet_id: petAMating.id,
+      to_pet_id: petBMating.id,
+    });
+    assertNoError(pawABErr, 'User A expresses Paw toward User B pet');
+
+    const { error: pawBAErr } = await clientB.rpc('express_paw', {
+      from_pet_id: petBMating.id,
+      to_pet_id: petAMating.id,
+    });
+    assertNoError(pawBAErr, 'User B expresses Paw back — mutual Paw');
+
+    const petLowId = petAMating.id < petBMating.id ? petAMating.id : petBMating.id;
+    const petHighId = petAMating.id < petBMating.id ? petBMating.id : petAMating.id;
+
+    const { data: introChannel, error: introChannelErr } = await clientA
+      .from('mating_introduction_channels')
+      .select('id, status')
+      .eq('pet_low_id', petLowId)
+      .eq('pet_high_id', petHighId)
+      .maybeSingle();
+    assertNoError(introChannelErr, 'Participant can read introduction channel');
+    assert(Boolean(introChannel), 'Mutual Paw opens introduction channel');
+    assert(introChannel.status === 'open', 'Introduction channel status is open');
+
+    const { error: linkMsgErr } = await clientA.from('mating_introduction_messages').insert({
+      channel_id: introChannel.id,
+      sender_user_id: userAId,
+      body: 'See https://example.com for details',
+    });
+    assert(
+      Boolean(linkMsgErr)
+        && (
+          String(linkMsgErr.message || '').includes('link_sharing_forbidden')
+          || String(linkMsgErr.details || '').includes('link_sharing_forbidden')
+          || String(linkMsgErr.hint || '').includes('Links cannot be shared')
+        ),
+      'Introduction chat rejects URL bodies (link_sharing_forbidden)',
+    );
+
+    const { error: bareDomainErr } = await clientA.from('mating_introduction_messages').insert({
+      channel_id: introChannel.id,
+      sender_user_id: userAId,
+      body: 'Visit example.com later',
+    });
+    assert(
+      Boolean(bareDomainErr)
+        && String(bareDomainErr.message || '').includes('link_sharing_forbidden'),
+      'Introduction chat rejects bare domain.tld bodies',
+    );
+
+    const { error: phoneMsgErr } = await clientA.from('mating_introduction_messages').insert({
+      channel_id: introChannel.id,
+      sender_user_id: userAId,
+      body: 'Call me at 9876543210 when you are free',
+    });
+    assertNoError(phoneMsgErr, 'Introduction chat allows phone-number text');
+
+    const { error: plainMsgErr } = await clientB.from('mating_introduction_messages').insert({
+      channel_id: introChannel.id,
+      sender_user_id: userBId,
+      body: 'Sounds good — meet at the park this weekend?',
+    });
+    assertNoError(plainMsgErr, 'Plain text message sends in open mutual-Paw channel');
 
     console.log('');
     console.log('Invites');

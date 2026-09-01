@@ -4,6 +4,10 @@
  */
 
 import { hasPassedAgeGate } from '../lib/ageGate';
+import {
+  INTRO_CHAT_LINK_FORBIDDEN_MESSAGE,
+  introductionMessageBodyContainsLink,
+} from '../lib/introChatLinkGuard';
 import { supabase } from '../config/supabase';
 
 export const MATING_RADIUS_KM_OPTIONS = Object.freeze([5, 10, 25, 50]);
@@ -12,6 +16,18 @@ export const MATING_DESCRIPTION_MAX = 200;
 
 export const MATING_CHAT_DISCLAIMER =
   'Sharing personal details (address, phone, exact meeting spot) is at your discretion. Pawple encourages public, pet-friendly first meetups. Pawple is not responsible for chat exchanges.';
+
+export { INTRO_CHAT_LINK_FORBIDDEN_MESSAGE, introductionMessageBodyContainsLink };
+
+function throwIntroChatLinkForbidden(cause) {
+  const err = new Error('link_sharing_forbidden');
+  err.code = 'link_sharing_forbidden';
+  err.userMessage = INTRO_CHAT_LINK_FORBIDDEN_MESSAGE;
+  if (cause) {
+    err.cause = cause;
+  }
+  throw err;
+}
 
 function orderedPetPair(petA, petB) {
   const a = String(petA);
@@ -294,6 +310,9 @@ export async function sendIntroductionMessage(channelId, body) {
   if (!trimmed) {
     throw new Error('Message is empty.');
   }
+  if (introductionMessageBodyContainsLink(trimmed)) {
+    throwIntroChatLinkForbidden();
+  }
 
   const { data, error } = await supabase
     .from('mating_introduction_messages')
@@ -307,6 +326,10 @@ export async function sendIntroductionMessage(channelId, body) {
 
   if (error) {
     console.error('[Supabase]', error);
+    const msg = String(error?.message ?? error?.hint ?? error?.details ?? '');
+    if (msg.includes('link_sharing_forbidden')) {
+      throwIntroChatLinkForbidden(error);
+    }
     const wrapped = new Error("Couldn't send. Introduction may no longer be open.");
     wrapped.cause = error;
     throw wrapped;

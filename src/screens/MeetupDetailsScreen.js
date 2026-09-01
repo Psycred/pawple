@@ -27,7 +27,6 @@ import {
   applyDemoMeetupRsvp,
   cancelDemoMeetup,
 } from '../data/demoMeetupRsvp';
-import { getCachedLocation } from '../lib/locationManager';
 import { buildMeetupShareMessage } from '../lib/shareUtils';
 import {
   cancelMeetup,
@@ -47,10 +46,7 @@ import {
   parseTimeOnDate,
 } from '../utils/formatMomentDate';
 import { extractHostPetNames, formatHostPetNames } from '../utils/meetupHostDisplay';
-import {
-  computeHonestMeetupDistanceKm,
-  formatDistanceLabel,
-} from '../utils/distanceUtils';
+import { formatCityBadge } from '../utils/cityUtils';
 
 const SCREEN_BG = '#FFFCF8';
 const PRIMARY_TEXT = '#3A312E';
@@ -139,7 +135,6 @@ export default function MeetupDetailsScreen({ navigation, route }) {
   const [participantsOpen, setParticipantsOpen] = useState(false);
   const [joinSheetOpen, setJoinSheetOpen] = useState(false);
   const [leaveSheetOpen, setLeaveSheetOpen] = useState(false);
-  const [distanceKm, setDistanceKm] = useState(null);
   const [safetyMenuOpen, setSafetyMenuOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const [blockPetTarget, setBlockPetTarget] = useState(null);
@@ -199,20 +194,6 @@ export default function MeetupDetailsScreen({ navigation, route }) {
         return;
       }
 
-      const viewerCoords = await getCachedLocation().catch(() => null);
-      const preset = Number(row.distanceKm ?? row.distance_km);
-      let km = Number.isFinite(preset) && preset >= 0 ? preset : null;
-
-      // Only real venue + viewer GPS — no mock venue/user fallbacks.
-      if (km == null) {
-        km = computeHonestMeetupDistanceKm(
-          row,
-          viewerCoords?.latitude,
-          viewerCoords?.longitude,
-        );
-      }
-
-      setDistanceKm(km);
       setMeetup(row);
 
       const joinedPetIds = extractViewerJoinedPetIds(row, nextOwnedPetIds);
@@ -343,10 +324,7 @@ export default function MeetupDetailsScreen({ navigation, route }) {
 
   const descriptionText = meetup?.description?.trim() || '';
 
-  const distanceLabel = useMemo(
-    () => formatDistanceLabel(distanceKm),
-    [distanceKm],
-  );
+  const cityLabel = useMemo(() => formatCityBadge(meetup?.city), [meetup?.city]);
 
   const previewPets = participantPets.slice(0, 3);
 
@@ -589,12 +567,12 @@ export default function MeetupDetailsScreen({ navigation, route }) {
         </Text>
 
         <View style={styles.metaRow}>
-          {distanceLabel ? (
-            <Text style={styles.distanceText} allowFontScaling>
-              {distanceLabel}
+          {cityLabel ? (
+            <Text style={styles.cityText} allowFontScaling>
+              {cityLabel}
             </Text>
           ) : (
-            <View style={styles.distanceText} />
+            <View style={styles.cityText} />
           )}
           {openToLabel ? (
             <View style={styles.openToChip}>
@@ -830,7 +808,7 @@ const styles = StyleSheet.create({
     gap: 12,
     marginBottom: 16,
   },
-  distanceText: {
+  cityText: {
     flex: 1,
     fontFamily: theme.fonts.body,
     fontSize: 14,

@@ -9,7 +9,7 @@ import {
   isDemoMeetupId,
 } from '../services/meetups';
 import { formatLocalTime, formatShortWeekday } from '../utils/formatMomentDate';
-import { formatDistanceLabel } from '../utils/distanceUtils';
+import { formatCityBadge } from '../utils/cityUtils';
 import MeetupPetJoinSheet from './MeetupPetJoinSheet';
 
 const CARD_BG = '#FFFCF8';
@@ -101,11 +101,8 @@ export default function MeetupCard({
     return '';
   }, [meetup?.open_to, meetup?.custom_breed_spec]);
 
-  // Honest omit when GPS/venue distance is missing — never invent a km figure.
-  const distanceLabel = useMemo(() => {
-    const fromRow = Number(meetup?.distanceKm ?? meetup?.distance_km);
-    return formatDistanceLabel(Number.isFinite(fromRow) ? fromRow : null);
-  }, [meetup?.distanceKm, meetup?.distance_km]);
+  // Bulletin-board locality — city badge only (no km labels in Phase 1a).
+  const cityLabel = useMemo(() => formatCityBadge(meetup?.city), [meetup?.city]);
 
   const limit = useMemo(() => {
     const raw = meetup?.participation_limit;
@@ -293,14 +290,14 @@ export default function MeetupCard({
           </Text>
         ) : null}
 
-        {distanceLabel || chipLabel ? (
+        {cityLabel || chipLabel ? (
           <View style={styles.locationRow}>
-            {distanceLabel ? (
-              <Text style={styles.distanceText} numberOfLines={1} allowFontScaling>
-                {distanceLabel}
+            {cityLabel ? (
+              <Text style={styles.cityText} numberOfLines={1} allowFontScaling>
+                {cityLabel}
               </Text>
             ) : (
-              <View style={styles.distanceText} />
+              <View style={styles.cityText} />
             )}
             {chipLabel ? (
               <View style={styles.visibilityChip}>
@@ -473,7 +470,7 @@ const styles = StyleSheet.create({
     gap: 12,
     marginBottom: 16,
   },
-  distanceText: {
+  cityText: {
     flex: 1,
     fontFamily: theme.fonts.body,
     fontSize: 14,

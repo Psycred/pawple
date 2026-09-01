@@ -23,9 +23,11 @@ import ScreenWrapper from '../components/ScreenWrapper';
 import { theme } from '../config/theme';
 import { useAuth } from '../contexts/AuthContext';
 import {
+  INTRO_CHAT_LINK_FORBIDDEN_MESSAGE,
   MATING_CHAT_DISCLAIMER,
   fetchIntroductionChannelById,
   fetchIntroductionMessages,
+  introductionMessageBodyContainsLink,
   sendIntroductionMessage,
 } from '../services/mating';
 
@@ -121,9 +123,11 @@ export default function MatingIntroductionChatScreen({ navigation, route }) {
   }, [channelId]);
 
   const canCompose = channel?.status === 'open';
+  const draftHasLink = introductionMessageBodyContainsLink(draft);
+  const canSend = canCompose && !sending && Boolean(draft.trim()) && !draftHasLink;
 
   const handleSend = useCallback(async () => {
-    if (!canCompose || sending || !draft.trim()) {
+    if (!canSend) {
       return;
     }
     setSending(true);
@@ -143,12 +147,12 @@ export default function MatingIntroductionChatScreen({ navigation, route }) {
       }
       Toast.show({
         type: 'error',
-        text1: e?.message || "Couldn't send.",
+        text1: e?.userMessage || e?.message || "Couldn't send.",
       });
     } finally {
       setSending(false);
     }
-  }, [canCompose, channelId, draft, sending]);
+  }, [canSend, channelId, draft]);
 
   const title = `Introduction · ${otherPetName}`;
 
@@ -215,34 +219,41 @@ export default function MatingIntroductionChatScreen({ navigation, route }) {
           />
 
           <View style={styles.composer}>
-            <TextInput
-              style={styles.input}
-              value={draft}
-              onChangeText={setDraft}
-              placeholder={canCompose ? 'Message' : 'Paused'}
-              placeholderTextColor={theme.colors.placeholder?.value ?? '#9A9A9A'}
-              editable={canCompose && !sending}
-              maxLength={2000}
-              multiline
-              accessibilityLabel="Message"
-            />
-            <Pressable
-              onPress={handleSend}
-              disabled={!canCompose || sending || !draft.trim()}
-              style={({ pressed }) => [
-                styles.sendBtn,
-                (!canCompose || !draft.trim()) && styles.sendDisabled,
-                pressed && styles.pressed,
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel="Send"
-            >
-              {sending ? (
-                <ActivityIndicator color={theme.colors.text.inverse.value} />
-              ) : (
-                <Feather name="arrow-up" size={20} color={theme.colors.text.inverse.value} />
-              )}
-            </Pressable>
+            {canCompose && draftHasLink ? (
+              <Text style={styles.linkHint} allowFontScaling>
+                {INTRO_CHAT_LINK_FORBIDDEN_MESSAGE}
+              </Text>
+            ) : null}
+            <View style={styles.composerRow}>
+              <TextInput
+                style={styles.input}
+                value={draft}
+                onChangeText={setDraft}
+                placeholder={canCompose ? 'Message' : 'Paused'}
+                placeholderTextColor={theme.colors.placeholder?.value ?? '#9A9A9A'}
+                editable={canCompose && !sending}
+                maxLength={2000}
+                multiline
+                accessibilityLabel="Message"
+              />
+              <Pressable
+                onPress={handleSend}
+                disabled={!canSend}
+                style={({ pressed }) => [
+                  styles.sendBtn,
+                  !canSend && styles.sendDisabled,
+                  pressed && styles.pressed,
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel="Send"
+              >
+                {sending ? (
+                  <ActivityIndicator color={theme.colors.text.inverse.value} />
+                ) : (
+                  <Feather name="arrow-up" size={20} color={theme.colors.text.inverse.value} />
+                )}
+              </Pressable>
+            </View>
           </View>
         </KeyboardAvoidingView>
       )}
@@ -368,15 +379,23 @@ const styles = StyleSheet.create({
     color: theme.colors.text.inverse.value,
   },
   composer: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 10,
     paddingHorizontal: 20,
     paddingTop: 10,
     paddingBottom: 24,
+    gap: 8,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: theme.colors.border.light,
     backgroundColor: theme.colors.background.screen,
+  },
+  composerRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 10,
+  },
+  linkHint: {
+    fontFamily: theme.fonts.medium,
+    fontSize: theme.fontSizes.sm,
+    color: theme.colors.text.muted.light,
   },
   input: {
     flex: 1,

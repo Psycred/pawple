@@ -14,6 +14,11 @@ import { theme } from '../config/theme';
 import { supabase } from '../config/supabase';
 import { useActivePet } from '../contexts/ActivePetContext';
 import {
+  acknowledgeMeetupRsvpDisclaimer,
+  hasMeetupRsvpDisclaimerAck,
+  MEETUP_RSVP_DISCLAIMER,
+} from '../lib/meetupRsvpDisclaimer';
+import {
   extractMeetupHostPetIds,
   extractViewerJoinedPetIds,
   isDemoMeetupId,
@@ -48,6 +53,7 @@ export default function MeetupPetJoinSheet({
   const [selectedIds, setSelectedIds] = useState([]);
   const [busy, setBusy] = useState(false);
   const [errorText, setErrorText] = useState('');
+  const [showDisclaimer, setShowDisclaimer] = useState(false);
 
   const meetupId = meetup?.id;
   const isJoin = mode === 'join';
@@ -99,10 +105,32 @@ export default function MeetupPetJoinSheet({
 
   useEffect(() => {
     if (!visible) {
+      setShowDisclaimer(false);
       return;
     }
     loadPets();
   }, [visible, loadPets]);
+
+  useEffect(() => {
+    if (!visible || !isJoin) {
+      return;
+    }
+    let cancelled = false;
+    hasMeetupRsvpDisclaimerAck()
+      .then((acked) => {
+        if (!cancelled) {
+          setShowDisclaimer(!acked);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setShowDisclaimer(true);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [visible, isJoin]);
 
   useEffect(() => {
     if (!visible || pets.length === 0) {
@@ -159,6 +187,10 @@ export default function MeetupPetJoinSheet({
       return;
     }
 
+    if (isJoin && showDisclaimer) {
+      return;
+    }
+
     setBusy(true);
     setErrorText('');
 
@@ -193,6 +225,11 @@ export default function MeetupPetJoinSheet({
     }
   };
 
+  const handleAcknowledgeDisclaimer = async () => {
+    await acknowledgeMeetupRsvpDisclaimer();
+    setShowDisclaimer(false);
+  };
+
   const title = isJoin ? 'Who is joining?' : 'Which pets are leaving?';
   const helper = isJoin
     ? 'Select all pets you want to bring to this meetup.'
@@ -206,6 +243,28 @@ export default function MeetupPetJoinSheet({
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={onClose} accessibilityLabel="Close" />
       <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 24) }]}>
+        {showDisclaimer ? (
+          <>
+            <View style={styles.handle} />
+            <Text style={styles.title} allowFontScaling>
+              Before you RSVP
+            </Text>
+            <Text style={styles.disclaimerBody} allowFontScaling>
+              {MEETUP_RSVP_DISCLAIMER}
+            </Text>
+            <Pressable
+              onPress={handleAcknowledgeDisclaimer}
+              style={({ pressed }) => [styles.confirmButton, pressed && styles.pressed]}
+              accessibilityRole="button"
+              accessibilityLabel="Continue to RSVP"
+            >
+              <Text style={styles.confirmButtonText} allowFontScaling>
+                Continue
+              </Text>
+            </Pressable>
+          </>
+        ) : (
+          <>
         <View style={styles.handle} />
 
         <Text style={styles.title} allowFontScaling>
@@ -300,6 +359,8 @@ export default function MeetupPetJoinSheet({
             </Text>
           )}
         </Pressable>
+          </>
+        )}
       </View>
     </Modal>
   );
@@ -339,6 +400,13 @@ const styles = StyleSheet.create({
     lineHeight: Math.round(theme.fontSizes.sm * theme.lineHeights.normal),
     color: theme.colors.text.secondary.light,
     marginBottom: 16,
+  },
+  disclaimerBody: {
+    fontFamily: theme.fonts.body,
+    fontSize: theme.fontSizes.md,
+    lineHeight: Math.round(theme.fontSizes.md * theme.lineHeights.normal),
+    color: theme.colors.text.secondary.light,
+    marginBottom: 24,
   },
   loadingWrap: {
     paddingVertical: 32,

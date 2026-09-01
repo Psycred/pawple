@@ -30,7 +30,6 @@ import { uploadToSupabase } from '../lib/supabase';
 import { useActivePet } from '../contexts/ActivePetContext';
 import { useAuth } from '../contexts/AuthContext';
 import { processImageForPawple } from '../services/imageProcessor';
-import { getValidLocation } from '../lib/locationManager';
 import { buildPetAttribution, createMoment, formatMomentDate, linkMomentToPets } from '../services/moments';
 
 const f = theme.createMomentFoundation;
@@ -329,16 +328,8 @@ export default function CreateMomentScreen() {
       console.log('[Moment] Upload success', { publicUrl });
 
       // [FLOW] Step 5 — create the single moment record (pet_ids stored as attribution fallback).
-      const locationResult = await getValidLocation({
-        reason: 'to attach your moment to a place',
-        requestIfNeeded: true,
-        preferCache: true,
-      });
-      const userLocation = locationResult.coords;
-      console.log('[Moment] Moment insert starting', {
-        locationStatus: locationResult.status,
-        hasCoords: userLocation?.latitude != null && userLocation?.longitude != null,
-      });
+      // Phase 1a: optional caption location text only — no device GPS (PAW-95 §3.2).
+      console.log('[Moment] Moment insert starting');
       const moment = await createMoment({
         userId: user.id,
         imageUrl: publicUrl,
@@ -347,8 +338,6 @@ export default function CreateMomentScreen() {
         location: trimmedLocation,
         petIds: selectedPetIds,
         petNames: selectedPets.map((p) => p.name).filter(Boolean),
-        location_lat: userLocation?.latitude,
-        location_lng: userLocation?.longitude,
       });
       console.log('[Moment] Moment insert success', { momentId: moment.id });
 

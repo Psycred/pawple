@@ -1,0 +1,99 @@
+## CTO Advisory — Location Stack Audit (PAW-81)
+
+**Scope:** Read-only codebase audit for Phase 1a **coarse city-level only** 13+ bulletin board.  
+**Verdict:** Today we capture and persist **device-derived coordinates at sub-city precision**, not city-level only. Product copy and some code comments say "approximate/city-level," but the data model and several flows treat location as **lat/lng pairs**. **Not ready** for a coarse-only 13+ bulletin board without a deliberate downgrade pass.
+
+---
+
+### 1. Precise GPS or coarse city-level today?
+
+**Answer: Sub-city coordinate capture — functionally precise GPS, not city-level.**
+
+| Layer | What happens | Precision |
+|-------|----------------|-----------|
+| **Capture** | `locationManager.getValidLocation()` and `profileLocation.fetchApproximateCoords()` both call `Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced })` | iOS: ~100m typical (mitigated by `NSLocationDefaultAccuracyReduced: true` in `app.json`). Android: `ACCESS_COARSE_LOCATION` only (FINE blocked) — typically ~1–3 km cell/wifi. **Neither uses `Accuracy.Lowest` or reverse-geocode-to-city.** |
+| **Storage** | Raw `double precision` lat/lng on `moments`, `meetups`, `profiles.last_location_*` | Full floating-point coordinates. No geohash, city bucket, or truncation. |
+| **User-facing city** | `profiles.city` — **manual text** at onboarding/edit (`OnboardingUserScreen`, `EditProfileScreen`) | Independent of GPS. Used by `fetchUserFeedLocation()` for feed context. |
+| **Moments** | `CreateMomentScreen` JIT-calls `getValidLocation()` on save → writes `location_lat/lng` + optional caption `location` string | Device coords at moment-creation time. |
+| **Meetups** | `CreateMeetupScreen` JIT-calls `getValidLocation()` on publish → writes `meetups.location_lat/lng` | Creator device coords; venue text/maps link separate. Feed shows **"X.X km away"** via `distanceUtils` + cached viewer coords. |
+| **Profile refresh** | `App.js` calls `refreshProfileLocationOnAppOpen()` on every signed-in session | Re-requests OS permission if `undetermined`; if granted, fresh GPS → `profiles.last_location_*`. |
+| **Mating RPCs** | `get_mating_opportunities` uses `last_location_lat/lng` + `haversine_km` at fixed **100 km** radius | Server-side precise distance math. Columns revoked from client SELECT (good), but coords still stored at capture precision. |
+| **Expo config** | `app.json`: iOS reduced-accuracy default; Android coarse-only; permission strings say "approximate" | Platform guardrails exist; **application layer does not enforce city-only semantics.** |
+
+**Nuance:** Android is coarser by platform policy. iOS with Balanced + reduced default is still far more precise than "city-level only." The stack is **coordinate-centric**, not **city-centric**.
+
+---
+
+### 2. Effort to downgrade to coarse-only
+
+**Estimate: 2–3 engineering weeks** (incl. migration, RLS hardening, QA regression) for a production-safe coarse-only stack. Can be phased.
+
+#### Phase A — Stop writing precise coords (3–5 days)
+- Switch capture to `Location.Accuracy.Lowest` (or platform-equivalent).
+- On capture: `reverseGeocodeAsync` → canonical **city label** (+ optional admin region); **discard** raw lat/lng before persistence.
+- Remove JIT `getValidLocation({ requestIfNeeded: true })` from `CreateMomentScreen` / `CreateMeetupScreen` save paths for 13+ bulletin mode.
+- Disable `refreshProfileLocationOnAppOpen` GPS refresh for 13+; rely on `profiles.city`.
+- Replace meetup **"X.X km away"** with city label match / same-city badge only.
+
+#### Phase B — Schema + enforcement (5–8 days)
+- Add `city` / `city_region` (or geohash bucket at precision ~5–6 chars ≈ city scale) to `meetups` if bulletin board needs locality without coords.
+- **Revoke client SELECT** on `moments.location_lat/lng` and `meetups.location_lat/lng` (mirror `profiles.last_location_*` pattern). Today `moments` uses `select('*')` — coords are **queryable by any authenticated client** even if UI strips them.
+- Backfill/null existing coord columns or migrate to buckets.
+- Rework or **gate mating RPCs** for 13+ (100 km haversine is incompatible with city-only product contract).
+- Update `rls-security-tests.js` + integration tests.
+
+#### Phase C — Product/legal alignment (1–2 days)
+- Align `legalDocuments.js` claims with actual behaviour.
+- Replace `LocationSettingsScreen` placeholder (currently hardcoded "Mumbai" / "25 km") with real city control.
+
+**Not recommended:** Geohash-only without revoking raw columns — still reversible to precise if coords remain in DB.
+
+---
+
+### 3. Dynamic feed city on travel — without GPS permission prompts
+
+**Recommended architecture for 13+ bulletin board:**
+
+| Mechanism | Prompt? | Fit |
+|-----------|---------|-----|
+| **`profiles.city` as canonical feed locality** | No | Already exists. User edits in profile/settings. Bulletin board filters/sorts by city string match. |
+| **Explicit "Change city" in feed/settings** | No | Calm, Pawple-appropriate. User-initiated when travelling. |
+| **Server-side IP geolocation hint** (edge function, session-scoped) | No OS prompt | Coarse city suggestion only — never auto-write without consent. Show soft "Looks like you're in {city} — update?" |
+| **Cached coords → city** (if permission already granted) | No *new* prompt | Only when `getForegroundPermissionsAsync() === 'granted'`. Use reverse geocode once, store city, discard coords. |
+| **`refreshProfileLocationOnAppOpen` as-is** | **Yes** (undetermined → OS dialog; granted → GPS each open) | **Remove for 13+.** Current behaviour is incompatible with "no surprise prompts." |
+
+**Do not use** for 13+ bulletin board:
+- Background location (not implemented; would be worse).
+- Repeated `requestForegroundPermissionsAsync` on feature entry.
+- Precise distance sorting (`sortFeedMoments` distance path, meetup km labels).
+
+**Minimum viable:** Feed city = `profiles.city`; optional IP-suggested city change card; no automatic GPS refresh.
+
+---
+
+### 4. Risks shipping bulletin-board meetups on current stack unchanged
+
+| Risk | Severity | Detail |
+|------|----------|--------|
+| **Product/legal mismatch** | High | `legalDocuments.js` states "approximate location," "exact coordinates not shared." Stack stores and computes on full lat/lng. App Store / DPDP scrutiny risk for 13+. |
+| **Minor real-world safety** | High | Bulletin-board meetups + creator GPS coords + venue text/maps links enable physical meetup discovery at sub-city precision for 13+ users. |
+| **Coordinate leakage via RLS** | Medium–High | `meetups.location_lat/lng` returned in feed queries. `moments.location_lat/lng` selectable via `select('*')` — any client can query. `profiles.last_location_*` correctly revoked. |
+| **Covert tracking surface** | Medium | `refreshProfileLocationOnAppOpen` overwrites `last_location_*` every session when permission granted — movement history not stored, but latest position is fresh precise snapshot. |
+| **Permission UX debt** | Medium | JIT permission on moment/meetup save + onboarding location step + app-open refresh = multiple GPS touchpoints. |
+| **Misleading distance UI** | Medium | "12.4 km away" implies precision inappropriate for city bulletin board; encourages coordinate-dependent sorting. |
+| **Mating stack bleed** | Medium | If 13+ users exist in DB, mating RPCs still depend on `last_location_*` freshness (24h). Needs explicit product gate, not just UI hide. |
+| **Dev mock fallback** | Low (prod) | `locationUtils.getDistanceToMeetup` falls back to Bangalore mock when viewer coords missing — `distanceUtils.withHonestMeetupDistance` correctly avoids this in feed, but inconsistency remains in legacy paths. |
+
+**CTO recommendation:** Do **not** ship 13+ bulletin-board meetups on the current location stack. Minimum bar: city-only storage, no client-readable coords, no JIT GPS on publish, no km-distance labels, no app-open GPS refresh for 13+.
+
+---
+
+### Files reviewed
+- `src/lib/locationManager.js`, `src/lib/profileLocation.js`, `src/utils/locationUtils.js`, `src/utils/distanceUtils.js`
+- `src/screens/CreateMomentScreen.js`, `src/screens/CreateMeetupScreen.js`, `src/screens/FeedScreen.js`
+- `src/services/moments.js`, `src/services/meetups.js`
+- `App.js` (app-open location refresh)
+- `app.json` (Expo location permissions)
+- `supabase/migrations/*` — `profiles.last_location_*`, `moments`/`meetups` coords, mating haversine RPCs, RLS revokes
+
+**Awaiting:** QA co-review on this issue (PAW-82) before closure.

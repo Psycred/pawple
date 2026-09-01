@@ -287,9 +287,7 @@ const BULK_MEETUP_LOCATIONS = [
   },
 ];
 
-/** Mix of close, medium, and far distances (km). */
-const BULK_DISTANCE_KM = [0.5, 1.2, 1.8, 2.4, 3.2, 3.5, 5.0, 7.8, 10.0, 12.0, 18.0, 25.0, 28.0];
-
+/** Mix of participation limits for demo variety. */
 const BULK_PARTICIPATION_LIMITS = [10, 15, 20, 25];
 
 const BULK_OPEN_TO_OPTIONS = [
@@ -490,11 +488,6 @@ function buildDemoHosts(scenario, fallbackIndex = 0) {
   };
 }
 
-function formatDistanceLabel(km) {
-  const rounded = km < 10 ? km.toFixed(1) : String(Math.round(km));
-  return `${rounded} km`;
-}
-
 function buildBulkDescription(title, openTo) {
   const base = BULK_DESCRIPTIONS[title.length % BULK_DESCRIPTIONS.length];
   if (openTo === 'Open to All') {
@@ -512,7 +505,6 @@ function buildBulkMeetupRow(index, dayOffset) {
   const timeSlot = BULK_TIME_SLOTS[index % BULK_TIME_SLOTS.length];
   const openTo = scenario.openTo;
   const customBreedSpec = scenario.customBreedSpec ?? null;
-  const distanceKm = BULK_DISTANCE_KM[index % BULK_DISTANCE_KM.length];
   const adjustedDayOffset = nudgeDayOffsetToWeekend(dayOffset, index);
 
   return {
@@ -530,14 +522,12 @@ function buildBulkMeetupRow(index, dayOffset) {
     custom_breed_spec: customBreedSpec,
     description: buildBulkDescription(title, openTo),
     google_maps_link: locationMeta.google_maps_link,
+    city: 'Mumbai',
     meetup_hosts: host.meetup_hosts,
     meetup_participants: host.meetup_participants,
     participant_count: host.participant_count,
     participation_limit: host.participation_limit,
     viewer_joined: host.viewer_joined,
-    distanceKm,
-    distance_km: distanceKm,
-    distance: formatDistanceLabel(distanceKm),
     location_lat: venue.location_lat,
     location_lng: venue.location_lng,
   };
@@ -560,9 +550,13 @@ export function getDemoMeetupsForFeed() {
   if (!isDemoContentEnabled) {
     return [];
   }
-  console.log('[DemoFeed] Generating bulk meetups, target count:', BULK_DEMO_MEETUP_COUNT);
+  if (__DEV__) {
+    console.log('[DemoFeed] Generating bulk meetups, target count:', BULK_DEMO_MEETUP_COUNT);
+  }
   const meetups = generateBulkDemoMeetups();
-  console.log('[DemoFeed] Returning meetups, count:', meetups.length);
+  if (__DEV__) {
+    console.log('[DemoFeed] Returning meetups, count:', meetups.length);
+  }
   return meetups;
 }
 

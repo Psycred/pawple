@@ -52,6 +52,21 @@ export async function hasPassedAgeGate() {
   }
 }
 
+/** ISO date (YYYY-MM-DD) from a successful local age gate, or null. */
+export async function getStoredBirthDate() {
+  try {
+    const raw = await AsyncStorage.getItem(AGE_GATE_STORAGE_KEY);
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw);
+    return typeof parsed?.birthDate === 'string' ? parsed.birthDate : null;
+  } catch (error) {
+    console.error('[AgeGate] birth date read failed', error);
+    return null;
+  }
+}
+
 /**
  * Persist a successful gate. Stores birth date (ISO date) for auditability on-device.
  * Server attestation is synced separately via ageAttestationSync when authenticated.

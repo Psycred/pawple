@@ -28,6 +28,10 @@ export const isProduction = pawpleEnv === 'production';
 
 /** Log environment contract at startup (dev/staging only). */
 export function assertContractEnvironment() {
+  if (!__DEV__ && isDemoContentEnabled) {
+    console.error('[Pawple] Demo content gate must be off in release builds.');
+  }
+
   if (__DEV__ || isStaging) {
     console.log('[Pawple] Environment:', {
       pawpleEnv,

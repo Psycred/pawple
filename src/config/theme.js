@@ -315,8 +315,9 @@ const theme = {
   },
   /** Feed top shell + carousel (FeedScreen, EventCarousel, MeetupCard compact). */
   feed: {
-    shellPaddingTop: 24,
-    shellPaddingHorizontal: 20,
+    /** Calm top breathing room below safe area (pawple-ui-composition minimum 32px). */
+    shellPaddingTop: 32,
+    shellPaddingHorizontal: 24,
     shellPaddingBottom: 32,
     carouselCardWidthRatio: 0.85,
     carouselCardGap: 16,

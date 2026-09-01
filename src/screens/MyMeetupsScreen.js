@@ -21,13 +21,11 @@ import {
   applyDemoMeetupRsvp,
   getDemoJoinedMeetupIdsForPet,
 } from '../data/demoMeetupRsvp';
-import { getCachedLocation } from '../lib/locationManager';
 import {
   fetchPetHostingMeetupsByPet,
   fetchPetParticipatingMeetups,
   sortMeetupsByDateAsc,
 } from '../services/meetups';
-import { withHonestMeetupDistance } from '../utils/distanceUtils';
 
 const SCREEN_BG = '#FFFCF8';
 const SEGMENT_CONTAINER = '#F5F5F5';
@@ -45,11 +43,6 @@ const TABS = [
   { key: 'hosting', label: 'Hosting' },
 ];
 
-function enrichMeetupsWithDistance(meetups, viewerCoords) {
-  return meetups.map((m) => withHonestMeetupDistance(m, viewerCoords));
-}
-
-/** Deduplicate meetup rows by id, then sort soonest-first. */
 function mergeMeetupsById(...groups) {
   const byId = new Map();
   groups.flat().forEach((meetup) => {
@@ -187,8 +180,6 @@ export default function MyMeetupsScreen({ navigation }) {
         return;
       }
 
-      const viewerCoords = await getCachedLocation().catch(() => null);
-
       const [going, hosting] = await Promise.all([
         fetchPetParticipatingMeetups(activePetId),
         fetchPetHostingMeetupsByPet(activePetId),
@@ -201,21 +192,11 @@ export default function MyMeetupsScreen({ navigation }) {
       // Fast Lane: merge private demo Going/Hosting only in development builds.
       if (__DEV__) {
         const demo = getDemoMembershipMeetups(activePetId);
-        setGoingMeetups(
-          enrichMeetupsWithDistance(
-            mergeMeetupsById(going, demo.going),
-            viewerCoords,
-          ),
-        );
-        setHostingMeetups(
-          enrichMeetupsWithDistance(
-            mergeMeetupsById(hosting, demo.hosting),
-            viewerCoords,
-          ),
-        );
+        setGoingMeetups(mergeMeetupsById(going, demo.going));
+        setHostingMeetups(mergeMeetupsById(hosting, demo.hosting));
       } else {
-        setGoingMeetups(enrichMeetupsWithDistance(going, viewerCoords));
-        setHostingMeetups(enrichMeetupsWithDistance(hosting, viewerCoords));
+        setGoingMeetups(going);
+        setHostingMeetups(hosting);
       }
       setLoadError(false);
     } catch (error) {
