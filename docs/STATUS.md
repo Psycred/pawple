@@ -5,45 +5,63 @@ It does NOT supersede Founder authorization in CURRENT.md.
 
 ## Current State
 
-**Active wave:** **Phase 1a — 18+ Bulletin Board** (Founder `66e02a99`)  
-**Stage:** **QA VETO remediation** (PAW-103) — not re-dispatch  
-**Mating wave:** Preserved exactly — QA verified no regressions in working tree  
-**Store:** Blocked until **PAW-52** staging smoke  
-**Commits:** **Frozen until PAW-110 QA SIGN-OFF**
+**Active wave:** **Phase 1a — 18+ Bulletin Board, mating/intro chat hidden** (Founder `4ac03812`)  
+**Stage:** Hide/legal wave **QA SIGN-OFF** (PAW-115). Local commit authorized. **Push is Founder-gated.**  
+**Mating:** Code preserved. User-facing entry points gated (`EXPOSE_MATING_SURFACES = false`).  
+**Store:** Still blocked on **PAW-52** staging smoke (secrets **PAW-55**, RLS apply **PAW-56**)  
+**Push:** Awaiting Founder authorization. No remote push until that confirmation.
 
-## Phase 1a wave (PAW-95–103) — complete, VETO at gate
+Phase 1b / Final Phase 1 remain held.
 
-| Issue | Owner | Status |
-|-------|--------|--------|
-| PAW-95 | CTO | **done** — architecture doc |
-| PAW-96–100 | Engineering | **done** — partial implementation in working tree |
-| PAW-101 | Legal | **done** — advisory memo; copy not in app yet |
-| PAW-102 | Product Strategist | **done** — advisory memo; P0 not implemented |
-| PAW-103 | QA | **done — VETO** |
+## Founder `4ac03812` — hide wave (complete pending push)
 
-## Remediation wave (PAW-104–110)
+| Issue | Owner | Work | Status |
+|-------|--------|------|--------|
+| PAW-112 | CTO | Audit + hide mating/intro-chat UI; keep code | **done** |
+| PAW-113 | Copywriter | Phase 1a user-facing copy document | **done** (document only; not in app commit) |
+| PAW-114 | Legal | Align legal/consent copy with hidden mating | **done** |
+| PAW-115 | QA | Re-gate after hide | **done — SIGN-OFF** |
 
-| Issue | Owner | Fix |
-|-------|--------|-----|
-| **PAW-104** | Frontend | Moments city-only (remove GPS) |
-| **PAW-105** | Frontend | Intro chat link guard |
-| **PAW-106** | Backend | Duplicate migration timestamp |
-| **PAW-107** | Legal | legalDocuments.js implementation |
-| **PAW-108** | Frontend | PAW-102 P0 onboarding fixes |
-| **PAW-109** | Product Strategist | Formal PAW-102 closure |
-| **PAW-110** | QA | Re-gate SIGN-OFF/VETO |
+Commit includes: `src/config/phase1aSurfaces.js`, App.js stack gates, pet profile/edit/view gates, `legalDocuments.js`, `docs/CURRENT.md`, this STATUS. Excludes `opencode.json`.
 
-## Cancelled (superseded)
+## Phase 1a — Bulletin Board on `71b0d9a` (2026-09-01)
 
-PAW-85–88, PAW-89–94 — 13+ teen scope superseded by `66e02a99`
+QA **SIGN-OFF** on PAW-110. Hide wave is the subsequent local commit after PAW-115.
 
-## Store / pre-store blockers
+| Area | In repo |
+|------|---------|
+| Age / tier | `account_tier` + `attest_adult_account` RPC; client sync via `src/lib/ageAttestationSync.js` |
+| Location | City-only bulletin; Moments create path has no GPS payload |
+| Meetups | City discovery + RSVP disclaimer; no group chat |
+| Chat | Mutual-Paw intro **in code**; Phase 1a **hidden** via `EXPOSE_MATING_SURFACES` |
+| Legal | User-facing Terms/Privacy/Guidelines do not offer mating; dormant mating legal exports preserved |
+| Feed | Pet-first; no engagement metrics |
+
+### Wave tickets (Bulletin Board — **done**)
+
+PAW-95 (CTO architecture) → PAW-96–100 (engineering) → PAW-101/107 (legal) → PAW-102/108/109 (onboarding) → PAW-103 VETO → PAW-104–106 remediation → **PAW-110 SIGN-OFF**.
+
+Cancelled: PAW-85–94 (13+ teen scope superseded by `66e02a99`).
+
+## Residual risk (QA, not wave blockers)
+
+- Live RLS / staging apply not run in the QA environment (`test:rls` needs staging secrets).
+- Runtime UI (Expo) not exercised in that gate.
+- Unit: 40/41; one pre-existing `age-gate.test.js` date flake.
+
+## Store / pre-store (still open)
 
 | Issue | Work | Status |
 |-------|------|--------|
-| PAW-52 | Staging smoke | **blocked** |
-| PAW-35 | Productivity review (system) | **blocked** |
+| PAW-52 | Staging smoke | **blocked** (CTO) |
+| PAW-55 | Wire staging Supabase secrets | **blocked** (CTO) — unblocks PAW-52 |
+| PAW-56 | Apply Honesty migrations + `test:rls` on staging | **blocked** (Backend) |
+| PAW-53 | Pre-store: server-side age attestation | **blocked** (Backend) — Phase 1a shipped `attest_adult_account`; issue not closed |
+
+## Org (authorized hires in place)
+
+Tester (`d8a633e7`) → CTO · Marketing Head (`68d10457`) → CEO · Copywriter (`36a30e71`) → Marketing Head.
 
 ## Last Updated
 
-2026-08-31 — Founder nudge: wave resumed at QA VETO remediation; PAW-104–110 dispatched
+2026-09-02 — PAW-115 SIGN-OFF. Local hide/legal commit authorized. Push awaits Founder confirmation. Store still blocked on PAW-52.

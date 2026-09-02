@@ -17,6 +17,7 @@ import MomentCard from '../components/MomentCard';
 import MatingSection from '../components/MatingSection';
 import PetCompanionCommunitySection from '../components/PetCompanionCommunitySection';
 import PetProfileMeetupsSection from '../components/PetProfileMeetupsSection';
+import { EXPOSE_MATING_SURFACES } from '../config/phase1aSurfaces';
 import { theme } from '../config/theme';
 import { useAuth } from '../contexts/AuthContext';
 import { useActivePet } from '../contexts/ActivePetContext';
@@ -383,7 +384,7 @@ export default function PetProfileScreen() {
         contentContainerStyle={styles.aboutContent}
         showsVerticalScrollIndicator={false}
       >
-        {isOwner && activePetId ? (
+        {EXPOSE_MATING_SURFACES && isOwner && activePetId ? (
           <MatingSection
             petId={activePetId}
             petName={pet?.name}
@@ -394,7 +395,7 @@ export default function PetProfileScreen() {
           />
         ) : null}
 
-        {!isOwner && pet?.mating_description ? (
+        {EXPOSE_MATING_SURFACES && !isOwner && pet?.mating_description ? (
           <View style={styles.matingReadOnly}>
             <Text style={styles.sectionTitle} allowFontScaling>
               About mating
@@ -460,7 +461,7 @@ export default function PetProfileScreen() {
       <PetProfileHero
         pet={pet}
         ownerCity={ownerCity}
-        lookingForCompanion={lookingForCompanion}
+        lookingForCompanion={EXPOSE_MATING_SURFACES && lookingForCompanion}
         petTraits={petTraits}
       />
 

@@ -17,6 +17,7 @@ import LoadErrorRetry from '../components/LoadErrorRetry';
 import MatingPawButton from '../components/MatingPawButton';
 import ReportSheet from '../components/ReportSheet';
 import ScreenWrapper from '../components/ScreenWrapper';
+import { EXPOSE_MATING_SURFACES } from '../config/phase1aSurfaces';
 import { theme } from '../config/theme';
 import { useActivePet } from '../contexts/ActivePetContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -75,6 +76,16 @@ export default function ViewPetProfileScreen({ navigation, route }) {
       setPet(profile.pet);
       setIsOwner(Boolean(profile.isOwner));
 
+      // Phase 1a: do not load Paw / intro-chat state when mating surfaces are hidden.
+      if (!EXPOSE_MATING_SURFACES) {
+        setViewerOptedIn(false);
+        setExpressed(false);
+        setMutual(false);
+        setChannel(null);
+        setPawInterestId(null);
+        return;
+      }
+
       let optedIn = false;
       if (viewerPetId && !profile.isOwner) {
         const viewerProfile = await fetchPetProfile(viewerPetId, user?.id ?? null);
@@ -125,7 +136,14 @@ export default function ViewPetProfileScreen({ navigation, route }) {
   );
 
   const canPaw = useMemo(
-    () => Boolean(viewerPetId && !isOwner && viewerOptedIn && pet?.is_looking_for_companion),
+    () =>
+      Boolean(
+        EXPOSE_MATING_SURFACES &&
+          viewerPetId &&
+          !isOwner &&
+          viewerOptedIn &&
+          pet?.is_looking_for_companion,
+      ),
     [isOwner, pet?.is_looking_for_companion, viewerOptedIn, viewerPetId],
   );
 
@@ -171,7 +189,7 @@ export default function ViewPetProfileScreen({ navigation, route }) {
   }, [canPaw, expressed, pawBusy, viewedPetId, viewerPetId]);
 
   const openIntroduction = useCallback(() => {
-    if (!introductionOpen || !channel?.id) {
+    if (!EXPOSE_MATING_SURFACES || !introductionOpen || !channel?.id) {
       return;
     }
     navigation.navigate('MatingIntroductionChatScreen', {
@@ -239,7 +257,7 @@ export default function ViewPetProfileScreen({ navigation, route }) {
                 {subtitle}
               </Text>
             ) : null}
-            {pet.is_looking_for_companion ? (
+            {EXPOSE_MATING_SURFACES && pet.is_looking_for_companion ? (
               <View style={styles.badge}>
                 <Text style={styles.badgeText} allowFontScaling>
                   Open to Companionship
@@ -253,7 +271,7 @@ export default function ViewPetProfileScreen({ navigation, route }) {
             ) : null}
           </View>
 
-          {pet.mating_description ? (
+          {EXPOSE_MATING_SURFACES && pet.mating_description ? (
             <View style={styles.section}>
               <Text style={styles.sectionTitle} allowFontScaling>
                 About mating
@@ -282,7 +300,7 @@ export default function ViewPetProfileScreen({ navigation, route }) {
           ) : null}
 
           {/* Paw sits below evaluation context — never hero-adjacent. */}
-          {canPaw ? (
+          {EXPOSE_MATING_SURFACES && canPaw ? (
             <View style={styles.pawBlock}>
               <MatingPawButton
                 expressed={expressed}
@@ -298,7 +316,7 @@ export default function ViewPetProfileScreen({ navigation, route }) {
           ) : null}
 
           {/* Quiet unlock only when server channel is open — no match celebration. */}
-          {mutual && introductionOpen ? (
+          {EXPOSE_MATING_SURFACES && mutual && introductionOpen ? (
             <Pressable
               onPress={openIntroduction}
               style={({ pressed }) => [styles.introBtn, pressed && styles.pressed]}
@@ -311,7 +329,7 @@ export default function ViewPetProfileScreen({ navigation, route }) {
             </Pressable>
           ) : null}
 
-          {mutual && channel && channel.status === 'frozen' ? (
+          {EXPOSE_MATING_SURFACES && mutual && channel && channel.status === 'frozen' ? (
             <Text style={styles.frozenNote} allowFontScaling>
               Introduction is paused.
             </Text>

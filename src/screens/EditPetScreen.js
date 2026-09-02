@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 import PhotoPickerModal from '../components/PhotoPickerModal';
 import PetCompanionCommunitySection from '../components/PetCompanionCommunitySection';
+import { EXPOSE_MATING_SURFACES } from '../config/phase1aSurfaces';
 import { theme } from '../config/theme';
 import { supabase } from '../config/supabase';
 import { useActivePet } from '../contexts/ActivePetContext';
@@ -523,7 +524,7 @@ export default function EditPetScreen({ navigation, route }) {
         </View>
 
         <PetCompanionCommunitySection
-          showToggle
+          showToggle={EXPOSE_MATING_SURFACES}
           lookingForCompanion={lookingForCompanion}
           onToggle={handleCompanionToggle}
           toggleDisabled={companionSaving || saving || deleting}

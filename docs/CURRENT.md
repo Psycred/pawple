@@ -2,24 +2,25 @@
 
 STATUS: CURRENT  
 AUTHORITY: FOUNDER  
-CEO: Updated per Founder Phase 1a Bulletin Board authorization (2026-08-31)  
-LAST UPDATED: 2026-08-31  
-WAVE: Phase 1a — 18+ Bulletin Board (coarse city location)
+CEO: Updated per Founder Phase 1a execution directive `4ac03812` (2026-09-02)  
+LAST UPDATED: 2026-09-02  
+WAVE: Phase 1a — 18+ Bulletin Board; mating/intro chat **hidden** (code preserved)
 
 The contents of this file define the Founder-authorized scope for the
 current execution wave. Recommendations, observations, or proposed
 future work do not constitute authorization unless explicitly included
 here or in a subsequent CURRENT.md.
 
-Source: Founder authorization on PAW-7 (comment `66e02a99`, 2026-08-31),
-superseding comment `6983edce` and CEO-dispatched 13+ teen wave
-(PAW-85–94 cancelled). Prior mating wave remains committed locally.
+Source: Founder authorization on PAW-7 (comment `4ac03812`, 2026-09-02),
+which supersedes the 2026-08-31 “no hiding mating” launch-surface rule
+while preserving mating/intro-chat **code**. Prior Bulletin Board
+authorization remains `66e02a99` (2026-08-31). Phase 1b / Final Phase 1
+are **held** — note only, no development.
 
 Honesty & Safety wave residuals (staging smoke PAW-52) still **block store
-submission** until staging smoke passes. Phase 1a implementation may
-proceed in parallel where dependencies allow.
-
-**NO COMMITS UNTIL QA SIGN-OFF** on Phase 1a wave (Founder binding).
+submission** until staging smoke passes. The hide/copy/legal wave may
+proceed in parallel. **No commit of that wave until PAW-115 QA SIGN-OFF.**
+Bulletin Board implementation is already committed (`71b0d9a`, PAW-110).
 
 ============================================================
 OVERARCHING PRINCIPLE
@@ -39,9 +40,9 @@ Founder AUTHORIZES **Phase 1a: 18+ Bulletin Board** implementation:
 |---------|--------------|
 | **Launch age** | **18+ ONLY** — existing age attestation |
 | **Location** | **City-level coarse only** — no precise GPS stored or exposed |
-| **Surfaces** | Pet profiles, **Moments/Feed** (production-ready), **public city meetup discovery + RSVP** |
+| **Surfaces** | Pet profiles, **Moments/Feed**, **public city meetup discovery + RSVP**. Mating/intro chat **hidden** (`4ac03812`) |
 | **Meetups** | Public city-level events; **no group chat within meetups** |
-| **Messaging** | Chat **ONLY** after **mutual Paw** between two pet profiles. **No open DMs.** No group meetup chats. **No link sharing in chat.** Users may organically exchange phone numbers. |
+| **Messaging** | No open DMs. Mutual-Paw intro chat **exists in code but is hidden** in Phase 1a. |
 | **Model** | Facebook Events / bulletin-board pattern — city-scoped, pet-first |
 | **Engagement** | No engagement metrics on Feed/Moments |
 
@@ -58,16 +59,22 @@ Founder AUTHORIZES **Phase 1a: 18+ Bulletin Board** implementation:
 - Invisible walls / mixed-age controls for minors
 
 ============================================================
-MATING SYSTEM — PRESERVATION (NON-NEGOTIABLE)
+MATING SYSTEM — CODE PRESERVED; HIDDEN IN PHASE 1a LAUNCH
 ============================================================
 
-**CRITICAL:** Existing Mating architecture MUST remain **EXACTLY AS IS.**
+Founder `4ac03812` (2026-09-02) SUPERSEDES the 2026-08-31 rule
+“No hiding, no removing, no feature-flagging, no UI changes to mating”
+**for Phase 1a user-facing surfaces only.**
 
-- Mutual Paw, discovery, intro chat, 100 km automatic radius, consent-gated flow
-- QA-signed-off committed code (`8649c5f`, `dd64e24`) stays intact
-- **No hiding, no removing, no feature-flagging, no UI changes** to mating
-
-Mating remains **18+ only** per rev 4. Under-18 cannot access mating surfaces.
+BINDING:
+- Mating/matching and intro chat **code must remain** in the repo.
+  Do not strip, delete, or rewrite matching criteria (breed, gender,
+  user-selected distance only). Architecture stays intact for later phases
+  (mutual Paw, discovery, intro chat, 100 km radius, consent-gated flow).
+- Phase 1a **users must not see** mating, matching, or intro chat.
+  Hide via UI gating / not presenting entry points. Do not remove
+  screens, services, RPCs, or tables.
+- Mating remains 18+ only when later re-exposed. Under-18 cannot access it.
 
 ============================================================
 PHASE 1a IMPLEMENTATION WAVE (AUTHORIZED)
@@ -92,9 +99,9 @@ LEGAL COPY REQUIREMENTS (AUTHORIZED)
 
 Legal must update:
 
-- **Terms:** Bulletin Board model, mating consent-gated 18+, no open DMs, meetups as public events Pawple does not vet
+- **Terms:** Bulletin Board model, 18+ launch, no open DMs, meetups as public events Pawple does not vet. Do **not** present mating or intro chat as a current Phase 1a user-facing feature.
 - **Privacy:** Coarse city-level location only, no precise GPS, no behavioral profiling
-- **In-app disclaimers:** RSVP modal (public event, Pawple does not verify attendees); Mating opt-in (18+ only, mutual consent required)
+- **In-app disclaimers:** RSVP modal (public event, Pawple does not verify attendees). Mating opt-in / intro-chat disclaimers stay in repo for later phases; they must not appear in Phase 1a UX.
 - **Community Guidelines:** No harassment, pet-first identity, report/block tools
 
 ============================================================
@@ -102,14 +109,17 @@ NOT AUTHORIZED / FROZEN
 ============================================================
 
 - Teen account UI / 13+ onboarding / VPC / parental supervision
-- Hiding, removing, or feature-flagging mating
+- Phase 1b / Final Phase 1 work (family invites, child feed-only, city-wise mating launch) — **held**
+- Removing or rewriting mating/intro-chat code; changing matching criteria
+- Exposing mating or intro chat to Phase 1a users
 - General open DMs / group meetup chats / link sharing in chat
 - Swipe decks, match economy, compatibility scores, engagement metrics
 - AI message scanning / automated chat moderation
 - Push notifications as product for interest/chat
 - Store submission (still blocked on PAW-52 staging smoke)
 - Push to remote unless Founder authorizes
-- **Commits** until QA SIGN-OFF on Phase 1a wave
+- **Commits** of the hide/legal-copy wave until QA SIGN-OFF on PAW-115
+  (Phase 1a Bulletin Board wave already SIGN-OFF’d on PAW-110 / `71b0d9a`)
 
 ============================================================
 EXECUTION RULES
@@ -129,12 +139,21 @@ VERIFICATION (WAVE COMPLETE WHEN)
 3. City-only location stack honest in code and legal copy
 4. Bulletin board meetups (create, discover by city, RSVP) — no group chat
 5. Moments/Feed production-ready, pet-first, no engagement metrics
-6. Chat only after mutual Paw; no links in chat; mating unchanged
-7. Legal copy updated and honest
-8. Product Strategist UX review complete
-9. QA Auditor SIGN-OFF or VETO on PAW-103
+6. Mating/intro-chat **code preserved**; **hidden** from Phase 1a users (Founder `4ac03812`)
+7. Legal copy honest for the hidden-mating Bulletin Board launch
+8. Product Strategist UX review complete (PAW-102/109)
+9. QA Auditor SIGN-OFF on the hide wave (PAW-115) before commit of that wave
 
 CEO returns one consolidated completion report after QA.
+
+============================================================
+PHASE 1b / FINAL PHASE 1 — HELD (NOTE ONLY)
+============================================================
+
+Founder recorded future intent. **No scoping, design, or development.**
+
+- Phase 1b: family invites, 13–17 journal/feed-only via parent invite (product DOB-match question pending)
+- Final Phase 1: city-wise mating for adults, not accessible to children
 
 ============================================================
 NEW ORGANIZATIONAL HIRING — THREE PERMANENT ROLES

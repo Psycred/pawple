@@ -47,6 +47,7 @@ import { AuthProvider, useAuth } from './src/contexts/AuthContext';
 import { ActivePetProvider, useActivePet } from './src/contexts/ActivePetContext';
 import { refreshProfileLocationOnAppOpen } from './src/lib/profileLocation';
 import { assertContractEnvironment } from './src/config/environment';
+import { EXPOSE_MATING_SURFACES } from './src/config/phase1aSurfaces';
 
 const Stack = createNativeStackNavigator();
 
@@ -342,21 +343,25 @@ function AppNavigator() {
           component={PublicUserProfileScreen}
           options={{ headerShown: false, animation: 'slide_from_right' }}
         />
-        <Stack.Screen
-          name="MatingDiscoveryScreen"
-          component={MatingDiscoveryScreen}
-          options={{ headerShown: false, animation: 'slide_from_right' }}
-        />
+        {EXPOSE_MATING_SURFACES ? (
+          <Stack.Screen
+            name="MatingDiscoveryScreen"
+            component={MatingDiscoveryScreen}
+            options={{ headerShown: false, animation: 'slide_from_right' }}
+          />
+        ) : null}
         <Stack.Screen
           name="ViewPetProfileScreen"
           component={ViewPetProfileScreen}
           options={{ headerShown: false, animation: 'slide_from_right' }}
         />
-        <Stack.Screen
-          name="MatingIntroductionChatScreen"
-          component={MatingIntroductionChatScreen}
-          options={{ headerShown: false, animation: 'slide_from_right' }}
-        />
+        {EXPOSE_MATING_SURFACES ? (
+          <Stack.Screen
+            name="MatingIntroductionChatScreen"
+            component={MatingIntroductionChatScreen}
+            options={{ headerShown: false, animation: 'slide_from_right' }}
+          />
+        ) : null}
       </Stack.Navigator>
     </NavigationContainer>
   );
