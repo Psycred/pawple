@@ -4,7 +4,8 @@
 **Author:** CTO  
 **Date:** 2026-09-07  
 **Issue:** PAW-223 (map) → parent PAW-222 (wave)  
-**Scope:** Architecture diagnosis + smallest isolated repair proposals only. **No product implementation in this ticket.**
+**Scope:** Architecture diagnosis + smallest isolated repair proposals only. **No product implementation in this ticket.**  
+**Legal amendment (2026-09-07):** Incorporates PAW-225 CONDITIONAL-GO + PAW-226 disclosure advisory (comments on PAW-223). Does **not** reopen Mating/Chat.
 
 ---
 
@@ -38,8 +39,8 @@ Repo inspection for this map:
 | **Camera** | Real async lifecycle defect: **no shared in-flight guard**, divergent permission paths, Modal-over-camera race on onboarding | Smallest shared camera launch helper + screen abandon cancel |
 | **Gallery** | Founder seeing **no** media prompt on Android is **likely correct** (System Photo Picker). Manifest still declares broad media permission unnecessarily | Prefer retain picker behaviour; strip/block unused Android media permission; do **not** add a prompt “because we expected one” |
 | **Notifications** | Extra primer screen + Settings/AccountSheet control lies about disable; “morning-of” copy overpromises description | OS prompt after successful pet submit; Settings opens system settings when that is the only control; remove morning-of description copy |
-| **Image moderation** | **Absent** for profile + Moments | Research recommendation only — **Founder gate before any install** |
-| **Invites / deep links** | Share is code-only text; HTTPS invite URL + store fallbacks missing; prefill gaps; no App Links / Universal Links config | Coherent share payload + parse/retain/prefill; mock `pawple.com` fallbacks; no deferred deep link for Phase 1a |
+| **Image moderation** | **Absent** for profile + Moments | Research only. Phase 1a path preference **(1) on-device → (2) Pawple ephemeral server → (3) external API**. **Founder tech approval** before install. **Do not enable** while `legalDocuments.js` still claims “no AI moderation” (PAW-226). Discard rejects by default |
+| **Invites / deep links** | Share is code-only text; HTTPS invite URL + store fallbacks missing; prefill gaps; no App Links / Universal Links config | Legal **CONDITIONAL-GO**. CEO has lifted invite-file freeze in `CURRENT.md` for PAW-222 only. Coherent share + parse/retain/prefill; mock `pawple.com` fallbacks; no deferred deep link for Phase 1a |
 
 Prefer the **smallest isolated repair**. Do not redesign Settings, onboarding chrome, or storage architecture unless required below.
 
@@ -357,6 +358,7 @@ Removing `OnboardingFinalScreen` from the path is a **product/UX simplification 
 - Pet photos: local URI → `resolvePetPhotoUrl` → `uploadToSupabase` (`pet-photos`)  
 - Moments: `processImageForPawple` → `uploadToSupabase` (`moments`) → DB insert  
 - **No** pet-vs-human check, **no** NSFW/sexual check, **no** pre-storage gate  
+- Legal copy in `src/content/legalDocuments.js` still asserts this launch does **not** use AI moderation / AI message scanning (Terms / Privacy / Guidelines)
 
 Applies to **profile and Moments** (Founder §§13–14).
 
@@ -367,47 +369,87 @@ Applies to **profile and Moments** (Founder §§13–14).
 | Pet vs human / non-pet | **No** | Person/animal (or pet) signal |
 | Nudity / sexual / obscene / bikini-style human | Partially | Dedicated NSFW / sexual classes |
 
-### 5.3 Options evaluated (summary)
+### 5.3 Legal preference order (binding for path language) — PAW-225 / PAW-226
+
+Ascending risk / disclosure burden. **State Phase 1a path in this order** so Legal can lock Privacy sentences after Founder tech approval:
+
+| Rank | Path | Legal posture |
+|------|------|---------------|
+| **(1)** | **On-device** screening | Lowest disclosure / cross-border / processor risk. Prefer if Founder-approved tech can meet dual detection + Expo packaging |
+| **(2)** | **Pawple-operated ephemeral server** | Image briefly processed on Pawple systems; no durable reject store; disclose transmission to Pawple servers |
+| **(3)** | **External moderation API** | Highest risk. Requires **Founder material-tech approval** + Privacy processor disclosure + processor/cross-border diligence as **release conditions** |
+
+**Release rule (PAW-226):** Do **not** enable any automated image gate while `legalDocuments.js` still says “no AI moderation.” Any Founder-approved path must ship in the **same release** as Honesty amendments to Privacy / Terms / Guidelines (quiet UI reject copy from PAW-224 stays non-technical). CURRENT.md “AI message scanning / automated **chat** moderation” freeze remains — image upload screening is separate and Founder-authorized.
+
+**Rejected images (Legal / CEO default):** **Discard** — no durable reject storage unless Founder later authorizes retention (and then disclose retention).
+
+### 5.4 Options evaluated (summary)
 
 | Approach | Pros | Cons | Phase 1a fit |
 |----------|------|------|--------------|
-| **A. Cloud moderation API** (e.g. Sightengine / Hive) via **Supabase Edge Function** before permanent Storage | Accurate classes (nudity + face/person); server-enforced; policy tunable; Expo-friendly; gate before public URL | Cost per image; network latency; vendor dependency; Legal privacy review | **Recommended minimum credible** |
-| **B. On-device NSFW SDK** (Nosmai, CoreML-only detectors, etc.) | Privacy; offline | Pet-vs-human incomplete; Expo/dev-client friction; APK size; dual iOS/Android maintenance; still need second model for pets | Not minimum for Beta |
-| **C. Client-only open-source TFLite** | Cheap at scale | Packaging hell on Expo; false positive risk; weak dual-task coverage; easy to bypass (UI-only ≠ security) | Reject as sole control |
-| **D. Human-only moderation** | Simple | Not preventive; invite-only Beta residual only | Insufficient vs Founder P0 |
+| **(1) On-device** dual classifiers (NSFW + person/pet) | Privacy; aligns Legal preference #1; offline possible | Expo/dev-client friction; APK size; dual iOS/Android; pet-vs-human incomplete on many NSFW-only SDKs; **client-only is bypassable** (UI ≠ security) | Prefer **if** Founder accepts packaging + residual bypass risk for invite-only Beta, **or** pairs with thin server assert |
+| **(2) Pawple ephemeral server** (Edge Function + short-lived staging; self-hosted model **or** server-side call with keys never on client) | Server-enforced; gate before permanent Storage; staging TTL; Legal preference #2; Expo-friendly client | Ops/latency; if underlying classifier is still a vendor, disclose carefully (may become path #3 for Legal) | **CTO default recommendation for minimum credible + Legal-aligned** when on-device cannot meet dual detection under Expo constraints |
+| **(3) External API** (Sightengine / Hive / similar) invoked from Edge Function | Accurate classes; fast to stand up; policy tunable | Cost; vendor dependency; processor + possible cross-border; highest Legal bar | **Only if** Founder material-tech approval + Privacy/processor diligence + same-release honesty copy |
+| Client-only open-source TFLite alone | Cheap | Packaging hell; weak dual coverage; easy bypass | Reject as **sole** control |
+| Human-only moderation | Simple | Not preventive | Insufficient vs Founder P0 |
 
-### 5.4 CTO recommendation (minimum credible Phase 1a)
+### 5.5 CTO recommendation (minimum credible Phase 1a) — amended for Legal
 
-**Do not install any moderation package/model in-repo until Founder approves.**
+**Do not install any moderation package/model in-repo until Founder approves a material technical path.**
 
-**Recommended architecture (post-approval):**
+**Phase 1a path for Founder decision (ordered — Legal can draft Privacy from this list):**
 
-1. **Supabase Edge Function** `moderate-image` (service role / signed upload path):  
-   - Input: image bytes or short-lived signed upload to a **staging** prefix  
-   - Call vendor API configured for: **nudity/sexual/offensive** + **person/face** (and animal/pet if vendor supports; else person-present ⇒ reject for **pet profile** with calm copy; Moments policy: reject sexual/nude; optionally warn/reject dominant human-only shots per Founder list)  
-   - Return `{ allow: boolean, reasonCode }` — **never** expose reasonCode / “AI” to users  
-2. **Client:** after pick/capture, **before** `uploadToSupabase` / `resolvePetPhotoUrl` permanent write, call Edge Function (or upload to staging then moderate). On reject: show Copywriter-final calm lines (e.g. non-pet / inappropriate). On allow: continue **existing** processing pipeline.  
-3. **Enforce server-side** for Moments + pet-photos (RLS/storage policies alone cannot classify content — function gate is the control). UI hide is not security.  
-4. **Config:** vendor keys in Supabase secrets only; feature flag for kill-switch.  
-5. **Future flexibility:** keep reason taxonomy internal so policy thresholds can change without rewriting upload architecture.
+1. **On-device** — evaluate first for Beta if a credible Expo-compatible pair covers (a) person/pet for profile and (b) NSFW/sexual/bikini-style human for profile + Moments. If chosen: still prefer a **server allow-assert** on permanent upload for Moments/pet-photos so UI hide is not the only control.  
+2. **Pawple-operated ephemeral server** — if on-device fails Expo/dual-detection bar: Edge Function `moderate-image` with short-lived **staging** prefix; classify; **discard rejects**; allow → existing permanent upload pipeline. Prefer Pawple-operated inference; if the function must call a vendor classifier, treat disclosure as **path (3)** conditions.  
+3. **External API** — last resort; Founder material-tech approval + Privacy disclosure + processor/cross-border diligence + same-release `legalDocuments.js` honesty update are **hard release conditions**.
 
-**Why not on-device first:** fails Expo simplicity + dual detection problem; larger APK; easier bypass if only client-side.
+**Shared product behaviour (any approved path):**
 
-**Privacy:** Prefer moderate **before** objects become long-lived public URLs. Staging objects auto-expire. Legal must review vendor DPA / image transmission (PAW-222 §27).
+- Gate **before** permanent Storage public URLs (profile + Moments).  
+- Client shows Copywriter calm lines only (PAW-224) — never “AI,” model names, scores, or reason codes.  
+- Moments policy: reject nudity/sexual/obscene/bikini-style human; do **not** ban ordinary humans-with-pets. Profile: reject obvious human/non-pet where pet photo expected.  
+- Feature flag / kill-switch.  
+- **Disclosure dependency:** Backend/Frontend must not flip the gate on until Legal/Copywriter honesty amendments land in the same release.
 
-### 5.5 Proposed file changes (moderation) — **gated; do not implement until Founder accepts**
+**Supersedes** the earlier draft that listed cloud vendor API as the unqualified “recommended minimum.” Legal risk order now binds path language; CTO still flags that **path (1) alone** is often incomplete on Expo for dual detection — Founder chooses among (1)/(2)/(3) with that technical constraint explicit.
 
-#### M1 — Backend: Edge Function + secrets (new)
+### 5.6 Proposed file changes (moderation) — **gated; do not implement until Founder accepts a path**
+
+#### M0 — `src/content/legalDocuments.js` (+ related legal surfaces) — **same-release dependency**
+
+| Field | Content |
+|-------|---------|
+| **Existing behaviour** | Blanket “no AI moderation” / report-driven-only claims |
+| **Defective section** | Terms / Privacy / Guidelines honesty lines (see PAW-226) |
+| **Proposed change** | **Legal/Copywriter ownership.** Narrow claims: no AI **chat**/message scanning; disclose upload-time image screening for pet profile + Moments with path-specific wording matching Founder-approved (1)/(2)/(3). Must land **before or with** gate enablement — not after |
+| **Why required** | PAW-226 release rule; misleading-claim risk |
+| **Must remain unchanged** | Mating/Chat product freeze; no marketing “AI-powered safety” claims |
+| **Regression risk** | Low technical; high compliance if skipped |
+| **Required test** | Grep legal surfaces: no blanket “no AI moderation” while gate is on |
+
+#### M1 — Backend: Edge Function + staging (paths **2** or **3** only)
 
 | Field | Content |
 |-------|---------|
 | **Existing behaviour** | Direct client upload to public buckets |
 | **Defective section** | Missing pre-storage safety gate |
-| **Proposed change** | Add `moderate-image` function + vendor secret; optional staging bucket/prefix with TTL |
+| **Proposed change** | Add `moderate-image` + secrets as needed; staging prefix with TTL; **discard rejects** (no durable reject bucket). Path (3) adds vendor secret + diligence artifacts |
 | **Why required** | Server-side enforcement for profile + Moments |
 | **Must remain unchanged** | Bucket path convention `{userId}/…`; owner-scoped write RLS; Mating/Chat SQL |
 | **Regression risk** | High if rushed; medium if flagged |
-| **Required test** | NSFW fixture reject; clear pet accept; unauthorized call rejected |
+| **Required test** | NSFW fixture reject; clear pet accept; reject never persisted; unauthorized call rejected |
+
+#### M1b — On-device modules (path **1** only, if Founder selects)
+
+| Field | Content |
+|-------|---------|
+| **Existing behaviour** | n/a |
+| **Defective section** | n/a |
+| **Proposed change** | Install only Founder-approved on-device deps; run after pick/capture, before permanent upload; document Expo/dev-client implications. Prefer pairing with thin server assert |
+| **Why required** | Legal preference #1 when technically credible |
+| **Must remain unchanged** | No custom permission primers; no Mating; no unrelated upgrades |
+| **Regression risk** | High (native packaging / APK size) |
+| **Required test** | Pixel 6a fixtures; cancel/deny paths; no durable reject store |
 
 #### M2 — `src/lib/supabase.js` `uploadToSupabase` / `src/lib/petPhotoUpload.js`
 
@@ -415,7 +457,7 @@ Applies to **profile and Moments** (Founder §§13–14).
 |-------|---------|
 | **Existing behaviour** | Upload then public URL |
 | **Defective section** | No moderation hook |
-| **Proposed change** | Call shared `assertImageAllowed(localUri | processed)` before permanent upload (both Moments + pet photos) |
+| **Proposed change** | Call shared `assertImageAllowed(localUri | processed)` before permanent upload (both Moments + pet photos). Kill-switch off until legal honesty + Founder path approval |
 | **Why required** | Single gate both surfaces |
 | **Must remain unchanged** | Image processor resize/compress behaviour |
 | **Regression risk** | Medium (upload latency) |
@@ -433,15 +475,30 @@ Applies to **profile and Moments** (Founder §§13–14).
 | **Regression risk** | Low–medium |
 | **Required test** | User-visible copy review with Copywriter |
 
-### 5.6 Founder approval gate (explicit)
+### 5.7 Founder approval gate (explicit)
 
-> **STOP:** No npm packages, native modules, Edge Functions, vendor accounts, or Storage policy changes for moderation until Founder approves this material technical change (recommendation §5.4).
+> **STOP:** No npm packages, native modules, Edge Functions, vendor accounts, or Storage policy changes for moderation until Founder approves a material technical path among **(1) on-device / (2) Pawple ephemeral / (3) external API**.
 
-Legal review of privacy implications is required before production enablement.
+> **STOP (release):** Do not enable the automated gate in Beta/production while `legalDocuments.js` still asserts blanket “no AI moderation.” Same-release Privacy/Terms/Guidelines honesty update is mandatory (PAW-226).
+
+> **STOP (path 3):** External API additionally requires Founder material-tech approval + Privacy processor disclosure + processor/cross-border diligence.
+
+> **Rejects:** Discard by default — no durable reject store without Founder authorization.
 
 ---
 
 ## 6. Invites / deep links — P0
+
+### 6.0 Legal / freeze status (PAW-225)
+
+| Item | Status |
+|------|--------|
+| Legal verdict | **CONDITIONAL-GO** (not STOP) |
+| Invite-file freeze | **Lifted by CEO in `docs/CURRENT.md` for PAW-222 invite/deep-link work only** — Engineering may edit mapped invite files within Founder invite scope |
+| Deferred deep-link vendor | **Not required** for Phase 1a |
+| Mock store destinations | Honest `pawple.com` placeholders only — no fake Play/App Store chrome |
+
+If Legal’s earlier “CEO must unfreeze” note still appears on tickets: **already satisfied** in CURRENT (2026-09-07). Do not wait on a second unfreeze.
 
 ### 6.1 Current behaviour
 
@@ -566,8 +623,10 @@ One code-bearing URL (e.g. `https://pawple.com/invite/<CODE>`) in share text + w
 4. **No delays to hide bugs.**  
 5. **Logout / Delete Account / Mating / Location family** — blast-radius zero.  
 6. **Copywriter** owns final invite + moderation user strings; Frontend uses placeholders only if blocked on copy.  
-7. **Legal** reviews moderation vendor + invite/deep-link privacy before production enablement.  
-8. **Tester environment:** Pixel 6a Android emulator (not Founder Pixel 10 Pro).  
+7. **Legal** — moderation CONDITIONAL-GO under path order (1)/(2)/(3) + same-release honesty; invite CONDITIONAL-GO with CURRENT freeze lift.  
+8. **Disclosure lock:** automated image gate must not ship while `legalDocuments.js` still claims blanket “no AI moderation.”  
+9. **Rejects:** discard by default.  
+10. **Tester environment:** Pixel 6a Android emulator (not Founder Pixel 10 Pro).  
 
 ---
 
@@ -575,11 +634,12 @@ One code-bearing URL (e.g. `https://pawple.com/invite/<CODE>`) in share text + w
 
 | Order | Owner | Work |
 |-------|-------|------|
-| 0 | **Founder** | Approve or reject moderation recommendation §5.4 before Backend installs anything |
-| 1 | **Frontend** | Camera lifecycle (C1–C5), Gallery manifest verify (G1–G2), Notifications (N1–N5), Invites UI/share/parse/prefill (I1–I6) — skip M* until approval |
-| 2 | **Backend** | Only after Founder approval: moderation Edge Function (M1); invite backend **only if** hosting/API truly required (default: none) |
+| 0 | **Founder** | Approve Phase 1a moderation **path (1)/(2)/(3)** before Backend/Frontend install anything for M* |
+| 0b | **Legal + Copywriter** | Same-release Privacy/Terms/Guidelines honesty amendment (PAW-226) — **required before gate enablement** |
+| 1 | **Frontend** | Camera lifecycle (C1–C5), Gallery manifest verify (G1–G2), Notifications (N1–N5), Invites UI/share/parse/prefill (I1–I6) — skip M* until Founder path + legal honesty ready |
+| 2 | **Backend** | Only after Founder path approval: M1/M1b as applicable; invite backend **only if** hosting/API truly required (default: none) |
 | 3 | **Copywriter** | Invite intro + moderation rejection lines; confirm notification rows have **no** description |
-| 4 | **Legal** | Moderation privacy + invite/deep-link review |
+| 4 | **Legal** | Confirm honesty wording matches chosen path; path (3) processor diligence |
 | 5 | **Tester** | Founder camera/gallery/notification/invite matrices on Pixel 6a |
 | 6 | **QA** | Independent regression + hard-lock audit (Mating untouched, logout/delete untouched, no extra permissions) |
 
@@ -593,6 +653,7 @@ One code-bearing URL (e.g. `https://pawple.com/invite/<CODE>`) in share text + w
 - True deferred deep linking  
 - Dependency upgrades unrelated to approved moderation  
 - Settings redesign beyond Notifications honesty + copy removal  
+- Enabling automated image gate without Founder path + legal honesty update  
 
 ---
 
@@ -601,6 +662,7 @@ One code-bearing URL (e.g. `https://pawple.com/invite/<CODE>`) in share text + w
 - [x] Impact map written at `docs/PAW222_BETA_HARDENING_IMPACT_MAP.md`  
 - [x] Mating/Chat untouched confirmation  
 - [x] Moderation recommendation with **Founder approval gate** called out  
+- [x] Legal amendment: Phase 1a path stated as **(1) on-device → (2) Pawple ephemeral → (3) external API**; disclosure dependency + discard-rejects + invite CONDITIONAL-GO / freeze lift recorded  
 - [x] No product implementation in PAW-223  
 
 ---
