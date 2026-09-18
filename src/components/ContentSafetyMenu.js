@@ -2,6 +2,7 @@ import React from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { theme } from '../config/theme';
+import { useRuntimeThemeColors } from '../hooks/useRuntimeThemeColors';
 
 /**
  * Quiet first-step menu: Report / Block — progressive disclosure for safety.
@@ -9,31 +10,106 @@ import { theme } from '../config/theme';
 export default function ContentSafetyMenu({
   visible,
   title = 'Safety',
+  showEdit = false,
+  showDelete = false,
   showReport = true,
   showBlock = false,
+  showUnpaw = false,
+  showViewProfile = false,
+  editLabel = 'Edit',
+  deleteLabel = 'Delete',
   blockLabel = 'Block pet',
+  unpawLabel = 'Unpaw',
+  viewProfileLabel = 'View Profile',
+  onEdit,
+  onDelete,
   onReport,
   onBlock,
+  onUnpaw,
+  onViewProfile,
   onClose,
 }) {
   const insets = useSafeAreaInsets();
+  const surfaces = useRuntimeThemeColors();
+
+  const rowStyle = ({ pressed }) => [
+    styles.row,
+    { backgroundColor: surfaces.backgroundScreen },
+    pressed && styles.pressed,
+  ];
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={onClose} accessibilityLabel="Close" />
-      <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 24) }]}>
-        <View style={styles.handle} />
-        <Text style={styles.title} allowFontScaling>
+      <View
+        style={[
+          styles.sheet,
+          {
+            backgroundColor: surfaces.backgroundElevated,
+            paddingBottom: Math.max(insets.bottom, 24),
+          },
+        ]}
+      >
+        <View style={[styles.handle, { backgroundColor: surfaces.border }]} />
+        <Text style={[styles.title, { color: surfaces.textPrimary }]} allowFontScaling>
           {title}
         </Text>
+        {showEdit ? (
+          <Pressable
+            onPress={onEdit}
+            style={rowStyle}
+            accessibilityRole="button"
+            accessibilityLabel={editLabel}
+          >
+            <Text style={[styles.rowText, { color: surfaces.textPrimary }]} allowFontScaling>
+              {editLabel}
+            </Text>
+          </Pressable>
+        ) : null}
+        {showDelete ? (
+          <Pressable
+            onPress={onDelete}
+            style={rowStyle}
+            accessibilityRole="button"
+            accessibilityLabel={deleteLabel}
+          >
+            <Text style={[styles.rowText, styles.destructiveText]} allowFontScaling>
+              {deleteLabel}
+            </Text>
+          </Pressable>
+        ) : null}
+        {showViewProfile ? (
+          <Pressable
+            onPress={onViewProfile}
+            style={rowStyle}
+            accessibilityRole="button"
+            accessibilityLabel={viewProfileLabel}
+          >
+            <Text style={[styles.rowText, { color: surfaces.textPrimary }]} allowFontScaling>
+              {viewProfileLabel}
+            </Text>
+          </Pressable>
+        ) : null}
+        {showUnpaw ? (
+          <Pressable
+            onPress={onUnpaw}
+            style={rowStyle}
+            accessibilityRole="button"
+            accessibilityLabel={unpawLabel}
+          >
+            <Text style={[styles.rowText, { color: surfaces.textPrimary }]} allowFontScaling>
+              {unpawLabel}
+            </Text>
+          </Pressable>
+        ) : null}
         {showReport ? (
           <Pressable
             onPress={onReport}
-            style={({ pressed }) => [styles.row, pressed && styles.pressed]}
+            style={rowStyle}
             accessibilityRole="button"
             accessibilityLabel="Report"
           >
-            <Text style={styles.rowText} allowFontScaling>
+            <Text style={[styles.rowText, { color: surfaces.textPrimary }]} allowFontScaling>
               Report
             </Text>
           </Pressable>
@@ -41,11 +117,11 @@ export default function ContentSafetyMenu({
         {showBlock ? (
           <Pressable
             onPress={onBlock}
-            style={({ pressed }) => [styles.row, pressed && styles.pressed]}
+            style={rowStyle}
             accessibilityRole="button"
             accessibilityLabel={blockLabel}
           >
-            <Text style={styles.rowText} allowFontScaling>
+            <Text style={[styles.rowText, { color: surfaces.textPrimary }]} allowFontScaling>
               {blockLabel}
             </Text>
           </Pressable>
@@ -56,7 +132,7 @@ export default function ContentSafetyMenu({
           accessibilityRole="button"
           accessibilityLabel="Cancel"
         >
-          <Text style={styles.cancelText} allowFontScaling>
+          <Text style={[styles.cancelText, { color: surfaces.textSecondary }]} allowFontScaling>
             Cancel
           </Text>
         </Pressable>
@@ -71,7 +147,6 @@ const styles = StyleSheet.create({
     backgroundColor: theme.components.bottomSheet.backdrop,
   },
   sheet: {
-    backgroundColor: theme.colors.background.card,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     paddingHorizontal: 24,
@@ -82,13 +157,11 @@ const styles = StyleSheet.create({
     width: theme.components.bottomSheet.handleWidth || 40,
     height: theme.components.bottomSheet.handleHeight || 4,
     borderRadius: theme.components.bottomSheet.handleRadius || 2,
-    backgroundColor: theme.colors.border.light,
     marginBottom: 16,
   },
   title: {
     fontFamily: theme.fonts.semibold,
     fontSize: theme.fontSizes.xl,
-    color: theme.colors.text.primary.light,
     marginBottom: 12,
   },
   row: {
@@ -96,13 +169,14 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     paddingHorizontal: 16,
     justifyContent: 'center',
-    backgroundColor: theme.colors.background.light,
     marginBottom: 8,
   },
   rowText: {
     fontFamily: theme.fonts.medium,
     fontSize: theme.fontSizes.md,
-    color: theme.colors.text.primary.light,
+  },
+  destructiveText: {
+    color: theme.colors.feedback.error.value,
   },
   cancelRow: {
     minHeight: 48,
@@ -113,7 +187,6 @@ const styles = StyleSheet.create({
   cancelText: {
     fontFamily: theme.fonts.medium,
     fontSize: theme.fontSizes.md,
-    color: theme.colors.text.secondary.light,
   },
   pressed: {
     opacity: theme.opacity.pressedUi,

@@ -26,6 +26,25 @@ ALWAYS follow these rules.
 NEVER deviate unless explicitly instructed.
 
 -----------------------------------------------------
+📜 DESIGN CONSTITUTION (PAW-136 — BINDING)
+-----------------------------------------------------
+
+Default is no screen. Every interstitial, primer, or pre-screen must
+justify its existence or be removed. System-standard flows win.
+
+Permissions: OS system prompt only, at the moment of need. The “why”
+lives in the OS permission string (Info.plist / AndroidManifest / Expo
+plugin), written in Pawple voice. No custom primer sheets for camera,
+photos, location, or notifications.
+
+Microcopy over screens: where context is needed, one quiet line under
+the relevant field. Never a standalone screen.
+
+No copy anywhere may position Pawple as an adult product, a
+stranger-danger product, or a dating product. Pawple is pet parents,
+pet meetups, and UGC events.
+
+-----------------------------------------------------
 🧭 DESIGN GOVERNANCE & DECISION AUTHORITY
 -----------------------------------------------------
 

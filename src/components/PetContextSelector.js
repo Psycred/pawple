@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { Image, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import PawpleStorageImage from './PawpleStorageImage';
 import { theme } from '../config/theme';
 
 const { avatarBorderWidth } = theme.feed;
@@ -18,7 +19,7 @@ export default function PetContextSelector({ photoUrl, photo_url, size = 40, sty
 
   if (uri) {
     return (
-      <Image
+      <PawpleStorageImage
         testID={testID}
         source={{ uri }}
         style={[

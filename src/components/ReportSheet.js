@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { theme } from '../config/theme';
 import { supabase } from '../config/supabase';
 import { useActivePet } from '../contexts/ActivePetContext';
+import { useRuntimeThemeColors } from '../hooks/useRuntimeThemeColors';
 import { blockPet } from '../services/blocks';
 import { createReport, REPORT_REASONS } from '../services/reports';
 
@@ -23,7 +24,7 @@ const UUID_RE =
  * Calm progressive report sheet for Moments, Meetups, pets, and introduction chat.
  * Reports are filed as the active (or first) pet; flags the human account.
  *
- * @param {'moment'|'meetup'|'mating_interest'|'introduction_chat'} targetType
+ * @param {'moment'|'meetup'|'mating_interest'|'introduction_chat'|'pet'} targetType
  * @param {{ id: string, name?: string }[]} [blockablePets] other pets on the content
  */
 export default function ReportSheet({
@@ -32,12 +33,14 @@ export default function ReportSheet({
   targetId,
   reportedUserId,
   blockablePets = [],
+  doneBodyLines = null,
   onClose,
   onSubmitted,
   onBlocked,
 }) {
   const insets = useSafeAreaInsets();
   const { activePetId } = useActivePet();
+  const surfaces = useRuntimeThemeColors();
 
   const [step, setStep] = useState('reason'); // reason | details | done
   const [reasonId, setReasonId] = useState(null);
@@ -199,14 +202,29 @@ export default function ReportSheet({
           ? 'Report interest'
           : targetType === 'introduction_chat'
             ? 'Report introduction'
-            : 'Report moment';
+            : targetType === 'pet'
+              ? 'Report pet'
+              : 'Report moment';
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
-      <Pressable style={styles.backdrop} onPress={handleClose} accessibilityLabel="Close" />
-      <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 24) }]}>
-        <View style={styles.handle} />
-        <Text style={styles.title} allowFontScaling>
+      <View style={styles.modalRoot}>
+        <Pressable
+          style={styles.backdrop}
+          onPress={handleClose}
+          accessibilityLabel="Close"
+        />
+        <View
+          style={[
+            styles.sheet,
+            {
+              backgroundColor: surfaces.backgroundElevated,
+              paddingBottom: Math.max(insets.bottom, 32),
+            },
+          ]}
+        >
+        <View style={[styles.handle, { backgroundColor: surfaces.border }]} />
+        <Text style={[styles.title, { color: surfaces.textPrimary }]} allowFontScaling>
           {title}
         </Text>
 
@@ -217,7 +235,7 @@ export default function ReportSheet({
                 {`As ${reporterPet.name}`}
               </Text>
             ) : null}
-            <Text style={styles.hint} allowFontScaling>
+            <Text style={[styles.hint, { color: surfaces.textSecondary }]} allowFontScaling>
               Flags the account for human review.
             </Text>
             <ScrollView
@@ -236,13 +254,18 @@ export default function ReportSheet({
                     }}
                     style={({ pressed }) => [
                       styles.reasonRow,
-                      selected && styles.reasonRowSelected,
+                      { backgroundColor: surfaces.backgroundScreen },
+                      selected && {
+                        backgroundColor: surfaces.isDark
+                          ? surfaces.meetupChipBackground
+                          : theme.colors.brand.sageLight.light,
+                      },
                       pressed && styles.pressed,
                     ]}
                     accessibilityRole="button"
                     accessibilityLabel={reason.label}
                   >
-                    <Text style={styles.reasonText} allowFontScaling>
+                    <Text style={[styles.reasonText, { color: surfaces.textPrimary }]} allowFontScaling>
                       {reason.label}
                     </Text>
                   </Pressable>
@@ -254,15 +277,21 @@ export default function ReportSheet({
 
         {step === 'details' ? (
           <>
-            <Text style={styles.selectedReason} allowFontScaling>
+            <Text style={[styles.selectedReason, { color: surfaces.textSecondary }]} allowFontScaling>
               {reasonLabel}
             </Text>
             <TextInput
-              style={styles.detailsInput}
+              style={[
+                styles.detailsInput,
+                {
+                  backgroundColor: surfaces.backgroundScreen,
+                  color: surfaces.textPrimary,
+                },
+              ]}
               value={details}
               onChangeText={setDetails}
               placeholder="Optional note"
-              placeholderTextColor={theme.colors.placeholder.value}
+              placeholderTextColor={surfaces.placeholder}
               multiline
               maxLength={400}
               editable={!busy}
@@ -277,11 +306,15 @@ export default function ReportSheet({
               <Pressable
                 onPress={() => setStep('reason')}
                 disabled={busy}
-                style={({ pressed }) => [styles.secondaryBtn, pressed && styles.pressed]}
+                style={({ pressed }) => [
+                  styles.secondaryBtn,
+                  { backgroundColor: surfaces.backgroundScreen },
+                  pressed && styles.pressed,
+                ]}
                 accessibilityRole="button"
                 accessibilityLabel="Back"
               >
-                <Text style={styles.secondaryBtnText} allowFontScaling>
+                <Text style={[styles.secondaryBtnText, { color: surfaces.textSecondary }]} allowFontScaling>
                   Back
                 </Text>
               </Pressable>
@@ -310,12 +343,20 @@ export default function ReportSheet({
 
         {step === 'done' ? (
           <>
-            <Text style={styles.doneBody} allowFontScaling>
-              Our team will review this. No public scores or counts.
-            </Text>
+            {Array.isArray(doneBodyLines) && doneBodyLines.length > 0
+              ? doneBodyLines.map((line) => (
+                  <Text key={line} style={[styles.doneBody, { color: surfaces.textSecondary }]} allowFontScaling>
+                    {line}
+                  </Text>
+                ))
+              : (
+                  <Text style={[styles.doneBody, { color: surfaces.textSecondary }]} allowFontScaling>
+                    Our team will review this. No public scores or counts.
+                  </Text>
+                )}
             {blockablePets.length > 0 ? (
               <View style={styles.blockSection}>
-                <Text style={styles.blockHeading} allowFontScaling>
+                <Text style={[styles.blockHeading, { color: surfaces.textMuted }]} allowFontScaling>
                   Block
                 </Text>
                 {blockablePets.map((pet) => (
@@ -323,14 +364,18 @@ export default function ReportSheet({
                     key={String(pet.id)}
                     onPress={() => handleBlock(pet)}
                     disabled={Boolean(blockBusyId)}
-                    style={({ pressed }) => [styles.blockRow, pressed && styles.pressed]}
+                    style={({ pressed }) => [
+                      styles.blockRow,
+                      { backgroundColor: surfaces.backgroundScreen },
+                      pressed && styles.pressed,
+                    ]}
                     accessibilityRole="button"
                     accessibilityLabel={`Block ${pet.name || 'pet'}`}
                   >
                     {blockBusyId === String(pet.id) ? (
                       <ActivityIndicator color={theme.colors.brand.sage.value} />
                     ) : (
-                      <Text style={styles.blockRowText} allowFontScaling>
+                      <Text style={[styles.blockRowText, { color: surfaces.textPrimary }]} allowFontScaling>
                         {`Block ${pet.name || 'pet'}`}
                       </Text>
                     )}
@@ -355,36 +400,39 @@ export default function ReportSheet({
             </Pressable>
           </>
         ) : null}
+        </View>
       </View>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
+  modalRoot: {
     flex: 1,
+    justifyContent: 'flex-end',
+  },
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
     backgroundColor: theme.components.bottomSheet.backdrop,
   },
   sheet: {
-    backgroundColor: theme.colors.background.card,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     paddingHorizontal: 24,
     paddingTop: 12,
     maxHeight: '82%',
+    width: '100%',
   },
   handle: {
     alignSelf: 'center',
     width: theme.components.bottomSheet.handleWidth || 40,
     height: theme.components.bottomSheet.handleHeight || 4,
     borderRadius: theme.components.bottomSheet.handleRadius || 2,
-    backgroundColor: theme.colors.border.light,
     marginBottom: 16,
   },
   title: {
     fontFamily: theme.fonts.semibold,
     fontSize: theme.fontSizes.xl,
-    color: theme.colors.text.primary.light,
     marginBottom: 8,
   },
   asPet: {
@@ -396,7 +444,6 @@ const styles = StyleSheet.create({
   hint: {
     fontFamily: theme.fonts.body,
     fontSize: theme.fontSizes.sm,
-    color: theme.colors.text.secondary.light,
     marginBottom: 16,
   },
   list: {
@@ -411,15 +458,10 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     paddingHorizontal: 16,
     justifyContent: 'center',
-    backgroundColor: theme.colors.background.light,
-  },
-  reasonRowSelected: {
-    backgroundColor: theme.colors.brand.sageLight.light,
   },
   reasonText: {
     fontFamily: theme.fonts.body,
     fontSize: theme.fontSizes.md,
-    color: theme.colors.text.primary.light,
   },
   deferredNote: {
     marginTop: 16,
@@ -430,7 +472,6 @@ const styles = StyleSheet.create({
   selectedReason: {
     fontFamily: theme.fonts.medium,
     fontSize: theme.fontSizes.sm,
-    color: theme.colors.text.secondary.light,
     marginBottom: 12,
   },
   detailsInput: {
@@ -438,10 +479,8 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     paddingHorizontal: 16,
     paddingVertical: 14,
-    backgroundColor: theme.colors.background.light,
     fontFamily: theme.fonts.body,
     fontSize: theme.fontSizes.md,
-    color: theme.colors.text.primary.light,
     textAlignVertical: 'top',
   },
   actions: {
@@ -455,12 +494,10 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: theme.colors.background.light,
   },
   secondaryBtnText: {
     fontFamily: theme.fonts.semibold,
     fontSize: theme.fontSizes.md,
-    color: theme.colors.text.secondary.light,
   },
   primaryBtn: {
     flex: 1,
@@ -482,7 +519,6 @@ const styles = StyleSheet.create({
     fontFamily: theme.fonts.body,
     fontSize: theme.fontSizes.md,
     lineHeight: 22,
-    color: theme.colors.text.secondary.light,
     marginBottom: 20,
   },
   blockSection: {
@@ -492,7 +528,6 @@ const styles = StyleSheet.create({
   blockHeading: {
     fontFamily: theme.fonts.medium,
     fontSize: theme.fontSizes.sm,
-    color: theme.colors.text.muted.light,
     marginBottom: 4,
   },
   blockRow: {
@@ -500,15 +535,16 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     paddingHorizontal: 16,
     justifyContent: 'center',
-    backgroundColor: theme.colors.background.light,
   },
   blockRowText: {
     fontFamily: theme.fonts.medium,
     fontSize: theme.fontSizes.md,
-    color: theme.colors.text.primary.light,
   },
   doneBtn: {
-    marginTop: 4,
+    marginTop: 8,
+    flex: 0,
+    alignSelf: 'stretch',
+    width: '100%',
   },
   errorText: {
     marginTop: 12,

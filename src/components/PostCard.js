@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { theme } from '../config/theme';
+import { useRuntimeThemeColors } from '../hooks/useRuntimeThemeColors';
 import { scrapbookTiltTransform } from '../utils/scrapbookTilt';
 import CrayonFrameOverlay from './CrayonFrameOverlay';
 import FeedImageTreatment from './FeedImageTreatment';
@@ -21,6 +22,7 @@ export default function PostCard({
   date,
   captionFontFamily = theme.fonts.feedCaptionHand,
 }) {
+  const surfaces = useRuntimeThemeColors();
   const metaParts = useMemo(
     () => [date, location].filter((part) => String(part ?? '').trim()),
     [date, location],
@@ -39,14 +41,16 @@ export default function PostCard({
 
   const hasCaption = Boolean(String(caption ?? '').trim());
   const hasPet = resolvedPetEntries.length > 0;
+  const petNameStyle = { color: surfaces.feedPetNameColor };
+  const metaTextStyle = { color: surfaces.feedMetaColor };
 
   return (
     <View style={styles.cardSlot}>
-      <View style={styles.card}>
+      <View style={[styles.card, { backgroundColor: surfaces.feedCardBackground }]}>
         <View style={styles.imageSection}>
           <View style={[styles.tiltedPhotoWrap, { transform: scrapbookTiltTransform() }]}>
-            <View style={styles.framedPhoto}>
-              <View style={styles.photoMat}>
+            <View style={[styles.framedPhoto, { backgroundColor: surfaces.feedCardBackground }]}>
+              <View style={[styles.photoMat, { backgroundColor: surfaces.feedCardBackground }]}>
                 <FeedImageTreatment uri={photoUri} />
               </View>
               <CrayonFrameOverlay />
@@ -60,7 +64,7 @@ export default function PostCard({
               <Text
                 style={[
                   styles.caption,
-                  { fontFamily: captionFontFamily },
+                  { fontFamily: captionFontFamily, color: surfaces.feedCaptionColor },
                   hasPet ? styles.captionWithPetBelow : styles.captionSolo,
                 ]}
                 numberOfLines={2}
@@ -71,14 +75,14 @@ export default function PostCard({
             ) : null}
             {hasPet ? (
               <View style={[styles.petRow, styles.petNamesAboveMeta]}>
-                <Text style={styles.petDash} allowFontScaling>
+                <Text style={[styles.petDash, { color: surfaces.feedPetNameColor }]} allowFontScaling>
                   —
                 </Text>
                 <View style={styles.petNamesWrap}>
                   {resolvedPetEntries.map((entry, index) => (
                     <React.Fragment key={`${entry.name}-${index}`}>
                       {index > 0 ? (
-                        <Text style={styles.petNames} allowFontScaling>
+                        <Text style={[styles.petNames, petNameStyle]} allowFontScaling>
                           ,{' '}
                         </Text>
                       ) : null}
@@ -93,12 +97,12 @@ export default function PostCard({
                           accessibilityLabel={`View ${entry.name}'s profile`}
                           hitSlop={8}
                         >
-                          <Text style={styles.petNames} allowFontScaling>
+                          <Text style={[styles.petNames, petNameStyle]} allowFontScaling>
                             {entry.name}
                           </Text>
                         </Pressable>
                       ) : (
-                        <Text style={styles.petNames} allowFontScaling>
+                        <Text style={[styles.petNames, petNameStyle]} allowFontScaling>
                           {entry.name}
                         </Text>
                       )}
@@ -110,7 +114,7 @@ export default function PostCard({
             <View style={styles.metaShelf}>
               <View style={styles.metaRow}>
                 <Text
-                  style={styles.metaLeft}
+                  style={[styles.metaLeft, metaTextStyle]}
                   numberOfLines={1}
                   allowFontScaling
                   includeFontPadding={false}

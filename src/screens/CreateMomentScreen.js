@@ -1,16 +1,15 @@
 import { Feather } from '@expo/vector-icons';
 import { Picker } from '@react-native-picker/picker';
-import { useNavigation } from '@react-navigation/native';
-import * as ImagePicker from 'expo-image-picker';
+import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Animated,
   Dimensions,
   Easing,
   Image,
   LayoutAnimation,
-  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -25,12 +24,27 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
 import { theme } from '../config/theme';
 import { supabase } from '../config/supabase';
+import { abandonCameraCapture, captureFromCamera } from '../lib/cameraCapture';
+import { nextCameraTraceId, logCameraTrace } from '../lib/cameraCaptureDiagnostics';
+import { logPhotoFlow } from '../lib/photoFlowDiagnostics';
 import { pickFromGallery } from '../lib/photoPicker';
 import { uploadToSupabase } from '../lib/supabase';
 import { useActivePet } from '../contexts/ActivePetContext';
 import { useAuth } from '../contexts/AuthContext';
 import { processImageForPawple } from '../services/imageProcessor';
-import { buildPetAttribution, createMoment, formatMomentDate, linkMomentToPets } from '../services/moments';
+import { captureMomentCoordsIfGranted } from '../lib/profileLocation';
+import {
+  buildPetAttribution,
+  createMoment,
+  fetchMomentById,
+  formatMomentDate,
+  linkMomentToPets,
+  updateMoment,
+} from '../services/moments';
+import { approvePickedPhotoUri, gateLocalPhotoUri, showPhotoRejectAlert } from '../lib/photoValidationGate';
+import { usePhotoValidationGate } from '../contexts/PhotoValidationContext';
+import PhotoPickerModal from '../components/PhotoPickerModal';
+import { useRuntimeThemeColors } from '../hooks/useRuntimeThemeColors';
 
 const f = theme.createMomentFoundation;
 const windowWidth = Dimensions.get('window').width;
@@ -40,8 +54,6 @@ const emptyCardWidth = windowWidth - 40;
 const TITLE_MARGIN_TOP = 20;
 const TITLE_MARGIN_BOTTOM = 28;
 const CARD_TO_CAMERA = 24;
-const CAMERA_TO_GALLERY = 14;
-
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
@@ -104,8 +116,12 @@ const clampDateToTodayOrPast = (date) => {
  */
 export default function CreateMomentScreen() {
   const navigation = useNavigation();
+  const route = useRoute();
+  const editMomentId = route.params?.editMomentId ?? null;
+  const isEditing = Boolean(editMomentId);
   const { user } = useAuth();
   const { activePetId, loading: activePetLoading } = useActivePet();
+  const { ready: photoValidationReady, validatePhoto } = usePhotoValidationGate();
   const [imageUri, setImageUri] = useState(null);
   const [isFraming, setIsFraming] = useState(false);
   const [isImageSelected, setIsImageSelected] = useState(false);
@@ -115,14 +131,36 @@ export default function CreateMomentScreen() {
   const [selectedDate, setSelectedDate] = useState(() => startOfToday());
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showLocationEdit, setShowLocationEdit] = useState(false);
-  const [showChangeSheet, setShowChangeSheet] = useState(false);
+  const [photoSourceOpen, setPhotoSourceOpen] = useState(false);
   const [selectedPets, setSelectedPets] = useState([]);
   const [isSaving, setIsSaving] = useState(false);
+  const [editLoading, setEditLoading] = useState(isEditing);
 
   const cardTranslateY = useRef(new Animated.Value(0)).current;
   const sectionOpacity = useRef(new Animated.Value(0)).current;
   const sectionTranslateY = useRef(new Animated.Value(16)).current;
   const locationInputRef = useRef(null);
+  const surfaces = useRuntimeThemeColors();
+  const momentTheme = useMemo(
+    () => ({
+      safe: { backgroundColor: surfaces.createMomentFoundationScreenBackground },
+      title: { color: surfaces.createMomentScreenTitleColor },
+      noPetLine: { color: surfaces.createMomentMetaColor },
+      emptyCard: { backgroundColor: surfaces.createMomentEmptyCardBackground },
+      paperWarmth: { backgroundColor: surfaces.createMomentPaperWarmthColor },
+      captionInput: { color: surfaces.createMomentCaptionColor },
+      petAttribution: { color: surfaces.createMomentPetColor },
+      metadata: { color: surfaces.createMomentMetaColor },
+      metadataPlaceholder: { color: surfaces.createMomentPlaceholderMuted },
+      dateWheelRow: { backgroundColor: surfaces.createMomentEmptyCardBackground },
+      dateWheelItem: { color: surfaces.createMomentCaptionColor },
+      locationInput: { color: surfaces.createMomentCaptionColor },
+      changePhotoText: { color: surfaces.createMomentChangePhotoText },
+      closeIcon: surfaces.createMomentScreenTitleColor,
+      placeholder: surfaces.createMomentPlaceholderMuted,
+    }),
+    [surfaces],
+  );
 
   const day = selectedDate.getDate();
   const month = selectedDate.getMonth();
@@ -151,6 +189,9 @@ export default function CreateMomentScreen() {
 
   // Phase 1: the active pet is the default (and only) selected pet. Schema supports up to 2.
   useEffect(() => {
+    if (isEditing) {
+      return undefined;
+    }
     let cancelled = false;
     const loadActivePet = async () => {
       if (!activePetId) {
@@ -170,7 +211,100 @@ export default function CreateMomentScreen() {
     return () => {
       cancelled = true;
     };
-  }, [activePetId]);
+  }, [activePetId, isEditing]);
+
+  useEffect(() => {
+    if (!isEditing || !editMomentId || !user?.id) {
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    const loadEditableMoment = async () => {
+      setEditLoading(true);
+      try {
+        const existing = await fetchMomentById(editMomentId);
+        if (cancelled) {
+          return;
+        }
+        if (!existing || String(existing.user_id) !== String(user.id)) {
+          Toast.show({
+            type: 'error',
+            text1: "Couldn't edit this moment.",
+            position: 'bottom',
+            visibilityTime: 1500,
+          });
+          navigation.goBack();
+          return;
+        }
+
+        setImageUri(existing.photo_url ?? null);
+        setCaption(String(existing.caption ?? ''));
+        setLocation(String(existing.location ?? ''));
+        setIsFraming(true);
+        setIsImageSelected(true);
+        setIsRevealed(true);
+        cardTranslateY.setValue(-14);
+        sectionOpacity.setValue(1);
+        sectionTranslateY.setValue(0);
+
+        const dateSource = existing.moment_date ?? existing.created_at;
+        if (dateSource) {
+          const ymd = String(dateSource).split('T')[0];
+          const parsed = new Date(`${ymd}T12:00:00`);
+          if (!Number.isNaN(parsed.getTime())) {
+            setSelectedDate(clampDateToTodayOrPast(parsed));
+          }
+        }
+
+        const petIds = Array.isArray(existing.pet_ids) ? existing.pet_ids.map(String) : [];
+        if (petIds.length) {
+          const { data: pets } = await supabase
+            .from('pets')
+            .select('id, name')
+            .in('id', petIds);
+          if (!cancelled && pets?.length) {
+            const byId = new Map(pets.map((pet) => [String(pet.id), pet]));
+            setSelectedPets(
+              petIds
+                .map((id) => byId.get(String(id)))
+                .filter(Boolean)
+                .map((pet) => ({ id: String(pet.id), name: pet.name })),
+            );
+          }
+        }
+      } catch (error) {
+        console.error('[CreateMoment] edit load failed', error);
+        if (!cancelled) {
+          Toast.show({
+            type: 'error',
+            text1: "Couldn't edit this moment.",
+            position: 'bottom',
+            visibilityTime: 1500,
+          });
+          navigation.goBack();
+        }
+      } finally {
+        if (!cancelled) {
+          setEditLoading(false);
+        }
+      }
+    };
+
+    loadEditableMoment();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    cardTranslateY,
+    editMomentId,
+    isEditing,
+    navigation,
+    sectionOpacity,
+    sectionTranslateY,
+    user?.id,
+  ]);
 
   const petNames = selectedPets.map((p) => p.name).filter(Boolean);
   const attributionLabel = petNames.length ? buildPetAttribution(petNames) : null;
@@ -180,12 +314,33 @@ export default function CreateMomentScreen() {
     navigation.goBack();
   };
 
+  // Abandon in-flight camera when leaving so a late result never frames another screen.
+  useFocusEffect(
+    useCallback(() => {
+      logCameraTrace('CreateMoment', 'screen_focused', {});
+      return () => {
+        abandonCameraCapture('screen_blur', { screen: 'CreateMoment' });
+      };
+    }, []),
+  );
+
   const handlePickImage = async (source) => {
+    logPhotoFlow('screen_handler_start', { screen: 'CreateMoment' });
+    const traceId = nextCameraTraceId('CreateMoment');
+    logCameraTrace(traceId, 'pick_image_tap', { source });
+
     try {
       if (source !== 'camera') {
         const result = await pickFromGallery(MOMENT_PICKER_OPTIONS);
         const asset = result?.assets?.[0];
         if (asset?.uri) {
+          const allowed = await approvePickedPhotoUri(asset.uri, {
+            ready: photoValidationReady,
+            validatePhoto,
+          });
+          if (!allowed) {
+            return;
+          }
           setImageUri(asset.uri);
           setIsFraming(true);
           setIsImageSelected(true);
@@ -193,42 +348,31 @@ export default function CreateMomentScreen() {
         return;
       }
 
-      const current = await ImagePicker.getCameraPermissionsAsync();
+      const capture = await captureFromCamera(MOMENT_PICKER_OPTIONS, {
+        traceId,
+        screen: 'CreateMoment',
+      });
+      logCameraTrace(traceId, 'pick_image_capture_result', { status: capture.status });
 
-      const openPicker = async () => {
-        const result = await ImagePicker.launchCameraAsync(MOMENT_PICKER_OPTIONS);
-
-        if (result.canceled) {
-          return;
-        }
-
-        const asset = result.assets?.[0];
-        if (asset?.uri) {
-          setImageUri(asset.uri);
-          setIsFraming(true);
-          setIsImageSelected(true);
-        }
-      };
-
-      if (current.granted) {
-        await openPicker();
+      if (capture.status === 'busy' || capture.status === 'canceled' || capture.status === 'abandoned') {
+        return;
+      }
+      if (capture.status !== 'captured') {
         return;
       }
 
-      const status = current.status;
-
-      if (status === 'undetermined') {
-        const requested = await ImagePicker.requestCameraPermissionsAsync();
-        if (requested.granted) {
-          await openPicker();
+      const asset = capture.result?.assets?.[0];
+      if (asset?.uri) {
+        const allowed = await approvePickedPhotoUri(asset.uri, {
+          ready: photoValidationReady,
+          validatePhoto,
+        });
+        if (!allowed) {
           return;
         }
-        Alert.alert('Camera', 'Permission needed to access camera.');
-        return;
-      }
-
-      if (status === 'denied') {
-        Alert.alert('Camera', 'Please enable camera access in Settings to use this feature.');
+        setImageUri(asset.uri);
+        setIsFraming(true);
+        setIsImageSelected(true);
       }
     } catch (e) {
       console.log('[CreateMoment] pick image', e);
@@ -281,16 +425,13 @@ export default function CreateMomentScreen() {
       return;
     }
 
-    const trimmedCaption = caption.trim();
-    const trimmedLocation = location?.trim() || null;
+    const captionValue = caption.trim() || null;
+    const locationValue = location?.trim() || null;
     const selectedPetIds = selectedPets.map((p) => p.id).filter(Boolean).slice(0, 2);
 
-    // [VALIDATION] Quiet guards — small bottom toast, no alerts/modals/UI blocking.
+    // Required: photo + pet + date (date defaults to today). Caption and location stay optional.
     if (!imageUri) {
       return showToast('Add a photo first');
-    }
-    if (!trimmedCaption) {
-      return showToast('Add a moment');
     }
     if (selectedPetIds.length === 0) {
       return showToast('Select a pet');
@@ -306,14 +447,42 @@ export default function CreateMomentScreen() {
       return showToast('Choose today or an earlier date');
     }
 
+    const momentDate = `${memoryDate.getFullYear()}-${String(memoryDate.getMonth() + 1).padStart(2, '0')}-${String(memoryDate.getDate()).padStart(2, '0')}`;
+
+    if (isEditing && editMomentId) {
+      setIsSaving(true);
+      try {
+        await updateMoment(editMomentId, {
+          caption: captionValue,
+          momentDate,
+          location: locationValue,
+        });
+        showToast('Moment updated', 'success');
+        navigation.goBack();
+      } catch (error) {
+        console.error('[Moment] Update failed', error);
+        showToast("Couldn't save moment. Try again.");
+      } finally {
+        setIsSaving(false);
+      }
+      return;
+    }
+
     // [FLOW] Step 2 — saving state.
     setIsSaving(true);
     console.log('[Moment] Save started');
 
     try {
       console.log('[Moment] User loaded', { userId: user.id });
-      // Store calendar date as YYYY-MM-DD (local), not UTC from toISOString() (avoids day shift).
-      const momentDate = `${memoryDate.getFullYear()}-${String(memoryDate.getMonth() + 1).padStart(2, '0')}-${String(memoryDate.getDate()).padStart(2, '0')}`;
+
+      const uploadGate = await gateLocalPhotoUri(imageUri, {
+        ready: photoValidationReady,
+        validatePhoto,
+      });
+      if (!uploadGate.skipped && !uploadGate.accepted) {
+        showPhotoRejectAlert(uploadGate);
+        return;
+      }
 
       // [FLOW] Step 3 — [PROCESSING] silent resize + compress + encode (no spinner).
       const processed = await processImageForPawple(imageUri);
@@ -327,15 +496,17 @@ export default function CreateMomentScreen() {
       const publicUrl = await uploadToSupabase(processed, user.id);
       console.log('[Moment] Upload success', { publicUrl });
 
-      // [FLOW] Step 5 — create the single moment record (pet_ids stored as attribution fallback).
-      // Phase 1a: optional caption location text only — no device GPS (PAW-95 §3.2).
+      // [FLOW] Step 5 — create moment; coarse coords only when OS permission already granted.
+      const momentCoords = await captureMomentCoordsIfGranted();
       console.log('[Moment] Moment insert starting');
       const moment = await createMoment({
         userId: user.id,
         imageUrl: publicUrl,
-        caption: trimmedCaption,
+        caption: captionValue,
         momentDate,
-        location: trimmedLocation,
+        location: locationValue,
+        locationLat: momentCoords?.latitude ?? null,
+        locationLng: momentCoords?.longitude ?? null,
         petIds: selectedPetIds,
         petNames: selectedPets.map((p) => p.name).filter(Boolean),
       });
@@ -356,8 +527,8 @@ export default function CreateMomentScreen() {
       const optimisticMoment = {
         id: moment.id,
         photo_url: publicUrl,
-        caption: trimmedCaption,
-        location: trimmedLocation || '',
+        caption: captionValue ?? '',
+        location: locationValue ?? '',
         moment_date: momentDate,
         memory_date: formatMomentDate(momentDate),
         created_at: moment.created_at ?? new Date().toISOString(),
@@ -412,7 +583,7 @@ export default function CreateMomentScreen() {
   const cardMarginBottom = !isFraming ? CARD_TO_CAMERA : isRevealed ? 0 : CARD_TO_CAMERA;
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+    <SafeAreaView style={[styles.safe, momentTheme.safe]} edges={['top', 'bottom']}>
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
@@ -427,20 +598,27 @@ export default function CreateMomentScreen() {
             accessibilityLabel="Close"
           >
             <View style={styles.dismissInner}>
-              <Feather name="x" size={22} color="#3A312E" />
+              <Feather name="x" size={22} color={momentTheme.closeIcon} />
             </View>
           </Pressable>
 
-          <Text style={styles.title} allowFontScaling>
-            Frame a Moment
+          <Text style={[styles.title, momentTheme.title]} allowFontScaling>
+            {isEditing ? 'Edit moment' : 'Frame a Moment'}
           </Text>
 
-          {!activePetLoading && !hasActivePet ? (
-            <Text style={styles.noPetLine} allowFontScaling>
+          {editLoading ? (
+            <View style={styles.editLoading}>
+              <ActivityIndicator color={theme.colors.brand.sage.light} />
+            </View>
+          ) : null}
+
+          {!editLoading && !activePetLoading && !hasActivePet && !isEditing ? (
+            <Text style={[styles.noPetLine, momentTheme.noPetLine]} allowFontScaling>
               Add a pet to frame a moment.
             </Text>
           ) : null}
 
+          {!editLoading ? (
           <View style={styles.main}>
             <Animated.View
               style={[
@@ -451,6 +629,7 @@ export default function CreateMomentScreen() {
               <View
                 style={[
                   styles.emptyCard,
+                  momentTheme.emptyCard,
                   {
                     width: emptyCardWidth,
                     transform: [{ scale: cardScale }],
@@ -458,7 +637,7 @@ export default function CreateMomentScreen() {
                   },
                 ]}
               >
-                <View style={styles.paperWarmth} pointerEvents="none" />
+                <View style={[styles.paperWarmth, momentTheme.paperWarmth]} pointerEvents="none" />
 
                 {isFraming && imageUri ? (
                   <View style={styles.photoLayer} pointerEvents="box-none">
@@ -469,20 +648,22 @@ export default function CreateMomentScreen() {
                       pointerEvents="none"
                       accessibilityIgnoresInvertColors
                     />
-                    <Pressable
-                      onPress={() => setShowChangeSheet(true)}
-                      style={({ pressed }) => [
-                        styles.changePhoto,
-                        pressed && styles.changePhotoPressed,
-                      ]}
-                      accessibilityRole="button"
-                      accessibilityLabel="Change photo"
-                      hitSlop={8}
-                    >
-                      <Text style={styles.changePhotoText} allowFontScaling>
-                        Change
-                      </Text>
-                    </Pressable>
+                    {!isEditing ? (
+                      <Pressable
+                        onPress={() => setPhotoSourceOpen(true)}
+                        style={({ pressed }) => [
+                          styles.changePhoto,
+                          pressed && styles.changePhotoPressed,
+                        ]}
+                        accessibilityRole="button"
+                        accessibilityLabel="Change photo"
+                        hitSlop={8}
+                      >
+                        <Text style={[styles.changePhotoText, momentTheme.changePhotoText]} allowFontScaling>
+                          Change
+                        </Text>
+                      </Pressable>
+                    ) : null}
                   </View>
                 ) : null}
 
@@ -493,30 +674,17 @@ export default function CreateMomentScreen() {
               </View>
             </Animated.View>
 
-            {!isFraming ? (
-              <>
-                <Pressable
-                  onPress={() => handlePickImage('camera')}
-                  style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}
-                  accessibilityRole="button"
-                  accessibilityLabel="Camera"
-                >
-                  <Text style={styles.primaryLabel} allowFontScaling>
-                    Camera
-                  </Text>
-                </Pressable>
-
-                <Pressable
-                  onPress={() => handlePickImage('gallery')}
-                  style={({ pressed }) => [styles.secondaryWrap, pressed && styles.pressed]}
-                  accessibilityRole="button"
-                  accessibilityLabel="Gallery"
-                >
-                  <Text style={styles.secondaryLabel} allowFontScaling>
-                    Gallery
-                  </Text>
-                </Pressable>
-              </>
+            {!isFraming && !isEditing ? (
+              <Pressable
+                onPress={() => setPhotoSourceOpen(true)}
+                style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}
+                accessibilityRole="button"
+                accessibilityLabel="Add photo"
+              >
+                <Text style={styles.primaryLabel} allowFontScaling>
+                  Add photo
+                </Text>
+              </Pressable>
             ) : null}
 
             {isFraming && imageUri && isImageSelected && !isRevealed ? (
@@ -547,15 +715,15 @@ export default function CreateMomentScreen() {
                   value={caption}
                   onChangeText={setCaption}
                   placeholder="Morning walk 🐾"
-                  placeholderTextColor="#B7B0A5"
-                  style={styles.captionInput}
+                  placeholderTextColor={momentTheme.placeholder}
+                  style={[styles.captionInput, momentTheme.captionInput]}
                   multiline
                   textAlignVertical="top"
-                  accessibilityLabel="Caption"
+                  accessibilityLabel="Memory note"
                 />
 
                 {attributionLabel ? (
-                  <Text style={styles.petAttribution} allowFontScaling>
+                  <Text style={[styles.petAttribution, momentTheme.petAttribution]} allowFontScaling>
                     {attributionLabel}
                   </Text>
                 ) : null}
@@ -568,13 +736,13 @@ export default function CreateMomentScreen() {
                     accessibilityRole="button"
                     accessibilityLabel="Date"
                   >
-                    <Text style={styles.metadataDate} allowFontScaling>
+                    <Text style={[styles.metadataDate, momentTheme.metadata]} allowFontScaling>
                       {formatDate(selectedDate)}
                     </Text>
                   </TouchableOpacity>
 
                   {showDatePicker ? (
-                    <View style={styles.dateWheelRow}>
+                    <View style={[styles.dateWheelRow, momentTheme.dateWheelRow]}>
                       <Picker
                         selectedValue={Math.min(day, availableDays[availableDays.length - 1] ?? day)}
                         onValueChange={(val) => {
@@ -582,7 +750,7 @@ export default function CreateMomentScreen() {
                           updateDate(new Date(year, month, Math.min(val, maxD)));
                         }}
                         style={styles.dateWheelPicker}
-                        itemStyle={styles.dateWheelItem}
+                        itemStyle={[styles.dateWheelItem, momentTheme.dateWheelItem]}
                       >
                         {availableDays.map((d) => (
                           <Picker.Item key={d} label={String(d)} value={d} />
@@ -595,7 +763,7 @@ export default function CreateMomentScreen() {
                           updateDate(new Date(year, val, Math.min(day, maxD)));
                         }}
                         style={styles.dateWheelPicker}
-                        itemStyle={styles.dateWheelItem}
+                        itemStyle={[styles.dateWheelItem, momentTheme.dateWheelItem]}
                       >
                         {availableMonthIndices.map((i) => (
                           <Picker.Item key={MONTHS[i]} label={MONTHS[i]} value={i} />
@@ -608,7 +776,7 @@ export default function CreateMomentScreen() {
                           updateDate(new Date(val, month, Math.min(day, maxD)));
                         }}
                         style={styles.dateWheelPicker}
-                        itemStyle={styles.dateWheelItem}
+                        itemStyle={[styles.dateWheelItem, momentTheme.dateWheelItem]}
                       >
                         {availableYears.map((y) => (
                           <Picker.Item key={y} label={String(y)} value={y} />
@@ -628,7 +796,9 @@ export default function CreateMomentScreen() {
                       <Text
                         style={[
                           styles.metadataLocation,
+                          momentTheme.metadata,
                           !location.trim() && styles.metadataLocationPlaceholder,
+                          !location.trim() && momentTheme.metadataPlaceholder,
                         ]}
                         allowFontScaling
                       >
@@ -642,8 +812,8 @@ export default function CreateMomentScreen() {
                       onChangeText={setLocation}
                       onBlur={closeLocationEdit}
                       placeholder="Add location"
-                      placeholderTextColor="#B7B0A5"
-                      style={styles.locationInlineInput}
+                      placeholderTextColor={momentTheme.placeholder}
+                      style={[styles.locationInlineInput, momentTheme.locationInput]}
                       accessibilityLabel="Location"
                     />
                   )}
@@ -663,56 +833,21 @@ export default function CreateMomentScreen() {
                   accessibilityLabel="Save moment"
                 >
                   <Text style={styles.primaryLabel} allowFontScaling>
-                    {isSaving ? 'Saving…' : 'Save moment'}
+                    {isSaving ? 'Saving…' : isEditing ? 'Save changes' : 'Save moment'}
                   </Text>
                 </Pressable>
               </Animated.View>
             ) : null}
           </View>
+          ) : null}
         </View>
       </ScrollView>
 
-      {/* Pawple "Change" choice sheet — preserves the existing photo until a new one is confirmed. */}
-      <Modal
-        visible={showChangeSheet}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowChangeSheet(false)}
-      >
-        <TouchableOpacity
-          style={styles.sheetBackdrop}
-          activeOpacity={1}
-          onPress={() => setShowChangeSheet(false)}
-        >
-          <View style={styles.sheetCard}>
-            <TouchableOpacity
-              onPress={() => {
-                setShowChangeSheet(false);
-                handlePickImage('camera');
-              }}
-            >
-              <Text style={styles.sheetOption} allowFontScaling>
-                Take another photo
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => {
-                setShowChangeSheet(false);
-                handlePickImage('gallery');
-              }}
-            >
-              <Text style={styles.sheetOption} allowFontScaling>
-                Choose from gallery
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => setShowChangeSheet(false)} style={styles.sheetCancelWrap}>
-              <Text style={styles.sheetCancel} allowFontScaling>
-                Cancel
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </TouchableOpacity>
-      </Modal>
+      <PhotoPickerModal
+        visible={photoSourceOpen}
+        onClose={() => setPhotoSourceOpen(false)}
+        onSelectSource={(source) => handlePickImage(source)}
+      />
     </SafeAreaView>
   );
 }
@@ -737,6 +872,11 @@ const styles = StyleSheet.create({
   },
   dismissInner: {
     padding: f.dismissHitPadding,
+  },
+  editLoading: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 48,
   },
   title: {
     marginTop: TITLE_MARGIN_TOP,
@@ -856,15 +996,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#FFF',
   },
-  secondaryWrap: {
-    marginTop: CAMERA_TO_GALLERY,
-    alignSelf: 'center',
-  },
-  secondaryLabel: {
-    fontFamily: 'Inter-Regular',
-    fontSize: 14,
-    color: '#9A9A9A',
-  },
   editorialSection: {
     alignSelf: 'center',
   },
@@ -938,34 +1069,5 @@ const styles = StyleSheet.create({
   },
   pressed: {
     opacity: theme.opacity.pressedUi,
-  },
-  sheetBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.25)',
-  },
-  sheetCard: {
-    marginTop: 'auto',
-    backgroundColor: '#FBFAF7',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 24,
-    paddingBottom: 40,
-  },
-  sheetOption: {
-    fontFamily: 'Inter-Regular',
-    fontSize: 16,
-    color: '#2F2F2F',
-    paddingVertical: 14,
-    textAlign: 'center',
-  },
-  sheetCancelWrap: {
-    marginTop: 8,
-  },
-  sheetCancel: {
-    fontFamily: 'Inter-Medium',
-    fontSize: 15,
-    color: '#9A9A9A',
-    paddingVertical: 14,
-    textAlign: 'center',
   },
 });

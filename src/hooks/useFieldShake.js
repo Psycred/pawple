@@ -6,6 +6,9 @@ import { Animated, Easing } from 'react-native';
  */
 export function useFieldShake() {
   const titleShake = useRef(new Animated.Value(0)).current;
+  const cityShake = useRef(new Animated.Value(0)).current;
+  const venueShake = useRef(new Animated.Value(0)).current;
+  const participationShake = useRef(new Animated.Value(0)).current;
   const dateShake = useRef(new Animated.Value(0)).current;
   const timeShake = useRef(new Animated.Value(0)).current;
   const petsShake = useRef(new Animated.Value(0)).current;
@@ -13,6 +16,9 @@ export function useFieldShake() {
 
   const anims = useRef({
     title: titleShake,
+    city: cityShake,
+    venue: venueShake,
+    participation: participationShake,
     date: dateShake,
     time: timeShake,
     pets: petsShake,

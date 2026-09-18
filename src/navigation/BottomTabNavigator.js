@@ -1,13 +1,22 @@
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import React, { useEffect, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { AppState, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { areMatingSurfacesVisible } from '../config/phase1aSurfaces';
 import { supabase } from '../config/supabase';
 import { theme } from '../config/theme';
+import { MATING_DISCOVER_TAB_ACCESSIBILITY_LABEL } from '../content/legalDocuments';
 import { useActivePet } from '../contexts/ActivePetContext';
+import { useAuth } from '../contexts/AuthContext';
+import { useRuntimeThemeColors } from '../hooks/useRuntimeThemeColors';
 import FeedScreen from '../screens/FeedScreen';
+import MatingChatListScreen from '../screens/MatingChatListScreen';
+import MatingDiscoveryScreen from '../screens/MatingDiscoveryScreen';
 import MomentHubScreen from '../screens/MomentScreen';
 import PetProfileScreen from '../screens/PetProfileScreen';
+import PetContextSelector from '../components/PetContextSelector';
 
 const Tab = createBottomTabNavigator();
 
@@ -18,6 +27,10 @@ const TAB_ACTIVE_COLOR = theme.colors.brand.sage.light;
 const TAB_INACTIVE_COLOR = theme.colors.tabBar.inactive;
 const TAB_BAR_EXTRA_BOTTOM = 8;
 const MAX_PET_LABEL_LENGTH = 12;
+const PET_TAB_PHOTO_SIZE = 28;
+
+/** Skip repeat mating-tab checks when state was resolved recently for this pet. */
+const MATING_TABS_REFRESH_MIN_INTERVAL_MS = 45_000;
 
 function formatPetTabLabel(name) {
   const characters = [...String(name ?? '').trim()];
@@ -30,67 +43,225 @@ function formatPetTabLabel(name) {
   return `${characters.slice(0, MAX_PET_LABEL_LENGTH - 1).join('')}…`;
 }
 
+function petInitial(name) {
+  const trimmed = String(name ?? '').trim();
+  return trimmed ? trimmed.charAt(0).toUpperCase() : 'P';
+}
+
+/** Two quiet Pawple-green prints identify Mating in every tab state. */
+function MatingTabIcon() {
+  return (
+    <View style={matingIconStyles.pair} accessibilityElementsHidden>
+      <Ionicons
+        name="paw"
+        color={TAB_ACTIVE_COLOR}
+        size={14}
+        style={matingIconStyles.first}
+      />
+      <Ionicons
+        name="paw"
+        color={TAB_ACTIVE_COLOR}
+        size={14}
+        style={matingIconStyles.second}
+      />
+    </View>
+  );
+}
+
+function PetTabIcon({ photoUrl, name }) {
+  const initial = petInitial(name);
+
+  return (
+    <View style={petTabStyles.ring}>
+      {photoUrl ? (
+        <PetContextSelector photo_url={photoUrl} size={PET_TAB_PHOTO_SIZE} />
+      ) : (
+        <View style={petTabStyles.fallback}>
+          <Text style={petTabStyles.initial}>{initial}</Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
+const matingIconStyles = StyleSheet.create({
+  pair: {
+    width: 28,
+    height: 24,
+  },
+  first: {
+    position: 'absolute',
+    left: 2,
+    bottom: 1,
+    transform: [{ rotate: '-18deg' }],
+  },
+  second: {
+    position: 'absolute',
+    right: 2,
+    top: 1,
+    transform: [{ rotate: '18deg' }],
+  },
+});
+
+const petTabStyles = StyleSheet.create({
+  ring: {
+    borderRadius: PET_TAB_PHOTO_SIZE / 2 + 2,
+    padding: 0,
+  },
+  fallback: {
+    width: PET_TAB_PHOTO_SIZE,
+    height: PET_TAB_PHOTO_SIZE,
+    borderRadius: PET_TAB_PHOTO_SIZE / 2,
+    backgroundColor: theme.colors.brand.sageLight.light,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#FFFFFF',
+  },
+  initial: {
+    fontFamily: theme.fonts.medium,
+    fontSize: 11,
+    color: theme.colors.brand.sageDark.value,
+  },
+});
+
 /**
- * Main bottom tabs: Feed | + (sheet hub) | active pet.
+ * Main bottom tabs: Feed | + (sheet hub) | Discover | Chat | active pet.
  * Route names stay stable for `navigation.navigate('FeedScreen')`, stack pushes, and resets.
  */
 export default function BottomTabNavigator() {
   const insets = useSafeAreaInsets();
-  const { activePetId } = useActivePet();
-  const [activePetName, setActivePetName] = useState(null);
+  const { activePetId, activePet } = useActivePet();
+  const { user } = useAuth();
+  const surfaces = useRuntimeThemeColors();
+  const matingVisible = areMatingSurfacesVisible();
+
+  const [showDiscoverTab, setShowDiscoverTab] = useState(false);
+  const [showChatTab, setShowChatTab] = useState(false);
+  const [matingStatePetId, setMatingStatePetId] = useState(null);
+  const matingRefreshSequenceRef = useRef(0);
+  const lastMatingTabsRefreshAtRef = useRef(0);
+  const lastMatingTabsRefreshPetIdRef = useRef(null);
+  const prevActivePetIdRef = useRef(undefined);
+
   const tabLabelFamily = 'Inter-Medium';
   const paddingBottom = Math.max(insets.bottom, 0) + TAB_BAR_EXTRA_BOTTOM;
   const tabBarHeight = 56 + paddingBottom;
-  const petTabLabel = formatPetTabLabel(activePetName);
+  const petTabLabel = formatPetTabLabel(activePet?.name);
+  const matingStateIsForActivePet =
+    activePetId != null && String(matingStatePetId) === String(activePetId);
 
-  useEffect(() => {
-    let current = true;
+  const markMatingTabsRefreshed = useCallback((petId) => {
+    lastMatingTabsRefreshAtRef.current = Date.now();
+    lastMatingTabsRefreshPetIdRef.current = petId ?? null;
+  }, []);
 
-    if (!activePetId) {
-      setActivePetName(null);
-      return () => {
-        current = false;
-      };
+  const refreshMatingTabs = useCallback(async ({ force = false } = {}) => {
+    const refreshSequence = matingRefreshSequenceRef.current + 1;
+    matingRefreshSequenceRef.current = refreshSequence;
+
+    if (!force) {
+      const samePet =
+        activePetId != null &&
+        String(lastMatingTabsRefreshPetIdRef.current) === String(activePetId);
+      const recentlyRefreshed =
+        lastMatingTabsRefreshAtRef.current > 0 &&
+        Date.now() - lastMatingTabsRefreshAtRef.current < MATING_TABS_REFRESH_MIN_INTERVAL_MS;
+      if (samePet && recentlyRefreshed) {
+        return;
+      }
     }
 
-    const loadActivePetName = async () => {
-      try {
-        const { data, error } = await supabase
-          .from('pets')
-          .select('name')
-          .eq('id', activePetId)
-          .maybeSingle();
+    if (!matingVisible || !user?.id || !activePetId) {
+      setMatingStatePetId(activePetId ?? null);
+      setShowDiscoverTab(false);
+      setShowChatTab(false);
+      markMatingTabsRefreshed(activePetId ?? null);
+      return;
+    }
 
-        if (error) {
-          throw error;
-        }
-        if (current) {
-          setActivePetName(data?.name ?? null);
-        }
-      } catch (error) {
-        console.error('[Supabase]', error);
-        if (current) {
-          setActivePetName(null);
-        }
+    try {
+      const { data: activePet, error: companionError } = await supabase
+        .from('pets')
+        .select('id, is_looking_for_companion')
+        .eq('id', activePetId)
+        .eq('owner_id', user.id)
+        .maybeSingle();
+
+      if (companionError) {
+        throw companionError;
       }
-    };
 
-    setActivePetName(null);
-    loadActivePetName();
+      if (refreshSequence !== matingRefreshSequenceRef.current) {
+        return;
+      }
 
+      const activePetOpenToMating = Boolean(activePet?.is_looking_for_companion);
+      setMatingStatePetId(activePetId);
+      setShowDiscoverTab(activePetOpenToMating);
+
+      if (!activePetOpenToMating) {
+        setShowChatTab(false);
+        markMatingTabsRefreshed(activePetId);
+        return;
+      }
+
+      setShowChatTab(true);
+      markMatingTabsRefreshed(activePetId);
+    } catch (e) {
+      console.error('[BottomTabNavigator] mating tabs', e);
+      if (refreshSequence === matingRefreshSequenceRef.current) {
+        setMatingStatePetId(activePetId);
+        setShowDiscoverTab(false);
+        setShowChatTab(false);
+      }
+    }
+  }, [activePetId, markMatingTabsRefreshed, matingVisible, user?.id]);
+
+  const handleMatingAvailabilityChange = useCallback(
+    (nextOpenToMating) => {
+      setMatingStatePetId(activePetId);
+      setShowDiscoverTab(Boolean(nextOpenToMating));
+      if (!nextOpenToMating) {
+        setShowChatTab(false);
+        return;
+      }
+      refreshMatingTabs({ force: true });
+    },
+    [activePetId, refreshMatingTabs],
+  );
+
+  useEffect(() => {
+    const petChanged = prevActivePetIdRef.current !== activePetId;
+    prevActivePetIdRef.current = activePetId;
+    refreshMatingTabs({ force: petChanged });
+  }, [activePetId, refreshMatingTabs]);
+
+  useFocusEffect(
+    useCallback(() => {
+      refreshMatingTabs();
+    }, [refreshMatingTabs]),
+  );
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        refreshMatingTabs({ force: true });
+      }
+    });
     return () => {
-      current = false;
+      subscription.remove();
     };
-  }, [activePetId]);
+  }, [refreshMatingTabs]);
 
   return (
     <Tab.Navigator
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: TAB_ACTIVE_COLOR,
+        tabBarActiveTintColor: TAB_INACTIVE_COLOR,
         tabBarInactiveTintColor: TAB_INACTIVE_COLOR,
         tabBarStyle: {
-          backgroundColor: theme.colors.background.screen,
+          backgroundColor: surfaces.backgroundScreen,
           height: tabBarHeight,
           paddingTop: theme.spacing.sm,
           paddingBottom,
@@ -128,17 +299,56 @@ export default function BottomTabNavigator() {
           tabBarAccessibilityLabel: 'Create menu',
         }}
       />
+      {matingVisible && matingStateIsForActivePet && showDiscoverTab ? (
+        <Tab.Screen
+          name="MatingDiscoverTab"
+          component={MatingDiscoveryScreen}
+          initialParams={{ fromTab: true }}
+          options={{
+            tabBarLabel: 'Discover',
+            tabBarLabelStyle: { color: TAB_ACTIVE_COLOR },
+            tabBarIcon: () => <MatingTabIcon />,
+            tabBarAccessibilityLabel: MATING_DISCOVER_TAB_ACCESSIBILITY_LABEL,
+          }}
+        />
+      ) : null}
+      {matingVisible && matingStateIsForActivePet && showDiscoverTab && showChatTab ? (
+        <Tab.Screen
+          name="MatingChatTab"
+          component={MatingChatListScreen}
+          options={{
+            tabBarLabel: 'Chat',
+            tabBarIcon: () => (
+              <Feather
+                name="message-circle"
+                color={TAB_INACTIVE_COLOR}
+                size={TAB_ICON_SIZE}
+              />
+            ),
+            tabBarAccessibilityLabel: 'Chat',
+          }}
+        />
+      ) : null}
       <Tab.Screen
         name="PetsScreen"
-        component={PetProfileScreen}
         options={{
           tabBarLabel: petTabLabel,
-          tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? 'paw' : 'paw-outline'} color={color} size={TAB_ICON_SIZE} />
+          tabBarIcon: () => (
+            <PetTabIcon
+              photoUrl={activePet?.photo_url}
+              name={activePet?.name}
+            />
           ),
           tabBarAccessibilityLabel: 'Pets tab',
         }}
-      />
+      >
+        {(props) => (
+          <PetProfileScreen
+            {...props}
+            onMatingAvailabilityChange={handleMatingAvailabilityChange}
+          />
+        )}
+      </Tab.Screen>
     </Tab.Navigator>
   );
 }

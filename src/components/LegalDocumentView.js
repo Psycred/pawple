@@ -1,6 +1,7 @@
 import React from 'react';
 import { SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { theme } from '../config/theme';
+import { useRuntimeThemeColors } from '../hooks/useRuntimeThemeColors';
 import { LEGAL_LAST_UPDATED } from '../content/legalDocuments';
 
 /**
@@ -8,21 +9,25 @@ import { LEGAL_LAST_UPDATED } from '../content/legalDocuments';
  * Keeps legal surfaces visually consistent and calm.
  */
 export default function LegalDocumentView({ title, sections }) {
+  const surfaces = useRuntimeThemeColors();
+
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: surfaces.backgroundScreen }]}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <Text style={styles.header}>{title}</Text>
+        <Text style={[styles.header, { color: surfaces.textPrimary }]}>{title}</Text>
 
         {sections.map((section) => (
           <View key={section.title} style={styles.section}>
-            <Text style={styles.sectionTitle}>{section.title}</Text>
-            <Text selectable numberOfLines={0} style={styles.sectionBody}>
+            <Text style={[styles.sectionTitle, { color: surfaces.textPrimary }]}>{section.title}</Text>
+            <Text selectable numberOfLines={0} style={[styles.sectionBody, { color: surfaces.textSecondary }]}>
               {section.body}
             </Text>
           </View>
         ))}
 
-        <Text style={styles.footer}>Last updated: {LEGAL_LAST_UPDATED}</Text>
+        <Text style={[styles.footer, { color: surfaces.textMuted }]}>
+          Last updated: {LEGAL_LAST_UPDATED}
+        </Text>
       </ScrollView>
     </SafeAreaView>
   );

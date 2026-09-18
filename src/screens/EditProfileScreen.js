@@ -1,14 +1,38 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, SafeAreaView, StyleSheet, Text, TextInput, View } from 'react-native';
+import RequiredBadge from '../components/RequiredBadge';
 import { supabase } from '../config/supabase';
 import { theme } from '../config/theme';
+import { useRuntimeThemeColors } from '../hooks/useRuntimeThemeColors';
 
 export default function EditProfileScreen({ navigation }) {
+  const surfaces = useRuntimeThemeColors();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [name, setName] = useState('');
   const [city, setCity] = useState('');
   const [email, setEmail] = useState('');
+  const [fieldErrors, setFieldErrors] = useState({});
+
+  const profileTheme = useMemo(
+    () => ({
+      screen: { backgroundColor: surfaces.backgroundScreen },
+      loadingWrap: { backgroundColor: surfaces.backgroundScreen },
+      label: { color: surfaces.textMuted },
+      input: {
+        backgroundColor: surfaces.backgroundCard,
+        borderColor: surfaces.border,
+        color: surfaces.textPrimary,
+      },
+    }),
+    [
+      surfaces.backgroundCard,
+      surfaces.backgroundScreen,
+      surfaces.border,
+      surfaces.textMuted,
+      surfaces.textPrimary,
+    ],
+  );
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -36,8 +60,15 @@ export default function EditProfileScreen({ navigation }) {
   }, [navigation]);
 
   const handleSave = async () => {
+    const nextErrors = {};
     if (!name.trim()) {
-      Alert.alert('Profile', 'Please enter your name.');
+      nextErrors.name = 'Please enter your name.';
+    }
+    if (!city.trim()) {
+      nextErrors.city = 'Please enter your city.';
+    }
+    setFieldErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) {
       return;
     }
     setSaving(true);
@@ -53,7 +84,7 @@ export default function EditProfileScreen({ navigation }) {
         {
           id: user.id,
           name: name.trim(),
-          city: city.trim() || null,
+          city: city.trim(),
           email: user.email ?? null,
           updated_at: new Date().toISOString(),
         },
@@ -71,39 +102,67 @@ export default function EditProfileScreen({ navigation }) {
 
   if (loading) {
     return (
-      <View style={styles.loadingWrap}>
+      <View style={[styles.loadingWrap, profileTheme.loadingWrap]}>
         <ActivityIndicator color={theme.colors.primary.light} />
       </View>
     );
   }
 
   return (
-    <SafeAreaView style={styles.screen}>
+    <SafeAreaView style={[styles.screen, profileTheme.screen]}>
       <View style={styles.content}>
-        <Text style={styles.label}>Name</Text>
+        <View style={styles.labelRow}>
+          <Text style={[styles.label, profileTheme.label]}>Name</Text>
+          <RequiredBadge />
+        </View>
         <TextInput
-          style={styles.input}
+          style={[styles.input, profileTheme.input, fieldErrors.name && styles.inputError]}
           value={name}
-          onChangeText={setName}
+          onChangeText={(value) => {
+            setName(value);
+            if (fieldErrors.name) {
+              setFieldErrors((prev) => ({ ...prev, name: null }));
+            }
+          }}
           placeholder="Your name"
-          placeholderTextColor={theme.colors.text.muted.light}
+          placeholderTextColor={surfaces.placeholder}
         />
+        {fieldErrors.name ? (
+          <Text style={styles.inlineError} accessibilityLiveRegion="polite">
+            {fieldErrors.name}
+          </Text>
+        ) : null}
 
-        <Text style={styles.label}>City</Text>
+        <View style={styles.labelRow}>
+          <Text style={[styles.label, profileTheme.label]}>City</Text>
+          <RequiredBadge />
+        </View>
         <TextInput
-          style={styles.input}
+          style={[styles.input, profileTheme.input, fieldErrors.city && styles.inputError]}
           value={city}
-          onChangeText={setCity}
+          onChangeText={(value) => {
+            setCity(value);
+            if (fieldErrors.city) {
+              setFieldErrors((prev) => ({ ...prev, city: null }));
+            }
+          }}
           placeholder="Your city"
-          placeholderTextColor={theme.colors.text.muted.light}
+          placeholderTextColor={surfaces.placeholder}
         />
+        {fieldErrors.city ? (
+          <Text style={styles.inlineError} accessibilityLiveRegion="polite">
+            {fieldErrors.city}
+          </Text>
+        ) : null}
 
-        <Text style={styles.label}>Email</Text>
+        <View style={styles.labelRow}>
+          <Text style={[styles.label, profileTheme.label]}>Email</Text>
+        </View>
         <TextInput
-          style={[styles.input, styles.inputDisabled]}
+          style={[styles.input, profileTheme.input, styles.inputDisabled]}
           value={email}
           editable={false}
-          placeholderTextColor={theme.colors.text.muted.light}
+          placeholderTextColor={surfaces.placeholder}
         />
 
         <Pressable style={({ pressed }) => [styles.saveButton, pressed && styles.buttonPressed]} onPress={handleSave} disabled={saving}>
@@ -129,12 +188,17 @@ const styles = StyleSheet.create({
     padding: theme.spacing.lg,
   },
   label: {
-    marginTop: theme.spacing.sm,
-    marginBottom: theme.spacing.xs,
     fontFamily: 'Inter-Regular',
     fontSize: theme.fontSizes.sm,
     color: theme.colors.text.muted.light,
     textTransform: 'uppercase',
+  },
+  labelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+    marginTop: theme.spacing.sm,
+    marginBottom: theme.spacing.xs,
   },
   input: {
     minHeight: theme.components.input.minHeight,
@@ -146,6 +210,15 @@ const styles = StyleSheet.create({
     fontFamily: theme.fonts.body,
     fontSize: theme.fontSizes.md,
     color: theme.colors.text.primary.light,
+  },
+  inputError: {
+    borderColor: theme.colors.feedback.error.value,
+  },
+  inlineError: {
+    marginTop: theme.spacing.xs,
+    fontFamily: theme.fonts.body,
+    fontSize: theme.fontSizes.sm,
+    color: theme.colors.feedback.error.value,
   },
   inputDisabled: {
     opacity: 0.65,

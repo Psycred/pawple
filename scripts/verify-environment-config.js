@@ -66,10 +66,36 @@ for (const example of ['.env.development.example', '.env.staging.example', '.env
   assert(fs.existsSync(path.join(root, example)), `${example} must exist`);
 }
 
+const integrationEnv = read('tests/integration/helpers/env.js');
+assert(
+  !integrationEnv.includes('https://pexurgcfkxkouthuhlnb.supabase.co'),
+  'integration env helper must not embed the live Supabase URL as a default',
+);
+assert(
+  !/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9/.test(integrationEnv),
+  'integration env helper must not contain a hardcoded anon key',
+);
+
 const gitignore = read('.gitignore');
 for (const secretFile of ['.env.development', '.env.staging', '.env.production']) {
   assert(gitignore.includes(secretFile), `.gitignore must ignore ${secretFile}`);
 }
+
+const phase1aSurfaces = read('src/config/phase1aSurfaces.js');
+assert(
+  /export const EXPOSE_MATING_SURFACES = true/.test(phase1aSurfaces),
+  'phase1aSurfaces.js must expose the approved Mating surfaces',
+);
+assert(
+  phase1aSurfaces.includes('export function areMatingSurfacesVisible'),
+  'phase1aSurfaces.js must export areMatingSurfacesVisible()',
+);
+
+const easRaw = read('eas.json');
+assert(
+  !easRaw.includes('EXPO_PUBLIC_MATING_TEST_SURFACES'),
+  'eas.json must not contain EXPO_PUBLIC_MATING_TEST_SURFACES',
+);
 
 if (failures.length) {
   console.error('Environment config verification failed:\n');

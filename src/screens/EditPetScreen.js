@@ -1,6 +1,5 @@
 import { Feather } from '@expo/vector-icons';
-import * as ImagePicker from 'expo-image-picker';
-import React, { useEffect, useLayoutEffect, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -14,20 +13,31 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { abandonCameraCapture, captureFromCamera } from '../lib/cameraCapture';
+import { nextCameraTraceId, logCameraTrace } from '../lib/cameraCaptureDiagnostics';
+import { logPhotoFlow } from '../lib/photoFlowDiagnostics';
+import { pickFromGallery } from '../lib/photoPicker';
+import MatingSetupModal from '../components/MatingSetupModal';
 import PhotoPickerModal from '../components/PhotoPickerModal';
+import PawpleConfirmModal from '../components/PawpleConfirmModal';
+import { isValidMatingGender } from '../lib/matingEligibility';
 import PetCompanionCommunitySection from '../components/PetCompanionCommunitySection';
-import { EXPOSE_MATING_SURFACES } from '../config/phase1aSurfaces';
+import RequiredBadge from '../components/RequiredBadge';
+import { areMatingSurfacesVisible } from '../config/phase1aSurfaces';
 import { theme } from '../config/theme';
+import { useRuntimeThemeColors } from '../hooks/useRuntimeThemeColors';
 import { supabase } from '../config/supabase';
 import { useActivePet } from '../contexts/ActivePetContext';
-import { fetchPetProfile, updatePetCompanionDiscovery } from '../services/pets';
 import {
-  openAppSettings,
-  requestCameraPermissionJIT,
-} from '../lib/permissions';
-import { pickFromGallery } from '../lib/photoPicker';
+  fetchPetProfile,
+  updatePetCompanionDiscovery,
+  updatePetGender,
+  updatePetMatingBreedPreference,
+} from '../services/pets';
 import { resolveActivePetAfterDelete } from '../lib/activePetIntegrity';
 import { resolvePetPhotoUrl } from '../lib/petPhotoUpload';
+import { approvePickedPhotoUri } from '../lib/photoValidationGate';
+import { usePhotoValidationGate } from '../contexts/PhotoValidationContext';
 import { TRAIT_SUGGESTIONS, MAX_TRAITS } from '../constants/petTraits';
 
 const PET_TYPE_OPTIONS = [
@@ -92,13 +102,16 @@ function normalizeTraits(raw) {
  * Dedicated pet profile editor — separate from the human "My Profile" screen.
  */
 export default function EditPetScreen({ navigation, route }) {
+  const surfaces = useRuntimeThemeColors();
   const petId = route?.params?.petId ?? null;
   const { activePetId, setPet } = useActivePet();
+  const { ready: photoValidationReady, validatePhoto } = usePhotoValidationGate();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [photoModalVisible, setPhotoModalVisible] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [photoSourceOpen, setPhotoSourceOpen] = useState(false);
 
   const [name, setName] = useState('');
   const [petType, setPetType] = useState('');
@@ -111,9 +124,63 @@ export default function EditPetScreen({ navigation, route }) {
   const [photoUri, setPhotoUri] = useState(null);
   const [lookingForCompanion, setLookingForCompanion] = useState(false);
   const [companionSaving, setCompanionSaving] = useState(false);
+  const [persistedGender, setPersistedGender] = useState('');
+  const [matingBreedPreference, setMatingBreedPreference] = useState('');
+  const [setupVisible, setSetupVisible] = useState(false);
+  const [setupError, setSetupError] = useState('');
   const [hostedCount, setHostedCount] = useState(0);
   const [participatedCount, setParticipatedCount] = useState(0);
   const [selectedTraits, setSelectedTraits] = useState([]);
+  const [fieldErrors, setFieldErrors] = useState({});
+
+  const formTheme = useMemo(
+    () => ({
+      screen: { backgroundColor: surfaces.backgroundScreen },
+      loadingWrap: { backgroundColor: surfaces.backgroundScreen },
+      photoWrap: { borderColor: surfaces.border },
+      photoFallback: {
+        backgroundColor: surfaces.isDark
+          ? surfaces.meetupChipBackground
+          : theme.colors.brand.sageLight.light,
+      },
+      label: { color: surfaces.textMuted },
+      input: {
+        backgroundColor: surfaces.inputBackground,
+        borderColor: surfaces.inputBorder,
+        color: surfaces.textPrimary,
+      },
+      chip: {
+        backgroundColor: surfaces.backgroundCard,
+        borderColor: surfaces.border,
+      },
+      chipOn: {
+        backgroundColor: surfaces.isDark
+          ? surfaces.meetupChipBackground
+          : theme.colors.brand.sageLight.light,
+        borderColor: theme.colors.brand.sage.value,
+      },
+      chipText: { color: surfaces.textPrimary },
+      helperText: { color: surfaces.textSecondary },
+      traitChip: { backgroundColor: surfaces.profileTraitChipBackground },
+      traitChipText: { color: surfaces.profileHeroNameColor },
+      counterText: { color: surfaces.isDark ? surfaces.textMuted : '#999' },
+      deleteButton: { backgroundColor: surfaces.backgroundCard },
+    }),
+    [
+      surfaces.backgroundCard,
+      surfaces.backgroundScreen,
+      surfaces.border,
+      surfaces.inputBackground,
+      surfaces.inputBorder,
+      surfaces.isDark,
+      surfaces.meetupChipBackground,
+      surfaces.profileHeroNameColor,
+      surfaces.profileTraitChipBackground,
+      surfaces.textMuted,
+      surfaces.textPrimary,
+      surfaces.textSecondary,
+    ],
+  );
 
   useLayoutEffect(() => {
     const title = name.trim() ? `Edit ${name.trim()}` : 'Edit Pet';
@@ -147,11 +214,13 @@ export default function EditPetScreen({ navigation, route }) {
         setPetTypeCustom(data.pet_type_custom ?? '');
         setBreed(data.breed ?? '');
         setGender(data.gender ?? '');
+        setPersistedGender(data.gender ?? '');
         setAge(data.age != null ? String(data.age) : '');
         setVaccinationStatus(normalizeVaccinationFromDb(data.vaccinated));
         setBio(data.bio ?? '');
         setPhotoUri(data.photo_url ?? null);
         setLookingForCompanion(Boolean(data.is_looking_for_companion));
+        setMatingBreedPreference(data.mating_breed_preference ?? '');
         setHostedCount(profileData.hosted_count ?? 0);
         setParticipatedCount(profileData.participated_count ?? 0);
         setSelectedTraits(normalizeTraits(data.traits));
@@ -170,15 +239,49 @@ export default function EditPetScreen({ navigation, route }) {
     if (!petId || companionSaving) {
       return;
     }
-    const previous = lookingForCompanion;
-    setLookingForCompanion(nextValue);
+    if (nextValue) {
+      setSetupError('');
+      setSetupVisible(true);
+      return;
+    }
+
     setCompanionSaving(true);
     try {
-      await updatePetCompanionDiscovery(petId, nextValue);
+      await updatePetCompanionDiscovery(petId, false);
+      setLookingForCompanion(false);
     } catch (error) {
       console.error('[EditPet] companion toggle failed', error);
-      setLookingForCompanion(previous);
       Alert.alert('Pet', 'Could not update discovery setting. Try again.');
+    } finally {
+      setCompanionSaving(false);
+    }
+  };
+
+  const handleSetupConfirm = async ({ gender: nextGender, breedPreference }) => {
+    if (!petId || companionSaving) {
+      return;
+    }
+    setCompanionSaving(true);
+    setSetupError('');
+    try {
+      if (nextGender) {
+        const updated = await updatePetGender(petId, nextGender);
+        const savedGender = updated?.gender ?? nextGender;
+        setGender(savedGender);
+        setPersistedGender(savedGender);
+        setFieldErrors((prev) => ({ ...prev, gender: null }));
+      } else if (isValidMatingGender(gender) && gender.trim() !== persistedGender.trim()) {
+        const updated = await updatePetGender(petId, gender.trim());
+        setPersistedGender(updated?.gender ?? gender.trim());
+      }
+      const prefRow = await updatePetMatingBreedPreference(petId, breedPreference);
+      setMatingBreedPreference(prefRow?.mating_breed_preference ?? breedPreference);
+      await updatePetCompanionDiscovery(petId, true);
+      setLookingForCompanion(true);
+      setSetupVisible(false);
+    } catch (error) {
+      console.error('[EditPet] mating setup failed', error);
+      setSetupError('Could not save Mating setup. Try again.');
     } finally {
       setCompanionSaving(false);
     }
@@ -196,36 +299,73 @@ export default function EditPetScreen({ navigation, route }) {
     });
   };
 
+  const openPhotoOptions = () => {
+    setPhotoSourceOpen(true);
+  };
+
+  const handlePhotoSourceSelected = async (source) => {
+    logPhotoFlow('screen_handler_start', { screen: 'EditPet' });
+    await pickPhoto(source);
+  };
+
+  useEffect(() => {
+    return () => {
+      abandonCameraCapture('unmount', { screen: 'EditPet' });
+    };
+  }, []);
+
   const pickPhoto = async (source) => {
+    const traceId = nextCameraTraceId('EditPet');
+    logCameraTrace(traceId, 'pick_photo_start', { source });
+
     try {
-      if (source === 'library') {
+      if (source !== 'camera') {
         const result = await pickFromGallery({
           allowsEditing: true,
           aspect: [1, 1],
           quality: 0.85,
         });
-        if (result?.assets?.[0]?.uri) {
-          setPhotoUri(result.assets[0].uri);
+        const uri = result?.assets?.[0]?.uri;
+        if (uri) {
+          const allowed = await approvePickedPhotoUri(uri, {
+            ready: photoValidationReady,
+            validatePhoto,
+          });
+          if (!allowed) {
+            return false;
+          }
+          setPhotoUri(uri);
           return true;
         }
         return false;
       }
 
-      const granted = await requestCameraPermissionJIT();
-      if (!granted) {
-        Alert.alert('Camera', 'Permission was not granted.', [
-          { text: 'Not now', style: 'cancel' },
-          { text: 'Open settings', onPress: openAppSettings },
-        ]);
+      const capture = await captureFromCamera(
+        {
+          allowsEditing: true,
+          aspect: [1, 1],
+          quality: 0.85,
+        },
+        { traceId, screen: 'EditPet' },
+      );
+      logCameraTrace(traceId, 'pick_photo_capture_result', { status: capture.status });
+
+      if (capture.status === 'busy' || capture.status === 'canceled' || capture.status === 'abandoned') {
         return false;
       }
-      const result = await ImagePicker.launchCameraAsync({
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.85,
-      });
-      if (!result.canceled && result.assets?.[0]?.uri) {
-        setPhotoUri(result.assets[0].uri);
+      if (capture.status !== 'captured') {
+        return false;
+      }
+      const cameraUri = capture.result?.assets?.[0]?.uri;
+      if (cameraUri) {
+        const allowed = await approvePickedPhotoUri(cameraUri, {
+          ready: photoValidationReady,
+          validatePhoto,
+        });
+        if (!allowed) {
+          return false;
+        }
+        setPhotoUri(cameraUri);
         return true;
       }
       return false;
@@ -237,16 +377,21 @@ export default function EditPetScreen({ navigation, route }) {
   };
 
   const handleSave = async () => {
+    const nextErrors = {};
     if (!name.trim()) {
-      Alert.alert('Pet', 'Please enter a name.');
-      return;
+      nextErrors.name = 'Please enter a pet name.';
     }
     if (!petType) {
-      Alert.alert('Pet', 'Please choose Dog, Cat, or Other.');
-      return;
+      nextErrors.petType = 'Please choose a pet type.';
     }
-    if (petType === 'other' && !petTypeCustom.trim() && !breed.trim()) {
-      Alert.alert('Pet', 'Tell us what kind of pet this is.');
+    if (petType === 'other' && !petTypeCustom.trim()) {
+      nextErrors.petTypeCustom = 'Tell us what kind of pet this is.';
+    }
+    if (lookingForCompanion && !isValidMatingGender(gender)) {
+      nextErrors.gender = 'Choose gender to keep Open to Mating enabled.';
+    }
+    setFieldErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) {
       return;
     }
 
@@ -265,7 +410,7 @@ export default function EditPetScreen({ navigation, route }) {
       const payload = {
         name: name.trim(),
         pet_type: petType,
-        pet_type_custom: petType === 'other' ? petTypeCustom.trim() || breed.trim() || null : null,
+        pet_type_custom: petType === 'other' ? petTypeCustom.trim() || null : null,
         breed: breed.trim() || null,
         gender: gender || null,
         age: parseAgeForStorage(age),
@@ -333,42 +478,41 @@ export default function EditPetScreen({ navigation, route }) {
   };
 
   const confirmDelete = () => {
-    Alert.alert('Delete pet?', "This will remove this pet's profile.", [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: handleDelete },
-    ]);
+    setDeleteConfirmOpen(true);
   };
 
   const bioLabel = name.trim() ? `About ${name.trim()}` : 'About';
 
   if (loading) {
     return (
-      <View style={styles.loadingWrap}>
+      <View style={[styles.loadingWrap, formTheme.loadingWrap]}>
         <ActivityIndicator color={theme.colors.primary.light} />
       </View>
     );
   }
 
   return (
-    <SafeAreaView style={styles.screen}>
+    <SafeAreaView style={[styles.screen, formTheme.screen]}>
       <ScrollView
+        style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
+        nestedScrollEnabled
       >
         <View style={styles.photoSection}>
-          <View style={styles.photoWrap}>
+          <View style={[styles.photoWrap, formTheme.photoWrap]}>
             {photoUri ? (
               <Image source={{ uri: photoUri }} style={styles.photoImage} resizeMode="cover" />
             ) : (
-              <View style={styles.photoFallback}>
+              <View style={[styles.photoFallback, formTheme.photoFallback]}>
                 <Feather name="camera" size={28} color={theme.colors.brand.sage.value} />
               </View>
             )}
           </View>
           <Pressable
             style={({ pressed }) => [styles.photoButton, pressed && styles.buttonPressed]}
-            onPress={() => setPhotoModalVisible(true)}
+            onPress={openPhotoOptions}
             accessibilityRole="button"
             accessibilityLabel="Upload or change pet photo"
           >
@@ -376,84 +520,160 @@ export default function EditPetScreen({ navigation, route }) {
           </Pressable>
         </View>
 
-        <Text style={styles.label}>Name</Text>
+        <View style={styles.labelRow}>
+          <Text style={[styles.label, formTheme.label]}>Name</Text>
+          <RequiredBadge />
+        </View>
         <TextInput
-          style={styles.input}
+          style={[styles.input, formTheme.input, fieldErrors.name && styles.inputError]}
           value={name}
-          onChangeText={setName}
+          onChangeText={(value) => {
+            setName(value);
+            if (fieldErrors.name) {
+              setFieldErrors((prev) => ({ ...prev, name: null }));
+            }
+          }}
           placeholder="Tyson"
-          placeholderTextColor={theme.colors.text.muted.light}
+          placeholderTextColor={surfaces.placeholder}
         />
+        {fieldErrors.name ? (
+          <Text style={styles.inlineError} accessibilityLiveRegion="polite">
+            {fieldErrors.name}
+          </Text>
+        ) : null}
 
-        <Text style={styles.label}>Pet Type</Text>
-        <View style={styles.chipRow}>
+        <View style={styles.labelRow}>
+          <Text style={[styles.label, formTheme.label]}>Pet Type</Text>
+          <RequiredBadge />
+        </View>
+        <View style={[styles.chipRow, fieldErrors.petType && styles.choiceError]}>
           {PET_TYPE_OPTIONS.map((option) => {
             const selected = petType === option.key;
             return (
               <Pressable
                 key={option.key}
-                onPress={() => setPetType(option.key)}
-                style={({ pressed }) => [styles.chip, selected && styles.chipOn, pressed && styles.buttonPressed]}
+                onPress={() => {
+                  setPetType(option.key);
+                  setFieldErrors((prev) => ({
+                    ...prev,
+                    petType: null,
+                    petTypeCustom: option.key === 'other' ? prev.petTypeCustom : null,
+                  }));
+                }}
+                style={({ pressed }) => [
+                  styles.chip,
+                  formTheme.chip,
+                  selected && styles.chipOn,
+                  selected && formTheme.chipOn,
+                  pressed && styles.buttonPressed,
+                ]}
                 accessibilityRole="radio"
                 accessibilityState={{ selected }}
               >
-                <Text style={[styles.chipText, selected && styles.chipTextOn]}>{option.label}</Text>
+                <Text style={[styles.chipText, formTheme.chipText, selected && styles.chipTextOn]}>
+                  {option.label}
+                </Text>
               </Pressable>
             );
           })}
         </View>
+        {fieldErrors.petType ? (
+          <Text style={styles.inlineError} accessibilityLiveRegion="polite">
+            {fieldErrors.petType}
+          </Text>
+        ) : null}
 
         {petType === 'other' ? (
           <>
-            <Text style={styles.label}>Type</Text>
+            <View style={styles.labelRow}>
+              <Text style={[styles.label, formTheme.label]}>Type</Text>
+              <RequiredBadge />
+            </View>
             <TextInput
-              style={styles.input}
+              style={[styles.input, formTheme.input, fieldErrors.petTypeCustom && styles.inputError]}
               value={petTypeCustom}
-              onChangeText={setPetTypeCustom}
+              onChangeText={(value) => {
+                setPetTypeCustom(value);
+                if (fieldErrors.petTypeCustom) {
+                  setFieldErrors((prev) => ({ ...prev, petTypeCustom: null }));
+                }
+              }}
               placeholder="e.g., Rabbit, Bird"
-              placeholderTextColor={theme.colors.text.muted.light}
+              placeholderTextColor={surfaces.placeholder}
             />
+            {fieldErrors.petTypeCustom ? (
+              <Text style={styles.inlineError} accessibilityLiveRegion="polite">
+                {fieldErrors.petTypeCustom}
+              </Text>
+            ) : null}
           </>
         ) : null}
 
-        <Text style={styles.label}>Breed</Text>
+        <View style={styles.labelRow}>
+          <Text style={[styles.label, formTheme.label]}>Breed</Text>
+        </View>
         <TextInput
-          style={styles.input}
+          style={[styles.input, formTheme.input]}
           value={breed}
           onChangeText={setBreed}
           placeholder="Beagle"
-          placeholderTextColor={theme.colors.text.muted.light}
+          placeholderTextColor={surfaces.placeholder}
         />
 
-        <Text style={styles.label}>Gender</Text>
-        <View style={styles.chipRow}>
+        <View style={styles.labelRow}>
+          <Text style={[styles.label, formTheme.label]}>Gender</Text>
+          {lookingForCompanion ? <RequiredBadge /> : null}
+        </View>
+        <View style={[styles.chipRow, fieldErrors.gender && styles.choiceError]}>
           {GENDER_OPTIONS.map((option) => {
             const selected = gender === option;
             return (
               <Pressable
                 key={option}
-                onPress={() => setGender(option)}
-                style={({ pressed }) => [styles.chip, selected && styles.chipOn, pressed && styles.buttonPressed]}
+                onPress={() => {
+                  setGender(option);
+                  if (fieldErrors.gender) {
+                    setFieldErrors((prev) => ({ ...prev, gender: null }));
+                  }
+                }}
+                style={({ pressed }) => [
+                  styles.chip,
+                  formTheme.chip,
+                  selected && styles.chipOn,
+                  selected && formTheme.chipOn,
+                  pressed && styles.buttonPressed,
+                ]}
                 accessibilityRole="radio"
                 accessibilityState={{ selected }}
               >
-                <Text style={[styles.chipText, selected && styles.chipTextOn]}>{option}</Text>
+                <Text style={[styles.chipText, formTheme.chipText, selected && styles.chipTextOn]}>
+                  {option}
+                </Text>
               </Pressable>
             );
           })}
         </View>
+        {fieldErrors.gender ? (
+          <Text style={styles.inlineError} accessibilityLiveRegion="polite">
+            {fieldErrors.gender}
+          </Text>
+        ) : null}
 
-        <Text style={styles.label}>Age</Text>
+        <View style={styles.labelRow}>
+          <Text style={[styles.label, formTheme.label]}>Age</Text>
+        </View>
         <TextInput
-          style={styles.input}
+          style={[styles.input, formTheme.input]}
           value={age}
           onChangeText={(t) => setAge(sanitizeAgeInput(t))}
           placeholder="e.g., 3"
-          placeholderTextColor={theme.colors.text.muted.light}
+          placeholderTextColor={surfaces.placeholder}
           keyboardType="decimal-pad"
         />
 
-        <Text style={styles.label}>Vaccination Status</Text>
+        <View style={styles.labelRow}>
+          <Text style={[styles.label, formTheme.label]}>Vaccination Status</Text>
+        </View>
         <View style={styles.chipRow}>
           {VACCINATION_OPTIONS.map((option) => {
             const selected = vaccinationStatus === option.key;
@@ -461,30 +681,42 @@ export default function EditPetScreen({ navigation, route }) {
               <Pressable
                 key={option.key}
                 onPress={() => setVaccinationStatus(option.key)}
-                style={({ pressed }) => [styles.chip, selected && styles.chipOn, pressed && styles.buttonPressed]}
+                style={({ pressed }) => [
+                  styles.chip,
+                  formTheme.chip,
+                  selected && styles.chipOn,
+                  selected && formTheme.chipOn,
+                  pressed && styles.buttonPressed,
+                ]}
                 accessibilityRole="radio"
                 accessibilityState={{ selected }}
               >
-                <Text style={[styles.chipText, selected && styles.chipTextOn]}>{option.label}</Text>
+                <Text style={[styles.chipText, formTheme.chipText, selected && styles.chipTextOn]}>
+                  {option.label}
+                </Text>
               </Pressable>
             );
           })}
         </View>
 
-        <Text style={styles.label}>{bioLabel}</Text>
+        <View style={styles.labelRow}>
+          <Text style={[styles.label, formTheme.label]}>{bioLabel}</Text>
+        </View>
         <TextInput
-          style={[styles.input, styles.bioInput]}
+          style={[styles.input, formTheme.input, styles.bioInput]}
           value={bio}
           onChangeText={setBio}
           placeholder="Loves fetch and belly rubs"
-          placeholderTextColor={theme.colors.text.muted.light}
+          placeholderTextColor={surfaces.placeholder}
           multiline
           textAlignVertical="top"
         />
 
         <View style={styles.section}>
-          <Text style={styles.label}>Personality & Traits</Text>
-          <Text style={styles.helperText}>Select up to {MAX_TRAITS} traits</Text>
+          <View style={styles.labelRow}>
+            <Text style={[styles.label, formTheme.label]}>Personality & Traits</Text>
+          </View>
+          <Text style={[styles.helperText, formTheme.helperText]}>Select up to {MAX_TRAITS} traits</Text>
 
           <View style={styles.traitChipsContainer}>
             {TRAIT_SUGGESTIONS.map((trait) => {
@@ -496,6 +728,7 @@ export default function EditPetScreen({ navigation, route }) {
                   key={trait}
                   style={[
                     styles.traitChip,
+                    formTheme.traitChip,
                     isSelected && styles.traitChipSelected,
                     isDisabled && styles.traitChipDisabled,
                   ]}
@@ -509,6 +742,7 @@ export default function EditPetScreen({ navigation, route }) {
                   <Text
                     style={[
                       styles.traitChipText,
+                      formTheme.traitChipText,
                       isSelected && styles.traitChipTextSelected,
                     ]}
                   >
@@ -518,18 +752,34 @@ export default function EditPetScreen({ navigation, route }) {
               );
             })}
           </View>
-          <Text style={styles.counterText}>
+          <Text style={[styles.counterText, formTheme.counterText]}>
             {selectedTraits.length} of {MAX_TRAITS} selected
           </Text>
         </View>
 
         <PetCompanionCommunitySection
-          showToggle={EXPOSE_MATING_SURFACES}
+          showToggle={areMatingSurfacesVisible()}
           lookingForCompanion={lookingForCompanion}
           onToggle={handleCompanionToggle}
           toggleDisabled={companionSaving || saving || deleting}
           hostedCount={hostedCount}
           participatedCount={participatedCount}
+        />
+
+        <MatingSetupModal
+          visible={setupVisible}
+          petName={name}
+          existingGender={isValidMatingGender(persistedGender) ? persistedGender : gender}
+          existingBreedPreference={matingBreedPreference}
+          saving={companionSaving}
+          errorText={setupError}
+          onConfirm={handleSetupConfirm}
+          onClose={() => {
+            if (!companionSaving) {
+              setSetupVisible(false);
+              setSetupError('');
+            }
+          }}
         />
 
         <Pressable
@@ -547,7 +797,11 @@ export default function EditPetScreen({ navigation, route }) {
         </Pressable>
 
         <Pressable
-          style={({ pressed }) => [styles.deleteButton, pressed && styles.buttonPressed]}
+          style={({ pressed }) => [
+            styles.deleteButton,
+            formTheme.deleteButton,
+            pressed && styles.buttonPressed,
+          ]}
           onPress={confirmDelete}
           disabled={saving || deleting}
           accessibilityRole="button"
@@ -562,11 +816,30 @@ export default function EditPetScreen({ navigation, route }) {
       </ScrollView>
 
       <PhotoPickerModal
-        visible={photoModalVisible}
-        petDisplayName={name}
-        onClose={() => setPhotoModalVisible(false)}
-        onChooseFromLibrary={() => pickPhoto('library')}
-        onTakePhoto={() => pickPhoto('camera')}
+        visible={photoSourceOpen}
+        onClose={() => setPhotoSourceOpen(false)}
+        onSelectSource={handlePhotoSourceSelected}
+      />
+
+      <PawpleConfirmModal
+        visible={deleteConfirmOpen}
+        busy={deleting}
+        onClose={() => {
+          if (!deleting) {
+            setDeleteConfirmOpen(false);
+          }
+        }}
+        onConfirm={async () => {
+          setDeleteConfirmOpen(false);
+          await handleDelete();
+        }}
+        title="Delete pet?"
+        body="This will remove this pet's profile."
+        cancelLabel="Cancel"
+        confirmLabel="Delete"
+        icon="trash-2"
+        iconTone="caution"
+        confirmTone="sage"
       />
     </SafeAreaView>
   );
@@ -583,7 +856,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: theme.colors.background.screen,
   },
+  scroll: {
+    flex: 1,
+  },
   scrollContent: {
+    flexGrow: 1,
     padding: theme.spacing.lg,
     paddingBottom: theme.spacing.xxl,
   },
@@ -621,12 +898,17 @@ const styles = StyleSheet.create({
     color: theme.colors.brand.sage.value,
   },
   label: {
-    marginTop: theme.spacing.sm,
-    marginBottom: theme.spacing.xs,
     fontFamily: theme.fonts.medium,
     fontSize: theme.fontSizes.sm,
     color: theme.colors.text.muted.light,
     textTransform: 'uppercase',
+  },
+  labelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+    marginTop: theme.spacing.sm,
+    marginBottom: theme.spacing.xs,
   },
   input: {
     minHeight: theme.components.input.minHeight,
@@ -641,6 +923,9 @@ const styles = StyleSheet.create({
     color: theme.colors.text.primary.light,
     marginBottom: theme.spacing.sm,
   },
+  inputError: {
+    borderColor: theme.colors.feedback.error.value,
+  },
   bioInput: {
     minHeight: 112,
     paddingTop: theme.spacing.md,
@@ -650,6 +935,19 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: theme.spacing.sm,
     marginBottom: theme.spacing.sm,
+  },
+  choiceError: {
+    borderWidth: 1,
+    borderColor: theme.colors.feedback.error.value,
+    borderRadius: theme.borderRadius.lg,
+    padding: theme.spacing.xs,
+  },
+  inlineError: {
+    marginTop: -theme.spacing.xs,
+    marginBottom: theme.spacing.sm,
+    fontFamily: theme.fonts.body,
+    fontSize: theme.fontSizes.sm,
+    color: theme.colors.feedback.error.value,
   },
   chip: {
     borderRadius: theme.borderRadius.full,

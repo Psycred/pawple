@@ -1,40 +1,70 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { StyleSheet, Switch, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { theme } from '../config/theme';
+import { useRuntimeThemeColors } from '../hooks/useRuntimeThemeColors';
 
 /**
  * Phase 1 placeholder for location controls.
  */
 export default function LocationSettingsScreen() {
+  const surfaces = useRuntimeThemeColors();
   const insets = useSafeAreaInsets();
 
+  const locationTheme = useMemo(
+    () => ({
+      screen: { backgroundColor: surfaces.backgroundScreen },
+      group: {
+        backgroundColor: surfaces.backgroundCard,
+        borderColor: surfaces.border,
+      },
+      rowLabel: { color: surfaces.textPrimary },
+      divider: { backgroundColor: surfaces.border },
+      footerText: { color: surfaces.textMuted },
+      switchTrack: {
+        false: surfaces.border,
+        true: theme.colors.primary.light,
+      },
+      switchThumb: surfaces.backgroundScreen,
+      switchIosBackground: surfaces.border,
+    }),
+    [
+      surfaces.backgroundCard,
+      surfaces.backgroundScreen,
+      surfaces.border,
+      surfaces.textMuted,
+      surfaces.textPrimary,
+    ],
+  );
+
   return (
-    <View style={[styles.screen, { paddingTop: insets.top }]}>
-      <View style={styles.group}>
+    <View style={[styles.screen, locationTheme.screen, { paddingTop: insets.top }]}>
+      <View style={[styles.group, locationTheme.group]}>
         <View style={styles.row}>
-          <Text style={styles.rowLabel}>City: Mumbai</Text>
+          <Text style={[styles.rowLabel, locationTheme.rowLabel]}>City: Mumbai</Text>
         </View>
-        <View style={styles.divider} />
+        <View style={[styles.divider, locationTheme.divider]} />
         <View style={styles.row}>
-          <Text style={styles.rowLabel}>Meetup Radius: 25 km</Text>
+          <Text style={[styles.rowLabel, locationTheme.rowLabel]}>Meetup Radius: 25 km</Text>
         </View>
-        <View style={styles.divider} />
+        <View style={[styles.divider, locationTheme.divider]} />
         <View style={[styles.row, styles.disabledRow]}>
-          <Text style={styles.rowLabel}>Use precise location</Text>
+          <Text style={[styles.rowLabel, locationTheme.rowLabel]}>Use precise location</Text>
           <Switch
             value={false}
             disabled
-            trackColor={{ false: theme.colors.border.light, true: theme.colors.primary.light }}
-            thumbColor={theme.colors.background.light}
-            ios_backgroundColor={theme.colors.border.light}
+            trackColor={locationTheme.switchTrack}
+            thumbColor={locationTheme.switchThumb}
+            ios_backgroundColor={locationTheme.switchIosBackground}
             accessibilityRole="switch"
             accessibilityLabel="Use precise location"
           />
         </View>
       </View>
 
-      <Text style={styles.footerText}>Full location controls coming in Phase 2.</Text>
+      <Text style={[styles.footerText, locationTheme.footerText]}>
+        Full location controls coming in Phase 2.
+      </Text>
     </View>
   );
 }

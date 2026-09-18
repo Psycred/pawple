@@ -14,19 +14,25 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { supabase } from '../config/supabase';
 import { theme } from '../config/theme';
+import RequiredBadge from '../components/RequiredBadge';
 import { useAuth } from '../contexts/AuthContext';
+import { useRuntimeThemeColors } from '../hooks/useRuntimeThemeColors';
 import {
+  BETA_BOOTSTRAP_INVITE_CODE,
   getDefaultDevelopmentInviteCode,
+  getPendingInvite,
   storePendingInvite,
   validateInviteCode,
 } from '../lib/onboardingInvite';
 
 export default function InviteCodeScreen({ navigation }) {
-  const { user, refreshProfile } = useAuth();
-  const [inviteCode, setInviteCode] = useState(getDefaultDevelopmentInviteCode);
+  const { user, refreshProfile, pendingInviteCode } = useAuth();
+  const [inviteCode, setInviteCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [showErrorModal, setShowErrorModal] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('That invite may have expired or already been used.');
+  const [errorMessage, setErrorMessage] = useState('This invite may have expired or already been used.');
+  const [fieldError, setFieldError] = useState('');
+  const surfaces = useRuntimeThemeColors();
 
   useEffect(() => {
     if (!user?.id) {
@@ -35,22 +41,51 @@ export default function InviteCodeScreen({ navigation }) {
     const ensureSession = async () => {
       const { data } = await supabase.auth.getSession();
       if (!data?.session) {
-        navigation.replace('Auth');
+        navigation.replace('Welcome');
       }
     };
     ensureSession();
   }, [navigation, user?.id]);
 
+  // Prefill from retained deep-link invite; never overwrite a pending code with beta bootstrap.
+  useEffect(() => {
+    let cancelled = false;
+    const hydrateInvite = async () => {
+      const fromContext = String(pendingInviteCode ?? '')
+        .trim()
+        .replace(/^@/, '')
+        .toUpperCase();
+      const fromStorage = user?.id ? await getPendingInvite(user.id) : null;
+      const pending = fromContext || String(fromStorage ?? '').trim().replace(/^@/, '').toUpperCase();
+      if (cancelled) {
+        return;
+      }
+      if (pending) {
+        setInviteCode(pending);
+        return;
+      }
+      const bootstrap =
+        getDefaultDevelopmentInviteCode() || BETA_BOOTSTRAP_INVITE_CODE;
+      setInviteCode(String(bootstrap).replace(/^@/, ''));
+    };
+    hydrateInvite();
+    return () => {
+      cancelled = true;
+    };
+  }, [pendingInviteCode, user?.id]);
+
   const showInviteErrorModal = (message) => {
-    setErrorMessage(message ?? 'That invite may have expired or already been used.');
+    const nextMessage = message ?? 'This invite may have expired or already been used.';
+    setErrorMessage(nextMessage);
+    setFieldError(nextMessage);
     setShowErrorModal(true);
-    AccessibilityInfo.announceForAccessibility?.('Invalid invite code. That invite may have expired or already been used.');
+    AccessibilityInfo.announceForAccessibility?.(nextMessage);
   };
 
   const handleContinue = async () => {
     const code = inviteCode.trim().toUpperCase();
     if (!code) {
-      showInviteErrorModal();
+      showInviteErrorModal('Enter your invite code');
       return;
     }
 
@@ -59,7 +94,7 @@ export default function InviteCodeScreen({ navigation }) {
     } = await supabase.auth.getUser();
     if (!currentUser?.id) {
       Alert.alert('Session Required', 'Please sign in before entering your invite code.', [
-        { text: 'OK', onPress: () => navigation.replace('Auth') },
+        { text: 'OK', onPress: () => navigation.replace('Welcome') },
       ]);
       return;
     }
@@ -89,10 +124,10 @@ export default function InviteCodeScreen({ navigation }) {
   };
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: surfaces.backgroundScreen }]}>
       <View style={styles.container}>
         <Pressable
-          onPress={() => navigation.replace('Auth')}
+          onPress={() => navigation.replace('Welcome')}
           style={({ pressed }) => [styles.backButton, pressed && styles.buttonPressed]}
           accessibilityRole="button"
           accessibilityLabel="Back to sign in"
@@ -102,15 +137,31 @@ export default function InviteCodeScreen({ navigation }) {
         </Pressable>
 
         <Text style={styles.title}>Enter your invite code</Text>
+        <View style={styles.labelRow}>
+          <Text style={styles.label} allowFontScaling>
+            Invite code
+          </Text>
+          <RequiredBadge />
+        </View>
         <TextInput
-          style={styles.input}
+          style={[styles.input, fieldError && styles.inputError]}
           placeholder="PAW-XXXXXX"
           placeholderTextColor={theme.colors.text.muted.light}
           value={inviteCode}
-          onChangeText={setInviteCode}
+          onChangeText={(value) => {
+            setInviteCode(value);
+            if (fieldError) {
+              setFieldError('');
+            }
+          }}
           autoCapitalize="characters"
           editable={!loading}
         />
+        {fieldError ? (
+          <Text style={styles.inlineError} accessibilityLiveRegion="polite" allowFontScaling>
+            {fieldError}
+          </Text>
+        ) : null}
         <Pressable
           onPress={handleContinue}
           style={({ pressed }) => [styles.joinButton, pressed && styles.buttonPressed, loading && styles.buttonDisabled]}
@@ -118,7 +169,7 @@ export default function InviteCodeScreen({ navigation }) {
           accessibilityRole="button"
           accessibilityLabel="Continue"
         >
-          <Text style={styles.joinText}>{loading ? 'Checking...' : 'Continue'}</Text>
+          <Text style={styles.joinText}>{loading ? 'Checking…' : 'Continue'}</Text>
         </Pressable>
 
         <View style={styles.consentWrap}>
@@ -164,15 +215,15 @@ export default function InviteCodeScreen({ navigation }) {
           />
 
           <View style={styles.modalCard} accessibilityViewIsModal accessible>
-            <Text style={styles.modalTitle}>Invalid Invite Code</Text>
+            <Text style={styles.modalTitle}>Invite not valid</Text>
             <Text style={styles.modalBody}>{errorMessage}</Text>
             <Pressable
               onPress={() => setShowErrorModal(false)}
               style={({ pressed }) => [styles.modalButton, pressed && styles.buttonPressed]}
               accessibilityRole="button"
-              accessibilityLabel="Got it"
+              accessibilityLabel="OK"
             >
-              <Text style={styles.modalButtonText}>Got it</Text>
+              <Text style={styles.modalButtonText}>OK</Text>
             </Pressable>
           </View>
         </View>
@@ -212,6 +263,17 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: theme.spacing.xl,
   },
+  labelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+    marginBottom: theme.spacing.sm,
+  },
+  label: {
+    fontFamily: theme.fonts.medium,
+    fontSize: theme.fontSizes.sm,
+    color: theme.colors.text.secondary.light,
+  },
   input: {
     minHeight: theme.components.input.minHeight,
     backgroundColor: theme.components.input.background,
@@ -223,7 +285,16 @@ const styles = StyleSheet.create({
     fontFamily: theme.fonts.body,
     fontSize: theme.fontSizes.md,
     color: theme.colors.text.primary.light,
-    marginBottom: theme.spacing.lg,
+    marginBottom: theme.spacing.sm,
+  },
+  inputError: {
+    borderColor: theme.colors.feedback.error.value,
+  },
+  inlineError: {
+    fontFamily: theme.fonts.body,
+    fontSize: theme.fontSizes.sm,
+    color: theme.colors.feedback.error.value,
+    marginBottom: theme.spacing.md,
   },
   joinButton: {
     minHeight: theme.components.button.minHeight,

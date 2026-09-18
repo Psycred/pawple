@@ -3,7 +3,25 @@ import { supabase } from '../config/supabase';
 import { isLocalDevRuntime, pawpleEnv } from '../config/environment';
 
 const pendingInviteKey = (userId) => `onboarding_pending_invite:${userId}`;
+const preAuthPendingInviteKey = 'onboarding_pending_invite:pre_auth';
 export const DEVELOPMENT_BOOTSTRAP_INVITE_CODE = 'Paw-T00y';
+export const BETA_BOOTSTRAP_INVITE_CODE = 'PAW-3600';
+const NORMALIZED_BETA_BOOTSTRAP_INVITE_CODE = BETA_BOOTSTRAP_INVITE_CODE.toUpperCase();
+export const BETA_BASELINE = 85; // profiles existing at beta ship (Founder = user 00, not counted)
+export const BETA_USER_CAP = 100;
+export function isBetaBootstrapInviteCode(code) {
+  return (
+    String(code ?? '').trim().replace(/^@/, '').toUpperCase() ===
+    NORMALIZED_BETA_BOOTSTRAP_INVITE_CODE
+  );
+}
+async function isBetaFull() {
+  const { count, error } = await supabase
+    .from('profiles')
+    .select('*', { count: 'exact', head: true });
+  if (error) return true; // fail closed
+  return (count ?? 0) >= BETA_BASELINE + BETA_USER_CAP;
+}
 const NORMALIZED_DEVELOPMENT_BOOTSTRAP_INVITE_CODE =
   DEVELOPMENT_BOOTSTRAP_INVITE_CODE.toUpperCase();
 
@@ -30,6 +48,10 @@ export async function validateInviteCode(code, userId) {
   const normalized = String(code ?? '').trim().toUpperCase();
   if (!normalized) {
     return { ok: false, reason: 'empty' };
+  }
+
+  if (isBetaBootstrapInviteCode(normalized)) {
+    return { ok: true, inviteId: null, code: BETA_BOOTSTRAP_INVITE_CODE };
   }
 
   if (isDevelopmentBootstrapInviteCode(normalized)) {
@@ -66,33 +88,60 @@ export async function validateInviteCode(code, userId) {
 }
 
 export async function storePendingInvite(userId, code) {
-  if (!userId || !code) {
+  if (!code) {
     return;
   }
-  await AsyncStorage.setItem(pendingInviteKey(userId), String(code).trim().toUpperCase());
+
+  const normalizedCode = String(code).trim().toUpperCase();
+
+  if (userId) {
+    await AsyncStorage.setItem(pendingInviteKey(userId), normalizedCode);
+    return;
+  }
+
+  await AsyncStorage.setItem(preAuthPendingInviteKey, normalizedCode);
 }
 
 export async function getPendingInvite(userId) {
   if (!userId) {
     return null;
   }
-  const stored = await AsyncStorage.getItem(pendingInviteKey(userId));
-  return stored ? stored.trim().toUpperCase() : null;
+
+  const userKey = pendingInviteKey(userId);
+  const stored = await AsyncStorage.getItem(userKey);
+
+  if (stored) {
+    return stored.trim().toUpperCase();
+  }
+
+  const preAuthInvite = await AsyncStorage.getItem(preAuthPendingInviteKey);
+
+  if (!preAuthInvite) {
+    return null;
+  }
+
+  const normalizedInvite = preAuthInvite.trim().toUpperCase();
+
+  await AsyncStorage.setItem(userKey, normalizedInvite);
+  await AsyncStorage.removeItem(preAuthPendingInviteKey);
+
+  return normalizedInvite;
 }
 
 export async function clearPendingInvite(userId) {
-  if (!userId) {
-    return;
+  if (userId) {
+    await AsyncStorage.removeItem(pendingInviteKey(userId));
   }
-  await AsyncStorage.removeItem(pendingInviteKey(userId));
-}
 
-/**
- * Consume invite and mark onboarding complete after pet creation succeeds.
- * Invite is consumed before the completion flag so a failed completion can be retried.
- */
+  await AsyncStorage.removeItem(preAuthPendingInviteKey);
+}
 export async function completeOnboarding({ userId, inviteId, inviteCode }) {
   const completedAt = new Date().toISOString();
+  const isBetaBootstrap = isBetaBootstrapInviteCode(inviteCode);
+  if (isBetaBootstrap && (await isBetaFull())) {
+    throw new Error('The Pawple beta is currently full.');
+  }
+
   const isDevelopmentBootstrap =
     isDevelopmentBootstrapInviteCode(inviteCode);
 

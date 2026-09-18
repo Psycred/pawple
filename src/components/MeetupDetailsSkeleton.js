@@ -1,17 +1,16 @@
 import React, { useEffect, useRef } from 'react';
 import { Animated, StyleSheet, View } from 'react-native';
+import { useRuntimeThemeColors } from '../hooks/useRuntimeThemeColors';
 
-const SCREEN_BG = '#FFFCF8';
-const SKELETON = '#E8E4DF';
-
-function SkeletonBlock({ style, opacity }) {
-  return <Animated.View style={[styles.block, style, { opacity }]} />;
+function SkeletonBlock({ style, opacity, fillColor }) {
+  return <Animated.View style={[styles.block, { backgroundColor: fillColor }, style, { opacity }]} />;
 }
 
 /**
  * Pulsing placeholder blocks while meetup details load.
  */
 export default function MeetupDetailsSkeleton() {
+  const surfaces = useRuntimeThemeColors();
   const pulse = useRef(new Animated.Value(0.45)).current;
 
   useEffect(() => {
@@ -27,17 +26,17 @@ export default function MeetupDetailsSkeleton() {
 
   return (
     <View style={styles.wrap}>
-      <SkeletonBlock style={styles.title} opacity={pulse} />
-      <SkeletonBlock style={styles.metaRow} opacity={pulse} />
-      <SkeletonBlock style={styles.hostLine} opacity={pulse} />
-      <SkeletonBlock style={styles.participants} opacity={pulse} />
-      <View style={styles.divider} />
-      <SkeletonBlock style={styles.sectionLabel} opacity={pulse} />
-      <SkeletonBlock style={styles.sectionBody} opacity={pulse} />
-      <SkeletonBlock style={styles.sectionLabel} opacity={pulse} />
-      <SkeletonBlock style={styles.sectionBodyShort} opacity={pulse} />
-      <SkeletonBlock style={styles.sectionLabel} opacity={pulse} />
-      <SkeletonBlock style={styles.sectionBodyTall} opacity={pulse} />
+      <SkeletonBlock style={styles.title} opacity={pulse} fillColor={surfaces.meetupSkeletonFill} />
+      <SkeletonBlock style={styles.metaRow} opacity={pulse} fillColor={surfaces.meetupSkeletonFill} />
+      <SkeletonBlock style={styles.hostLine} opacity={pulse} fillColor={surfaces.meetupSkeletonFill} />
+      <SkeletonBlock style={styles.participants} opacity={pulse} fillColor={surfaces.meetupSkeletonFill} />
+      <View style={[styles.divider, { backgroundColor: surfaces.meetupCardBorder }]} />
+      <SkeletonBlock style={styles.sectionLabel} opacity={pulse} fillColor={surfaces.meetupSkeletonFill} />
+      <SkeletonBlock style={styles.sectionBody} opacity={pulse} fillColor={surfaces.meetupSkeletonFill} />
+      <SkeletonBlock style={styles.sectionLabel} opacity={pulse} fillColor={surfaces.meetupSkeletonFill} />
+      <SkeletonBlock style={styles.sectionBodyShort} opacity={pulse} fillColor={surfaces.meetupSkeletonFill} />
+      <SkeletonBlock style={styles.sectionLabel} opacity={pulse} fillColor={surfaces.meetupSkeletonFill} />
+      <SkeletonBlock style={styles.sectionBodyTall} opacity={pulse} fillColor={surfaces.meetupSkeletonFill} />
     </View>
   );
 }
@@ -48,7 +47,6 @@ const styles = StyleSheet.create({
     paddingBottom: 32,
   },
   block: {
-    backgroundColor: SKELETON,
     borderRadius: 12,
   },
   title: {
@@ -74,7 +72,6 @@ const styles = StyleSheet.create({
   },
   divider: {
     height: 1,
-    backgroundColor: '#F1E8DF',
     marginBottom: 24,
   },
   sectionLabel: {

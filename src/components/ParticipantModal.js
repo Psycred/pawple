@@ -9,29 +9,34 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { theme } from '../config/theme';
+import { useRuntimeThemeColors } from '../hooks/useRuntimeThemeColors';
 
-const SCREEN_BG = '#FFFCF8';
-const PRIMARY_TEXT = '#3A312E';
-const SECONDARY_TEXT = '#6B625C';
-const DIVIDER = '#F1E8DF';
 const SAGE = '#9EB8A0';
 
-function ParticipantRow({ pet, onBlock }) {
+function ParticipantRow({ pet, onBlock, surfaces }) {
   const initial = pet?.name?.charAt(0)?.toUpperCase() ?? '?';
 
   return (
-    <View style={styles.row}>
+    <View style={[styles.row, { borderBottomColor: surfaces.meetupCardBorder }]}>
       <View style={styles.avatar}>
         <Text style={styles.avatarInitial} allowFontScaling>
           {initial}
         </Text>
       </View>
       <View style={styles.rowText}>
-        <Text style={styles.petName} numberOfLines={1} allowFontScaling>
+        <Text
+          style={[styles.petName, { color: surfaces.profileHeroNameColor }]}
+          numberOfLines={1}
+          allowFontScaling
+        >
           {pet?.name || 'Pet'}
         </Text>
         {pet?.breed ? (
-          <Text style={styles.petBreed} numberOfLines={1} allowFontScaling>
+          <Text
+            style={[styles.petBreed, { color: surfaces.meetupMetaText }]}
+            numberOfLines={1}
+            allowFontScaling
+          >
             {pet.breed}
           </Text>
         ) : null}
@@ -44,7 +49,7 @@ function ParticipantRow({ pet, onBlock }) {
           accessibilityRole="button"
           accessibilityLabel={`Block ${pet?.name || 'pet'}`}
         >
-          <Text style={styles.blockBtnText} allowFontScaling>
+          <Text style={[styles.blockBtnText, { color: surfaces.meetupMetaText }]} allowFontScaling>
             Block
           </Text>
         </Pressable>
@@ -66,6 +71,7 @@ export default function ParticipantModal({
   onClose,
 }) {
   const insets = useSafeAreaInsets();
+  const surfaces = useRuntimeThemeColors();
   const owned = new Set((ownedPetIds ?? []).map(String));
 
   return (
@@ -76,9 +82,17 @@ export default function ParticipantModal({
       onRequestClose={onClose}
     >
       <Pressable style={styles.backdrop} onPress={onClose} accessibilityLabel="Close participants" />
-      <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 24) }]}>
-        <View style={styles.handle} />
-        <Text style={styles.title} allowFontScaling>
+      <View
+        style={[
+          styles.sheet,
+          {
+            backgroundColor: surfaces.meetupCardBackground,
+            paddingBottom: Math.max(insets.bottom, 24),
+          },
+        ]}
+      >
+        <View style={[styles.handle, { backgroundColor: surfaces.meetupCardBorder }]} />
+        <Text style={[styles.title, { color: surfaces.profileHeroNameColor }]} allowFontScaling>
           {`Participants (${count})`}
         </Text>
 
@@ -88,7 +102,7 @@ export default function ParticipantModal({
           showsVerticalScrollIndicator={false}
         >
           {participants.length === 0 ? (
-            <Text style={styles.emptyText} allowFontScaling>
+            <Text style={[styles.emptyText, { color: surfaces.meetupMetaText }]} allowFontScaling>
               No one has joined yet.
             </Text>
           ) : (
@@ -101,6 +115,7 @@ export default function ParticipantModal({
                 <ParticipantRow
                   key={String(pet.id)}
                   pet={pet}
+                  surfaces={surfaces}
                   onBlock={canBlock ? onBlockPet : undefined}
                 />
               );
@@ -129,7 +144,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.35)',
   },
   sheet: {
-    backgroundColor: SCREEN_BG,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     paddingHorizontal: 24,
@@ -141,13 +155,11 @@ const styles = StyleSheet.create({
     width: 40,
     height: 4,
     borderRadius: 2,
-    backgroundColor: DIVIDER,
     marginBottom: 16,
   },
   title: {
     fontFamily: theme.fonts.semibold,
     fontSize: 20,
-    color: PRIMARY_TEXT,
     marginBottom: 12,
   },
   list: {
@@ -161,7 +173,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: DIVIDER,
   },
   avatar: {
     width: 40,
@@ -184,12 +195,10 @@ const styles = StyleSheet.create({
   petName: {
     fontFamily: theme.fonts.medium,
     fontSize: 16,
-    color: PRIMARY_TEXT,
   },
   petBreed: {
     fontFamily: theme.fonts.body,
     fontSize: 14,
-    color: SECONDARY_TEXT,
     marginTop: 2,
   },
   blockBtn: {
@@ -199,12 +208,10 @@ const styles = StyleSheet.create({
   blockBtnText: {
     fontFamily: theme.fonts.medium,
     fontSize: 14,
-    color: SECONDARY_TEXT,
   },
   emptyText: {
     fontFamily: theme.fonts.body,
     fontSize: 16,
-    color: SECONDARY_TEXT,
     paddingVertical: 24,
     textAlign: 'center',
   },

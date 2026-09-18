@@ -15,7 +15,8 @@
     "test:unit": "node --test tests/unit/*.test.js",
     "test:rls": "node scripts/rls-security-tests.js",
     "test:integration": "node tests/integration/run.mjs",
-    "test": "npm run verify:contract && npm run test:integration"
+    "test": "npm run verify:contract && npm run test:integration",
+    "eas:init": "eas init"
   },
   "dependencies": {
     "@expo-google-fonts/caveat": "^0.4.2",
@@ -23,6 +24,9 @@
     "@expo-google-fonts/kalam": "^0.4.1",
     "@expo-google-fonts/shadows-into-light": "^0.4.1",
     "@expo/metro-runtime": "~4.0.1",
+    "@infinitered/react-native-mlkit-core": "^3.1.0",
+    "@infinitered/react-native-mlkit-image-labeling": "^3.1.0",
+    "@infinitered/react-native-mlkit-object-detection": "3.1.0",
     "@react-native-async-storage/async-storage": "1.23.1",
     "@react-native-community/datetimepicker": "8.2.0",
     "@react-native-picker/picker": "2.9.0",
@@ -38,12 +42,14 @@
     "expo-crypto": "~14.0.0",
     "expo-file-system": "~18.0.12",
     "expo-font": "~13.0.0",
+    "expo-image": "~2.0.7",
     "expo-image-manipulator": "~13.0.6",
     "expo-image-picker": "~16.0.6",
     "expo-linear-gradient": "~14.0.2",
     "expo-linking": "~7.0.5",
     "expo-location": "~18.0.10",
     "expo-notifications": "~0.29.14",
+    "expo-secure-store": "~14.0.1",
     "expo-sharing": "~13.0.1",
     "expo-status-bar": "~2.0.0",
     "expo-web-browser": "~14.0.0",
@@ -62,7 +68,9 @@
   },
   "devDependencies": {
     "@babel/core": "^7.25.0",
-    "pg": "^8.23.0"
+    "@types/react": "~18.3.12",
+    "pg": "^8.23.0",
+    "typescript": "^5.3.3"
   },
   "private": true
 }

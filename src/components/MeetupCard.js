@@ -1,42 +1,29 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Feather, Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { theme } from '../config/theme';
+import { useRuntimeThemeColors } from '../hooks/useRuntimeThemeColors';
 import { useActivePet } from '../contexts/ActivePetContext';
 import {
   extractMeetupHostPetIds,
   hasViewerJoinedMeetup,
   isDemoMeetupId,
+  isMeetupPast,
 } from '../services/meetups';
-import { formatLocalTime, formatShortWeekday } from '../utils/formatMomentDate';
+import { formatLocalTime } from '../utils/formatMomentDate';
 import { formatCityBadge } from '../utils/cityUtils';
+import { formatMeetupCardHostedByLine } from '../utils/meetupHostDisplay';
 import MeetupPetJoinSheet from './MeetupPetJoinSheet';
 
-const CARD_BG = '#FFFCF8';
-const CARD_BORDER = '#F1E8DF';
 const LABEL_SAGE = '#8EA88F';
 const TITLE_SAGE = '#6E8E73';
-const BODY_TEXT = '#4A403B';
-const META_TEXT = '#6B625C';
-const VISIBILITY_BG = '#EEF5EE';
 const BUTTON_SAGE = '#9EB8A0';
-const BUTTON_JOINED_BG = '#EEF5EE';
 const TITLE_JOINED = '#9EB8A0';
-
-const HOST_AVATAR_SIZE = 28;
-const HOST_AVATAR_OVERLAP = -8;
-const MAX_VISIBLE_HOSTS = 3;
 
 /**
  * Gold-standard meetup card — one layout everywhere (feed, carousel, profile).
  * Parent controls width via the `style` prop; default is full width.
- *
- * @param {'rsvp' | 'going' | 'hosting'} [actionVariant='rsvp']
- * @param {(meetup: object) => void} [onManage]
- * @param {(meetup: object) => void} [onPress] — tap card body (excludes primary CTA)
- * @param {import('react-native').StyleProp<import('react-native').ViewStyle>} [style]
- * @param {Array<{ id: string }>} [viewerPets] — already-loaded pets owned by the viewer
- * @param {string|null} [viewerId] — signed-in viewer id
  */
 export default function MeetupCard({
   meetup: meetupProp,
@@ -49,6 +36,28 @@ export default function MeetupCard({
 }) {
   const navigation = useNavigation();
   const { activePetId } = useActivePet();
+  const surfaces = useRuntimeThemeColors();
+  const meetupTheme = useMemo(
+    () => ({
+      card: {
+        backgroundColor: surfaces.meetupCardBackground,
+        borderColor: surfaces.meetupCardBorder,
+      },
+      bodyText: { color: surfaces.meetupBodyText },
+      metaText: { color: surfaces.meetupMetaText },
+      chipBackground: { backgroundColor: surfaces.meetupChipBackground },
+      divider: { backgroundColor: surfaces.meetupCardBorder },
+      joinedButton: {
+        backgroundColor: surfaces.meetupJoinedButtonBackground,
+        borderColor: BUTTON_SAGE,
+      },
+      screenButton: {
+        backgroundColor: surfaces.backgroundScreen,
+        borderColor: surfaces.meetupCardBorder,
+      },
+    }),
+    [surfaces],
+  );
   const [meetup, setMeetup] = useState(meetupProp);
   const [joinSheetOpen, setJoinSheetOpen] = useState(false);
   const [leaveSheetOpen, setLeaveSheetOpen] = useState(false);
@@ -79,16 +88,27 @@ export default function MeetupCard({
     Boolean(meetup?.viewer_joined ?? meetup?.has_joined ?? meetup?.joined) ||
     hasViewerJoinedMeetup(meetup, ownedPetIds);
 
-  const dateLine = useMemo(() => {
+  const meetupDate = useMemo(() => {
     if (!meetup?.date) {
+      return null;
+    }
+    const parsed = new Date(`${String(meetup.date).split('T')[0]}T12:00:00`);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }, [meetup?.date]);
+
+  const dateHeading = useMemo(() => formatMeetupCardDate(meetupDate), [meetupDate]);
+
+  const timeLine = useMemo(() => {
+    const start = timePartsToLabel(meetup?.start_time);
+    const end = timePartsToLabel(meetup?.end_time);
+    if (!start && !end) {
       return '';
     }
-    const d = new Date(`${String(meetup.date).split('T')[0]}T12:00:00`);
-    const day = formatShortWeekday(d);
-    const start = timePartsToLabel(meetup.start_time);
-    const end = timePartsToLabel(meetup.end_time);
-    return `${day} · ${start} – ${end}`;
-  }, [meetup?.date, meetup?.end_time, meetup?.start_time]);
+    if (start && end) {
+      return `${start} – ${end}`;
+    }
+    return start || end;
+  }, [meetup?.end_time, meetup?.start_time]);
 
   const chipLabel = useMemo(() => {
     const openTo = meetup?.open_to;
@@ -101,8 +121,36 @@ export default function MeetupCard({
     return '';
   }, [meetup?.open_to, meetup?.custom_breed_spec]);
 
-  // Bulletin-board locality — city badge only (no km labels in Phase 1a).
+  const venueLabel = useMemo(() => {
+    const name = meetup?.location_name ?? meetup?.locationName;
+    const trimmed = String(name ?? '').trim();
+    return trimmed || null;
+  }, [meetup?.location_name, meetup?.locationName]);
+
   const cityLabel = useMemo(() => formatCityBadge(meetup?.city), [meetup?.city]);
+
+  const hostedByLine = useMemo(() => formatMeetupCardHostedByLine(meetup), [meetup]);
+
+  // Visual-only split — keeps formatMeetupCardHostedByLine() as the single source of copy.
+  const hostedByNames = useMemo(() => {
+    if (!hostedByLine) {
+      return '';
+    }
+    return hostedByLine.replace(/^Hosted by\s+/, '');
+  }, [hostedByLine]);
+
+  const distanceLabel = useMemo(() => {
+    const km = Number(meetup?.distanceKm ?? meetup?.distance_km);
+    if (!Number.isFinite(km) || km < 0) {
+      return null;
+    }
+    return `${Math.round(km)} km away`;
+  }, [meetup?.distanceKm, meetup?.distance_km]);
+
+  const mapsLink = useMemo(() => {
+    const link = meetup?.google_maps_link?.trim();
+    return link || null;
+  }, [meetup?.google_maps_link]);
 
   const limit = useMemo(() => {
     const raw = meetup?.participation_limit;
@@ -110,23 +158,25 @@ export default function MeetupCard({
     return Number.isFinite(n) && n > 0 ? n : null;
   }, [meetup?.participation_limit]);
 
-  const hostPets = useMemo(() => buildHostPets(meetup), [meetup]);
+  const openMapsLink = () => {
+    if (!mapsLink) {
+      return;
+    }
+    Linking.openURL(mapsLink).catch(() => {
+      Alert.alert('Directions', 'Could not open that link.');
+    });
+  };
 
-  const goingCount = useMemo(() => {
-    return Number(meetup?.participant_count ?? 0) || 0;
-  }, [meetup?.participant_count]);
+  const goingCount = useMemo(() => Number(meetup?.participant_count ?? 0) || 0, [meetup?.participant_count]);
 
   const participantsText =
     limit != null ? `${goingCount} / ${limit} pets joining` : `${goingCount} pets joining`;
-  const isFull = limit != null && goingCount >= limit && !joined && !isHostPet;
 
-  const hostPetsWithPhotos = hostPets.filter((host) => host.photo_url);
-  const visibleHosts = hostPetsWithPhotos.slice(0, MAX_VISIBLE_HOSTS);
-  const overflowHostCount =
-    hostPetsWithPhotos.length > MAX_VISIBLE_HOSTS
-      ? hostPetsWithPhotos.length - MAX_VISIBLE_HOSTS
-      : 0;
-  const hostNamesLine = useMemo(() => formatHostNamesLine(hostPets), [hostPets]);
+  const isFull = limit != null && goingCount >= limit && !joined && !isHostPet;
+  const isPast = isMeetupPast(meetup);
+  const hasSchedule = Boolean(dateHeading || timeLine);
+  const hasLocation = Boolean(venueLabel || cityLabel);
+  const showLocationActions = Boolean(distanceLabel || mapsLink);
 
   const openMeetupDetails = () => {
     const parent = navigation.getParent?.();
@@ -181,9 +231,16 @@ export default function MeetupCard({
   };
 
   const renderPrimaryButton = () => {
+    if (actionVariant === 'none') {
+      return null;
+    }
+
     if (isHostPet && actionVariant !== 'hosting') {
       return (
-        <View style={[styles.primaryButton, styles.primaryButtonHost]} accessibilityRole="text">
+        <View
+          style={[styles.primaryButton, styles.primaryButtonHost, meetupTheme.screenButton]}
+          accessibilityRole="text"
+        >
           <Text style={[styles.primaryButtonText, styles.primaryButtonTextHost]} allowFontScaling>
             Host
           </Text>
@@ -210,10 +267,10 @@ export default function MeetupCard({
       return (
         <Pressable
           onPress={handleGoingAction}
-          disabled={false}
           style={({ pressed }) => [
             styles.primaryButton,
             styles.primaryButtonJoined,
+            meetupTheme.joinedButton,
             pressed && styles.pressed,
           ]}
           accessibilityRole="button"
@@ -226,6 +283,23 @@ export default function MeetupCard({
       );
     }
 
+    if (isPast) {
+      return (
+        <View
+          style={[styles.primaryButton, styles.primaryButtonFull, meetupTheme.screenButton]}
+          accessibilityRole="text"
+          accessibilityLabel="This meetup has ended"
+        >
+          <Text
+            style={[styles.primaryButtonText, styles.primaryButtonTextFull, meetupTheme.metaText]}
+            allowFontScaling
+          >
+            Completed
+          </Text>
+        </View>
+      );
+    }
+
     const buttonLabel = joined ? "You're Going" : isFull ? 'Event Full' : 'Count Us In';
 
     return (
@@ -235,7 +309,9 @@ export default function MeetupCard({
         style={({ pressed }) => [
           styles.primaryButton,
           joined && !isFull && styles.primaryButtonJoined,
+          joined && !isFull && meetupTheme.joinedButton,
           isFull && styles.primaryButtonFull,
+          isFull && meetupTheme.screenButton,
           pressed && !isFull && styles.pressed,
         ]}
         accessibilityRole="button"
@@ -263,19 +339,19 @@ export default function MeetupCard({
   };
 
   return (
-    <View style={[styles.card, style]} accessibilityRole="summary">
+    <View style={[styles.card, meetupTheme.card, style]} accessibilityRole="summary">
+      {meetup?.isPinned ? (
+        <Text style={styles.topLabel} allowFontScaling>
+          YOUR MEETUP
+        </Text>
+      ) : null}
+
       <Pressable
         onPress={handleCardPress}
         style={({ pressed }) => [styles.cardBodyPress, pressed && styles.pressed]}
         accessibilityRole="button"
         accessibilityLabel={`View details for ${meetup?.title || 'meetup'}`}
       >
-        {meetup?.isPinned ? (
-          <Text style={styles.topLabel} allowFontScaling>
-            YOUR MEETUP
-          </Text>
-        ) : null}
-
         <Text
           style={[styles.title, joined && styles.titleJoined]}
           numberOfLines={2}
@@ -284,62 +360,111 @@ export default function MeetupCard({
           {meetup?.title}
         </Text>
 
-        {dateLine ? (
-          <Text style={styles.dateTime} allowFontScaling>
-            {dateLine}
-          </Text>
-        ) : null}
-
-        {cityLabel || chipLabel ? (
-          <View style={styles.locationRow}>
+        {hasLocation ? (
+          <View style={styles.locationBlock}>
+            {venueLabel ? (
+              <Text style={[styles.venueText, meetupTheme.metaText]} numberOfLines={2} allowFontScaling>
+                {venueLabel}
+              </Text>
+            ) : null}
             {cityLabel ? (
-              <Text style={styles.cityText} numberOfLines={1} allowFontScaling>
+              <Text
+                style={[styles.cityText, !venueLabel && styles.cityTextStandalone]}
+                numberOfLines={1}
+                allowFontScaling
+              >
                 {cityLabel}
               </Text>
+            ) : null}
+          </View>
+        ) : null}
+
+        {hostedByLine ? (
+          <View style={styles.hostedByRow}>
+            <Feather name="user" size={13} color={LABEL_SAGE} style={styles.hostedByIcon} />
+            <Text style={styles.hostedByText} numberOfLines={2} allowFontScaling>
+              <Text style={[styles.hostedByPrefix, meetupTheme.metaText]}>Hosted by </Text>
+              <Text style={[styles.hostedByNames, meetupTheme.bodyText]}>{hostedByNames}</Text>
+            </Text>
+          </View>
+        ) : null}
+
+        {hasSchedule || showLocationActions ? (
+          <View style={styles.scheduleRow}>
+            {hasSchedule ? (
+              <View style={styles.scheduleCopy}>
+                <Feather name="calendar" size={14} color={LABEL_SAGE} style={styles.metaIcon} />
+                <View style={styles.metaCopy}>
+                  {dateHeading ? (
+                    <Text style={[styles.dateHeading, meetupTheme.bodyText]} allowFontScaling>
+                      {dateHeading}
+                    </Text>
+                  ) : null}
+                  {timeLine ? (
+                    <Text style={[styles.timeLine, meetupTheme.metaText]} allowFontScaling>
+                      {timeLine}
+                    </Text>
+                  ) : null}
+                </View>
+              </View>
             ) : (
-              <View style={styles.cityText} />
+              <View style={styles.scheduleCopyPlaceholder} />
             )}
-            {chipLabel ? (
-              <View style={styles.visibilityChip}>
-                <Text style={styles.visibilityChipText} numberOfLines={1} allowFontScaling>
-                  {chipLabel}
-                </Text>
+
+            {showLocationActions ? (
+              <View style={[styles.locationActionsPanel, meetupTheme.chipBackground]}>
+                {distanceLabel ? (
+                  <View style={styles.distanceRow} accessibilityLabel={distanceLabel}>
+                    <Feather name="navigation" size={11} color={TITLE_SAGE} />
+                    <Text style={styles.distanceText} numberOfLines={1} allowFontScaling>
+                      {distanceLabel}
+                    </Text>
+                  </View>
+                ) : null}
+                {mapsLink ? (
+                  <Pressable
+                    onPress={(event) => {
+                      event?.stopPropagation?.();
+                      openMapsLink();
+                    }}
+                    style={({ pressed }) => [styles.directionsPressable, pressed && styles.pressed]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Open directions"
+                  >
+                    <View style={styles.directionsRow}>
+                      <Feather name="navigation" size={11} color={TITLE_SAGE} />
+                      <Text style={styles.directionsLink} allowFontScaling>
+                        Directions
+                      </Text>
+                    </View>
+                  </Pressable>
+                ) : null}
               </View>
             ) : null}
           </View>
         ) : null}
 
-        {hostPets.length > 0 ? (
-          <View style={styles.hostsSection}>
-            <View style={styles.hostsRow}>
-              {visibleHosts.length > 0 ? (
-                <View style={styles.avatarStack}>
-                  {visibleHosts.map((host, index) => (
-                    <HostAvatar key={host.id} host={host} index={index} />
-                  ))}
-                  {overflowHostCount > 0 ? (
-                    <View style={[styles.hostAvatar, styles.hostOverflowBadge, styles.hostAvatarOverlap]}>
-                      <Text style={styles.hostOverflowText} allowFontScaling>
-                        +{overflowHostCount}
-                      </Text>
-                    </View>
-                  ) : null}
-                </View>
-              ) : null}
-              {hostNamesLine ? (
-                <Text style={styles.hostNames} numberOfLines={2} allowFontScaling>
-                  {hostNamesLine}
-                </Text>
-              ) : null}
-            </View>
-          </View>
-        ) : null}
+        <View style={styles.participantsSection}>
+          <Feather name="users" size={14} color={LABEL_SAGE} style={styles.metaIcon} />
+          <Text style={[styles.participantsText, meetupTheme.metaText]} numberOfLines={1} allowFontScaling>
+            {participantsText}
+          </Text>
 
-        <Text style={styles.participantsText} allowFontScaling>
-          {`🐾 ${participantsText}`}
-        </Text>
+          {chipLabel ? (
+            <>
+              <View style={[styles.sectionDivider, meetupTheme.divider]} />
+              <View style={styles.openToGroup}>
+                <Ionicons name="paw-outline" size={13} color={TITLE_SAGE} style={styles.openToPaw} />
+                <Text style={styles.openToText} numberOfLines={1} allowFontScaling>
+                  {chipLabel}
+                </Text>
+              </View>
+            </>
+          ) : null}
+        </View>
       </Pressable>
 
+      {actionVariant !== 'none' ? <View style={[styles.ctaDivider, meetupTheme.divider]} /> : null}
       {renderPrimaryButton()}
 
       <MeetupPetJoinSheet
@@ -360,43 +485,20 @@ export default function MeetupCard({
   );
 }
 
-function HostAvatar({ host, index }) {
-  const overlapStyle = index > 0 ? styles.hostAvatarOverlap : null;
-
-  if (!host.photo_url) {
-    return null;
-  }
-
-  return (
-    <Image
-      source={{ uri: host.photo_url }}
-      style={[styles.hostAvatar, overlapStyle]}
-      resizeMode="cover"
-    />
-  );
-}
-
-function buildHostPets(meetup) {
-  const hostRows = meetup?.meetup_hosts ?? [];
-  return hostRows
-    .map((row, index) => ({
-      id: String(row?.pet_id ?? index),
-      name: String(row?.pets?.name ?? '').trim(),
-      photo_url: row?.pets?.photo_url ?? null,
-    }))
-    .filter((host) => host.name);
-}
-
-function formatHostNamesLine(hostPets) {
-  if (!hostPets.length) {
+function formatMeetupCardDate(date) {
+  if (!date) {
     return '';
   }
-  if (hostPets.length <= MAX_VISIBLE_HOSTS) {
-    return hostPets.map((host) => host.name).join(' • ');
+  try {
+    return new Intl.DateTimeFormat('en-GB', {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    }).format(date);
+  } catch {
+    return '';
   }
-  const visibleNames = hostPets.slice(0, MAX_VISIBLE_HOSTS).map((host) => host.name);
-  const overflow = hostPets.length - MAX_VISIBLE_HOSTS;
-  return `${visibleNames.join(' • ')} • +${overflow}`;
 }
 
 function timePartsToLabel(t) {
@@ -419,10 +521,8 @@ const styles = StyleSheet.create({
   card: {
     width: '100%',
     alignSelf: 'stretch',
-    backgroundColor: CARD_BG,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: CARD_BORDER,
     paddingHorizontal: 24,
     paddingVertical: 24,
     shadowColor: '#000000',
@@ -440,133 +540,183 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     marginBottom: 6,
   },
-  titlePress: {
-    alignSelf: 'stretch',
-  },
   cardBodyPress: {
     alignSelf: 'stretch',
   },
   title: {
     fontFamily: theme.fonts.semibold,
     fontSize: 22,
-    lineHeight: 28,
+    lineHeight: 26,
     color: TITLE_SAGE,
-    marginBottom: 10,
+    marginBottom: 6,
   },
   titleJoined: {
     color: TITLE_JOINED,
   },
-  dateTime: {
-    fontFamily: theme.fonts.medium,
-    fontSize: 16,
-    lineHeight: 22,
-    color: BODY_TEXT,
-    marginBottom: 10,
+  locationBlock: {
+    marginBottom: 6,
+    gap: 1,
   },
-  locationRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-    marginBottom: 16,
+  venueText: {
+    fontFamily: theme.fonts.body,
+    fontSize: 14,
+    lineHeight: 18,
   },
   cityText: {
-    flex: 1,
     fontFamily: theme.fonts.body,
     fontSize: 14,
-    lineHeight: 20,
+    lineHeight: 18,
     color: LABEL_SAGE,
   },
-  visibilityChip: {
-    flexShrink: 0,
-    backgroundColor: VISIBILITY_BG,
-    borderRadius: theme.borderRadius.full,
-    paddingHorizontal: 12,
-    paddingVertical: 5,
+  cityTextStandalone: {
+    marginTop: 0,
   },
-  visibilityChipText: {
+  distanceText: {
     fontFamily: theme.fonts.medium,
     fontSize: 12,
-    lineHeight: 16,
+    lineHeight: 15,
     color: TITLE_SAGE,
   },
-  hostsSection: {
-    marginBottom: 16,
-  },
-  hostsRow: {
+  hostedByRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
+    alignItems: 'flex-start',
+    gap: 6,
+    marginBottom: 8,
   },
-  avatarStack: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  hostedByIcon: {
+    marginTop: 2,
   },
-  hostAvatar: {
-    width: HOST_AVATAR_SIZE,
-    height: HOST_AVATAR_SIZE,
-    borderRadius: HOST_AVATAR_SIZE / 2,
-    borderWidth: 2,
-    borderColor: CARD_BG,
-  },
-  hostAvatarOverlap: {
-    marginLeft: HOST_AVATAR_OVERLAP,
-  },
-  hostAvatarFallback: {
-    backgroundColor: VISIBILITY_BG,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  hostAvatarInitial: {
-    fontFamily: theme.fonts.medium,
-    fontSize: 11,
-    color: TITLE_SAGE,
-  },
-  hostOverflowBadge: {
-    backgroundColor: VISIBILITY_BG,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  hostOverflowText: {
-    fontFamily: theme.fonts.medium,
-    fontSize: 10,
-    color: TITLE_SAGE,
-  },
-  hostNames: {
+  hostedByText: {
     flex: 1,
-    fontFamily: theme.fonts.medium,
+    minWidth: 0,
+    fontSize: 14,
+    lineHeight: 18,
+  },
+  hostedByPrefix: {
+    fontFamily: theme.fonts.body,
+  },
+  hostedByNames: {
+    fontFamily: theme.fonts.semibold,
+  },
+  scheduleRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 8,
+    marginBottom: 8,
+  },
+  scheduleCopy: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+  },
+  scheduleCopyPlaceholder: {
+    flex: 1,
+    minWidth: 0,
+  },
+  metaIcon: {
+    marginTop: 2,
+  },
+  metaCopy: {
+    flex: 1,
+    minWidth: 0,
+    gap: 0,
+  },
+  dateHeading: {
+    fontFamily: theme.fonts.semibold,
     fontSize: 15,
-    lineHeight: 20,
-    color: BODY_TEXT,
+    lineHeight: 19,
+  },
+  timeLine: {
+    fontFamily: theme.fonts.body,
+    fontSize: 13,
+    lineHeight: 17,
+  },
+  locationActionsPanel: {
+    alignSelf: 'flex-start',
+    alignItems: 'center',
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    gap: 2,
+    minWidth: 84,
+  },
+  distanceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
+  directionsPressable: {
+    alignSelf: 'stretch',
+    alignItems: 'center',
+  },
+  directionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
+  directionsLink: {
+    fontFamily: theme.fonts.medium,
+    fontSize: 12,
+    lineHeight: 15,
+    color: TITLE_SAGE,
+  },
+  participantsSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   participantsText: {
+    flexShrink: 1,
     fontFamily: theme.fonts.body,
     fontSize: 14,
-    lineHeight: 20,
-    color: META_TEXT,
-    marginBottom: 22,
+    lineHeight: 18,
+  },
+  sectionDivider: {
+    width: 1,
+    height: 13,
+    marginHorizontal: 2,
+  },
+  openToGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    flexShrink: 1,
+  },
+  openToPaw: {
+    marginTop: 1,
+  },
+  openToText: {
+    flexShrink: 1,
+    fontFamily: theme.fonts.medium,
+    fontSize: 14,
+    lineHeight: 18,
+    color: TITLE_SAGE,
+  },
+  ctaDivider: {
+    height: 1,
+    marginTop: 10,
+    marginBottom: 10,
   },
   primaryButton: {
-    minHeight: 48,
+    minHeight: 46,
     borderRadius: theme.borderRadius.full,
     backgroundColor: BUTTON_SAGE,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 24,
-    paddingVertical: 12,
+    paddingVertical: 8,
   },
   primaryButtonJoined: {
-    backgroundColor: BUTTON_JOINED_BG,
     borderWidth: 1,
-    borderColor: BUTTON_SAGE,
   },
   primaryButtonFull: {
-    backgroundColor: theme.colors.background.screen,
     borderWidth: 1,
-    borderColor: CARD_BORDER,
   },
   primaryButtonHost: {
-    backgroundColor: theme.colors.background.screen,
+    borderWidth: 1,
   },
   primaryButtonText: {
     fontFamily: theme.fonts.semibold,
@@ -579,7 +729,6 @@ const styles = StyleSheet.create({
   },
   primaryButtonTextFull: {
     fontFamily: theme.fonts.medium,
-    color: META_TEXT,
   },
   primaryButtonTextHost: {
     fontFamily: theme.fonts.medium,

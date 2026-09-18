@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { theme } from '../config/theme';
@@ -6,13 +6,19 @@ import { theme } from '../config/theme';
 /**
  * Hand-drawn frame on the OUTSIDE mat edge — warm maroon-brown, subtle, never inside the photo.
  */
-export default function CrayonFrameOverlay() {
+export default function CrayonFrameOverlay({ onFrameReady }) {
   const [size, setSize] = useState({ w: 0, h: 0 });
 
   const stroke = theme.feed.memoryFrameStrokeWidth;
   const inset = stroke / 2;
   const w = size.w;
   const h = size.h;
+
+  useEffect(() => {
+    if (size.w > 0 && size.h > 0) {
+      onFrameReady?.();
+    }
+  }, [onFrameReady, size.h, size.w]);
 
   const path =
     w > 0 && h > 0

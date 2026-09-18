@@ -16,3 +16,12 @@ export const TRAIT_SUGGESTIONS = [
 
 /** Maximum traits a pet profile can display. */
 export const MAX_TRAITS = 5;
+
+export function normalizeTraits(raw) {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  return raw
+    .filter((trait) => typeof trait === 'string' && trait.trim())
+    .map((trait) => trait.trim());
+}

@@ -1,7 +1,6 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -12,24 +11,33 @@ import { Feather } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import Toast from 'react-native-toast-message';
 import BlockConfirmSheet from '../components/BlockConfirmSheet';
+import PawpleStorageImage from '../components/PawpleStorageImage';
 import ContentSafetyMenu from '../components/ContentSafetyMenu';
 import LoadErrorRetry from '../components/LoadErrorRetry';
+import MatingNotForMeAction from '../components/MatingNotForMeAction';
 import MatingPawButton from '../components/MatingPawButton';
 import ReportSheet from '../components/ReportSheet';
+import UnpawConfirmSheet from '../components/UnpawConfirmSheet';
+import UnpawReportPrompt from '../components/UnpawReportPrompt';
 import ScreenWrapper from '../components/ScreenWrapper';
-import { EXPOSE_MATING_SURFACES } from '../config/phase1aSurfaces';
+import { areMatingSurfacesVisible } from '../config/phase1aSurfaces';
 import { theme } from '../config/theme';
+import { useRuntimeThemeColors } from '../hooks/useRuntimeThemeColors';
+import { formatMatingIntroProfileCta } from '../content/legalDocuments';
 import { useActivePet } from '../contexts/ActivePetContext';
 import { useAuth } from '../contexts/AuthContext';
+import { promptNotificationPermissionIfNeeded } from '../lib/notifications';
 import {
+  dismissIncomingPaw,
   expressPaw,
+  petsHaveMutualPaw,
   fetchIntroductionChannelForPair,
+  fetchInboundPaw,
   fetchOutboundPaw,
   fetchPawInterestForPair,
-  petsHaveMutualPaw,
-  withdrawPaw,
 } from '../services/mating';
 import { fetchPetProfile } from '../services/pets';
+import { useMatingUnpawFlow } from '../hooks/useMatingUnpawFlow';
 
 const HERO_COMPANION_BG = '#9EB8A0';
 
@@ -38,6 +46,7 @@ const HERO_COMPANION_BG = '#9EB8A0';
  * Fail closed on chat: only navigate when server channel status is open.
  */
 export default function ViewPetProfileScreen({ navigation, route }) {
+  const surfaces = useRuntimeThemeColors();
   const viewedPetId = route?.params?.petId ?? null;
   const viewerPetIdParam = route?.params?.viewerPetId ?? null;
   const pawInterestIdParam = route?.params?.pawInterestId ?? null;
@@ -52,11 +61,14 @@ export default function ViewPetProfileScreen({ navigation, route }) {
   const [viewerOptedIn, setViewerOptedIn] = useState(false);
   const [expressed, setExpressed] = useState(false);
   const [pawBusy, setPawBusy] = useState(false);
+  const [dismissBusy, setDismissBusy] = useState(false);
+  const [hasInboundPaw, setHasInboundPaw] = useState(false);
   const [channel, setChannel] = useState(null);
   const [mutual, setMutual] = useState(false);
   const [safetyOpen, setSafetyOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const [blockOpen, setBlockOpen] = useState(false);
+  const [viewerPetName, setViewerPetName] = useState(null);
   const [pawInterestId, setPawInterestId] = useState(pawInterestIdParam);
 
   const load = useCallback(async () => {
@@ -77,12 +89,14 @@ export default function ViewPetProfileScreen({ navigation, route }) {
       setIsOwner(Boolean(profile.isOwner));
 
       // Phase 1a: do not load Paw / intro-chat state when mating surfaces are hidden.
-      if (!EXPOSE_MATING_SURFACES) {
+      if (!areMatingSurfacesVisible()) {
+        setViewerPetName(null);
         setViewerOptedIn(false);
         setExpressed(false);
         setMutual(false);
         setChannel(null);
         setPawInterestId(null);
+        setHasInboundPaw(false);
         return;
       }
 
@@ -90,11 +104,14 @@ export default function ViewPetProfileScreen({ navigation, route }) {
       if (viewerPetId && !profile.isOwner) {
         const viewerProfile = await fetchPetProfile(viewerPetId, user?.id ?? null);
         optedIn = Boolean(viewerProfile?.pet?.is_looking_for_companion);
+        setViewerPetName(viewerProfile?.pet?.name ?? null);
         setViewerOptedIn(optedIn);
 
         if (optedIn) {
           const outbound = await fetchOutboundPaw(viewerPetId, viewedPetId);
+          const inbound = await fetchInboundPaw(viewedPetId, viewerPetId);
           setExpressed(Boolean(outbound));
+          setHasInboundPaw(Boolean(inbound));
           const interestRow =
             pawInterestIdParam != null
               ? { id: pawInterestIdParam }
@@ -113,13 +130,16 @@ export default function ViewPetProfileScreen({ navigation, route }) {
           setMutual(false);
           setChannel(null);
           setPawInterestId(null);
+          setHasInboundPaw(false);
         }
       } else {
+        setViewerPetName(null);
         setViewerOptedIn(false);
         setExpressed(false);
         setMutual(false);
         setChannel(null);
         setPawInterestId(null);
+        setHasInboundPaw(false);
       }
     } catch (e) {
       console.error('[ViewPetProfile]', e);
@@ -128,6 +148,12 @@ export default function ViewPetProfileScreen({ navigation, route }) {
       setLoading(false);
     }
   }, [user?.id, viewedPetId, viewerPetId, pawInterestIdParam]);
+
+  const unpawFlow = useMatingUnpawFlow({
+    viewerPetId,
+    otherPetId: viewedPetId,
+    onUnpawComplete: load,
+  });
 
   useFocusEffect(
     useCallback(() => {
@@ -138,7 +164,7 @@ export default function ViewPetProfileScreen({ navigation, route }) {
   const canPaw = useMemo(
     () =>
       Boolean(
-        EXPOSE_MATING_SURFACES &&
+        areMatingSurfacesVisible() &&
           viewerPetId &&
           !isOwner &&
           viewerOptedIn &&
@@ -149,33 +175,48 @@ export default function ViewPetProfileScreen({ navigation, route }) {
 
   const introductionOpen = channel?.status === 'open';
 
+  const handleNotForMe = useCallback(async () => {
+    if (dismissBusy || !viewerPetId || !viewedPetId || mutual || !hasInboundPaw) {
+      return;
+    }
+    setDismissBusy(true);
+    try {
+      await dismissIncomingPaw(viewerPetId, viewedPetId);
+      navigation.goBack();
+    } catch (e) {
+      console.error('[ViewPetProfile] dismiss incoming paw', e);
+      Toast.show({
+        type: 'error',
+        text1: e?.userMessage || e?.message || "Couldn't dismiss this paw.",
+      });
+    } finally {
+      setDismissBusy(false);
+    }
+  }, [dismissBusy, hasInboundPaw, mutual, navigation, viewedPetId, viewerPetId]);
+
   const handlePaw = useCallback(async () => {
     if (!canPaw || pawBusy || !viewerPetId || !viewedPetId) {
       return;
     }
+    if (expressed) {
+      unpawFlow.requestUnpaw();
+      return;
+    }
     setPawBusy(true);
     try {
-      if (expressed) {
-        await withdrawPaw(viewerPetId, viewedPetId);
-        setExpressed(false);
-        setMutual(false);
-        setChannel(null);
-        setPawInterestId(null);
-      } else {
-        const row = await expressPaw(viewerPetId, viewedPetId);
-        setExpressed(true);
-        setPawInterestId(row?.id ?? null);
-        const isMutual = await petsHaveMutualPaw(viewerPetId, viewedPetId);
-        setMutual(isMutual);
-        if (isMutual) {
-          // Channel is created by server trigger — brief retry if race.
-          let ch = await fetchIntroductionChannelForPair(viewerPetId, viewedPetId);
-          if (!ch) {
-            await new Promise((r) => setTimeout(r, 400));
-            ch = await fetchIntroductionChannelForPair(viewerPetId, viewedPetId);
-          }
-          setChannel(ch);
+      const row = await expressPaw(viewerPetId, viewedPetId);
+      setExpressed(true);
+      setPawInterestId(row?.id ?? null);
+      const isMutual = await petsHaveMutualPaw(viewerPetId, viewedPetId);
+      setMutual(isMutual);
+      if (isMutual) {
+        await promptNotificationPermissionIfNeeded();
+        let ch = await fetchIntroductionChannelForPair(viewerPetId, viewedPetId);
+        if (!ch) {
+          await new Promise((r) => setTimeout(r, 400));
+          ch = await fetchIntroductionChannelForPair(viewerPetId, viewedPetId);
         }
+        setChannel(ch);
       }
     } catch (e) {
       console.error('[ViewPetProfile] paw', e);
@@ -186,19 +227,20 @@ export default function ViewPetProfileScreen({ navigation, route }) {
     } finally {
       setPawBusy(false);
     }
-  }, [canPaw, expressed, pawBusy, viewedPetId, viewerPetId]);
+  }, [canPaw, expressed, pawBusy, unpawFlow, viewedPetId, viewerPetId]);
 
   const openIntroduction = useCallback(() => {
-    if (!EXPOSE_MATING_SURFACES || !introductionOpen || !channel?.id) {
+    if (!areMatingSurfacesVisible() || !introductionOpen || !channel?.id) {
       return;
     }
     navigation.navigate('MatingIntroductionChatScreen', {
       channelId: channel.id,
       otherPetId: viewedPetId,
       otherPetName: pet?.name,
+      otherPetPhotoUrl: pet?.photo_url ?? null,
       viewerPetId,
     });
-  }, [channel?.id, introductionOpen, navigation, pet?.name, viewedPetId, viewerPetId]);
+  }, [channel?.id, introductionOpen, navigation, pet?.name, viewedPetId, viewerPetId, viewerPetName]);
 
   const subtitle = useMemo(() => {
     if (!pet) {
@@ -209,6 +251,38 @@ export default function ViewPetProfileScreen({ navigation, route }) {
       .filter(Boolean)
       .join(' • ');
   }, [pet]);
+
+  const profileTheme = useMemo(
+    () => ({
+      avatarWrap: { backgroundColor: surfaces.backgroundCard },
+      avatarFallback: {
+        backgroundColor: surfaces.isDark
+          ? surfaces.meetupChipBackground
+          : theme.colors.brand.sageLight.light,
+      },
+      name: { color: surfaces.profileHeroNameColor },
+      subtitle: { color: surfaces.profileHeroMutedColor },
+      bio: { color: surfaces.profileHeroBioColor },
+      sectionTitle: { color: surfaces.textPrimary },
+      sectionBody: { color: surfaces.textSecondary },
+      traitChip: { backgroundColor: surfaces.profileTraitChipBackground },
+      traitText: { color: surfaces.profileHeroNameColor },
+      pawHint: { color: surfaces.textMuted },
+      introBtn: { backgroundColor: surfaces.backgroundCard },
+    }),
+    [
+      surfaces.backgroundCard,
+      surfaces.isDark,
+      surfaces.meetupChipBackground,
+      surfaces.profileHeroBioColor,
+      surfaces.profileHeroMutedColor,
+      surfaces.profileHeroNameColor,
+      surfaces.profileTraitChipBackground,
+      surfaces.textMuted,
+      surfaces.textPrimary,
+      surfaces.textSecondary,
+    ],
+  );
 
   return (
     <ScreenWrapper
@@ -240,43 +314,43 @@ export default function ViewPetProfileScreen({ navigation, route }) {
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.hero}>
-            <View style={styles.avatarWrap}>
+            <View style={[styles.avatarWrap, profileTheme.avatarWrap]}>
               {pet.photo_url ? (
-                <Image source={{ uri: pet.photo_url }} style={styles.avatar} />
+                <PawpleStorageImage source={{ uri: pet.photo_url }} style={styles.avatar} />
               ) : (
-                <View style={styles.avatarFallback}>
+                <View style={[styles.avatarFallback, profileTheme.avatarFallback]}>
                   <Feather name="camera" size={32} color={theme.colors.brand.sage.value} />
                 </View>
               )}
             </View>
-            <Text style={styles.name} allowFontScaling>
+            <Text style={[styles.name, profileTheme.name]} allowFontScaling>
               {pet.name}
             </Text>
             {subtitle ? (
-              <Text style={styles.subtitle} allowFontScaling>
+              <Text style={[styles.subtitle, profileTheme.subtitle]} allowFontScaling>
                 {subtitle}
               </Text>
             ) : null}
-            {EXPOSE_MATING_SURFACES && pet.is_looking_for_companion ? (
+            {areMatingSurfacesVisible() && pet.is_looking_for_companion ? (
               <View style={styles.badge}>
                 <Text style={styles.badgeText} allowFontScaling>
-                  Open to Companionship
+                  Open to Mating
                 </Text>
               </View>
             ) : null}
             {pet.bio ? (
-              <Text style={styles.bio} allowFontScaling>
+              <Text style={[styles.bio, profileTheme.bio]} allowFontScaling>
                 {String(pet.bio).trim().slice(0, 100)}
               </Text>
             ) : null}
           </View>
 
-          {EXPOSE_MATING_SURFACES && pet.mating_description ? (
+          {areMatingSurfacesVisible() && pet.mating_description ? (
             <View style={styles.section}>
-              <Text style={styles.sectionTitle} allowFontScaling>
+              <Text style={[styles.sectionTitle, profileTheme.sectionTitle]} allowFontScaling>
                 About mating
               </Text>
-              <Text style={styles.sectionBody} allowFontScaling>
+              <Text style={[styles.sectionBody, profileTheme.sectionBody]} allowFontScaling>
                 {pet.mating_description}
               </Text>
             </View>
@@ -284,13 +358,13 @@ export default function ViewPetProfileScreen({ navigation, route }) {
 
           {Array.isArray(pet.traits) && pet.traits.length > 0 ? (
             <View style={styles.section}>
-              <Text style={styles.sectionTitle} allowFontScaling>
+              <Text style={[styles.sectionTitle, profileTheme.sectionTitle]} allowFontScaling>
                 Traits
               </Text>
               <View style={styles.traits}>
                 {pet.traits.map((trait) => (
-                  <View key={String(trait)} style={styles.traitChip}>
-                    <Text style={styles.traitText} allowFontScaling>
+                  <View key={String(trait)} style={[styles.traitChip, profileTheme.traitChip]}>
+                    <Text style={[styles.traitText, profileTheme.traitText]} allowFontScaling>
                       {trait}
                     </Text>
                   </View>
@@ -300,39 +374,48 @@ export default function ViewPetProfileScreen({ navigation, route }) {
           ) : null}
 
           {/* Paw sits below evaluation context — never hero-adjacent. */}
-          {EXPOSE_MATING_SURFACES && canPaw ? (
+          {areMatingSurfacesVisible() && canPaw ? (
             <View style={styles.pawBlock}>
-              <MatingPawButton
-                expressed={expressed}
-                busy={pawBusy}
-                onPress={handlePaw}
-              />
+              <View style={styles.pawRow}>
+                <MatingPawButton
+                  expressed={expressed}
+                  matched={mutual}
+                  busy={pawBusy || unpawFlow.busy}
+                  onPress={handlePaw}
+                  labelMatched="Matched"
+                />
+                {hasInboundPaw && !mutual ? (
+                  <MatingNotForMeAction onPress={handleNotForMe} busy={dismissBusy} />
+                ) : null}
+              </View>
               {!expressed ? (
-                <Text style={styles.pawHint} allowFontScaling>
+                <Text style={[styles.pawHint, profileTheme.pawHint]} allowFontScaling>
                   Express interest after you understand this pet.
+                </Text>
+              ) : mutual ? (
+                <Text style={[styles.pawHint, profileTheme.pawHint]} allowFontScaling>
+                  Tap to unpaw and end this connection.
                 </Text>
               ) : null}
             </View>
           ) : null}
 
           {/* Quiet unlock only when server channel is open — no match celebration. */}
-          {EXPOSE_MATING_SURFACES && mutual && introductionOpen ? (
+          {areMatingSurfacesVisible() && mutual && introductionOpen ? (
             <Pressable
               onPress={openIntroduction}
-              style={({ pressed }) => [styles.introBtn, pressed && styles.pressed]}
+              style={({ pressed }) => [
+                styles.introBtn,
+                profileTheme.introBtn,
+                pressed && styles.pressed,
+              ]}
               accessibilityRole="button"
-              accessibilityLabel={`Introduction with ${pet.name}'s parent`}
+              accessibilityLabel={formatMatingIntroProfileCta(pet.name)}
             >
               <Text style={styles.introBtnText} allowFontScaling>
-                {`Introduction · With ${pet.name}'s parent`}
+                {formatMatingIntroProfileCta(pet.name)}
               </Text>
             </Pressable>
-          ) : null}
-
-          {EXPOSE_MATING_SURFACES && mutual && channel && channel.status === 'frozen' ? (
-            <Text style={styles.frozenNote} allowFontScaling>
-              Introduction is paused.
-            </Text>
           ) : null}
         </ScrollView>
       )}
@@ -356,8 +439,8 @@ export default function ViewPetProfileScreen({ navigation, route }) {
       <ReportSheet
         visible={reportOpen}
         targetType="mating_interest"
-        targetId={pawInterestId}
-        reportedUserId={pet?.owner_id}
+        targetId={unpawFlow.reportContext?.targetId ?? pawInterestId}
+        reportedUserId={unpawFlow.reportContext?.reportedUserId ?? pet?.owner_id}
         blockablePets={pet ? [{ id: pet.id, name: pet.name }] : []}
         onClose={() => setReportOpen(false)}
         onBlocked={() => {
@@ -373,6 +456,30 @@ export default function ViewPetProfileScreen({ navigation, route }) {
         onBlocked={() => {
           setBlockOpen(false);
           navigation.goBack();
+        }}
+      />
+
+      <UnpawConfirmSheet
+        visible={unpawFlow.confirmVisible}
+        busy={unpawFlow.busy}
+        onConfirm={async () => {
+          try {
+            await unpawFlow.confirmUnpaw();
+          } catch (e) {
+            console.error('[ViewPetProfile] unpaw', e);
+            Toast.show({ type: 'error', text1: "Couldn't unpaw. Try again." });
+          }
+        }}
+        onClose={unpawFlow.cancelUnpaw}
+      />
+
+      <UnpawReportPrompt
+        visible={unpawFlow.reportPromptVisible}
+        petName={pet?.name}
+        onNo={unpawFlow.dismissReportPrompt}
+        onYes={() => {
+          unpawFlow.dismissReportPrompt();
+          setReportOpen(true);
         }}
       />
     </ScreenWrapper>
@@ -481,6 +588,13 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     gap: 10,
   },
+  pawRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: theme.spacing.md,
+    flexWrap: 'wrap',
+  },
   pawHint: {
     fontFamily: theme.fonts.body,
     fontSize: theme.fontSizes.sm,
@@ -501,13 +615,6 @@ const styles = StyleSheet.create({
     fontFamily: theme.fonts.semibold,
     fontSize: theme.fontSizes.md,
     color: theme.colors.brand.sageDark.value,
-  },
-  frozenNote: {
-    marginTop: 12,
-    fontFamily: theme.fonts.body,
-    fontSize: theme.fontSizes.sm,
-    color: theme.colors.text.muted.light,
-    textAlign: 'center',
   },
   pressed: {
     opacity: theme.opacity.pressedUi,

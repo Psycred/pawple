@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { theme } from '../config/theme';
 import { supabase } from '../config/supabase';
 import { useActivePet } from '../contexts/ActivePetContext';
+import { useRuntimeThemeColors } from '../hooks/useRuntimeThemeColors';
 import {
   acknowledgeMeetupRsvpDisclaimer,
   hasMeetupRsvpDisclaimerAck,
@@ -28,7 +29,6 @@ import {
 import { petTypeEmoji } from '../utils/petTypeEmoji';
 import PetContextSelector from './PetContextSelector';
 
-const SHEET_BG = theme.colors.background.card;
 const SAGE = theme.colors.brand.sage.value;
 const SAGE_LIGHT = theme.colors.brand.sageLight.light;
 
@@ -47,6 +47,10 @@ export default function MeetupPetJoinSheet({
 }) {
   const insets = useSafeAreaInsets();
   const { activePetId } = useActivePet();
+  const surfaces = useRuntimeThemeColors();
+  const switchTrackSelected = surfaces.isDark
+    ? surfaces.meetupChipBackground
+    : SAGE_LIGHT;
 
   const [pets, setPets] = useState([]);
   const [loadingPets, setLoadingPets] = useState(false);
@@ -242,14 +246,22 @@ export default function MeetupPetJoinSheet({
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={onClose} accessibilityLabel="Close" />
-      <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 24) }]}>
+      <View
+        style={[
+          styles.sheet,
+          {
+            backgroundColor: surfaces.backgroundElevated,
+            paddingBottom: Math.max(insets.bottom, 24),
+          },
+        ]}
+      >
         {showDisclaimer ? (
           <>
-            <View style={styles.handle} />
-            <Text style={styles.title} allowFontScaling>
+            <View style={[styles.handle, { backgroundColor: surfaces.border }]} />
+            <Text style={[styles.title, { color: surfaces.textPrimary }]} allowFontScaling>
               Before you RSVP
             </Text>
-            <Text style={styles.disclaimerBody} allowFontScaling>
+            <Text style={[styles.disclaimerBody, { color: surfaces.textSecondary }]} allowFontScaling>
               {MEETUP_RSVP_DISCLAIMER}
             </Text>
             <Pressable
@@ -265,12 +277,12 @@ export default function MeetupPetJoinSheet({
           </>
         ) : (
           <>
-        <View style={styles.handle} />
+        <View style={[styles.handle, { backgroundColor: surfaces.border }]} />
 
-        <Text style={styles.title} allowFontScaling>
+        <Text style={[styles.title, { color: surfaces.textPrimary }]} allowFontScaling>
           {title}
         </Text>
-        <Text style={styles.helper} allowFontScaling>
+        <Text style={[styles.helper, { color: surfaces.textSecondary }]} allowFontScaling>
           {helper}
         </Text>
 
@@ -279,7 +291,7 @@ export default function MeetupPetJoinSheet({
             <ActivityIndicator color={SAGE} />
           </View>
         ) : pets.length === 0 ? (
-          <Text style={styles.emptyText} allowFontScaling>
+          <Text style={[styles.emptyText, { color: surfaces.textMuted }]} allowFontScaling>
             Add a pet to your profile first.
           </Text>
         ) : (
@@ -295,18 +307,25 @@ export default function MeetupPetJoinSheet({
               const emoji = petTypeEmoji(pet.pet_type);
 
               return (
-                <View key={petId} style={styles.row}>
+                <View
+                  key={petId}
+                  style={[styles.row, { borderBottomColor: surfaces.border }]}
+                >
                   <PetContextSelector
                     photoUrl={pet.photo_url}
                     size={40}
                     style={styles.rowAvatar}
                   />
                   <View style={styles.rowText}>
-                    <Text style={styles.petName} numberOfLines={1} allowFontScaling>
+                    <Text
+                      style={[styles.petName, { color: surfaces.textPrimary }]}
+                      numberOfLines={1}
+                      allowFontScaling
+                    >
                       {pet.name} {emoji}
                     </Text>
                     {isHostLocked ? (
-                      <Text style={styles.hostHint} allowFontScaling>
+                      <Text style={[styles.hostHint, { color: surfaces.textMuted }]} allowFontScaling>
                         Host
                       </Text>
                     ) : null}
@@ -316,10 +335,10 @@ export default function MeetupPetJoinSheet({
                     onValueChange={() => togglePet(petId)}
                     disabled={isHostLocked || busy}
                     trackColor={{
-                      false: theme.colors.border.light,
-                      true: SAGE_LIGHT,
+                      false: surfaces.border,
+                      true: switchTrackSelected,
                     }}
-                    thumbColor={theme.colors.background.card}
+                    thumbColor={surfaces.backgroundCard}
                     accessibilityLabel={`${pet.name} ${isSelected ? 'selected' : 'not selected'}`}
                     accessibilityRole="checkbox"
                     accessibilityState={{
@@ -372,7 +391,6 @@ const styles = StyleSheet.create({
     backgroundColor: theme.components.bottomSheet.backdrop,
   },
   sheet: {
-    backgroundColor: SHEET_BG,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     paddingHorizontal: 24,
@@ -384,28 +402,24 @@ const styles = StyleSheet.create({
     width: theme.components.bottomSheet.handleWidth,
     height: theme.components.bottomSheet.handleHeight,
     borderRadius: theme.components.bottomSheet.handleRadius,
-    backgroundColor: theme.colors.border.light,
     marginBottom: 20,
   },
   title: {
     fontFamily: theme.fonts.semibold,
     fontSize: theme.fontSizes.lg,
     lineHeight: Math.round(theme.fontSizes.lg * theme.lineHeights.tight),
-    color: theme.colors.text.primary.light,
     marginBottom: 8,
   },
   helper: {
     fontFamily: theme.fonts.body,
     fontSize: theme.fontSizes.sm,
     lineHeight: Math.round(theme.fontSizes.sm * theme.lineHeights.normal),
-    color: theme.colors.text.secondary.light,
     marginBottom: 16,
   },
   disclaimerBody: {
     fontFamily: theme.fonts.body,
     fontSize: theme.fontSizes.md,
     lineHeight: Math.round(theme.fontSizes.md * theme.lineHeights.normal),
-    color: theme.colors.text.secondary.light,
     marginBottom: 24,
   },
   loadingWrap: {
@@ -415,7 +429,6 @@ const styles = StyleSheet.create({
   emptyText: {
     fontFamily: theme.fonts.body,
     fontSize: theme.fontSizes.md,
-    color: theme.colors.text.muted.light,
     paddingVertical: 24,
   },
   list: {
@@ -430,7 +443,6 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     minHeight: 56,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: theme.colors.border.light,
   },
   rowAvatar: {
     marginRight: 12,
@@ -442,12 +454,10 @@ const styles = StyleSheet.create({
   petName: {
     fontFamily: theme.fonts.body,
     fontSize: theme.fontSizes.md,
-    color: theme.colors.text.primary.light,
   },
   hostHint: {
     fontFamily: theme.fonts.body,
     fontSize: theme.fontSizes.sm,
-    color: theme.colors.text.muted.light,
     marginTop: 2,
   },
   errorText: {

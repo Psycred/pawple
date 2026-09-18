@@ -8,30 +8,39 @@ import { Kalam_400Regular } from '@expo-google-fonts/kalam';
 import { ShadowsIntoLight_400Regular } from '@expo-google-fonts/shadows-into-light';
 import { useFonts } from 'expo-font';
 import Toast from 'react-native-toast-message';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import * as Linking from 'expo-linking';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { NavigationContainer } from '@react-navigation/native';
+import {
+  DarkTheme,
+  DefaultTheme,
+  NavigationContainer,
+} from '@react-navigation/native';
 import { navigationRef } from './src/navigation/navigationRef';
+import { resetToUnauthenticatedEntry } from './src/navigation/resetToUnauthenticatedEntry';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import MainTabs from './src/navigation/MainTabs';
+import WelcomeScreen from './src/screens/WelcomeScreen';
 import AgeGateScreen from './src/screens/AgeGateScreen';
 import AuthScreen from './src/screens/AuthScreen';
 import InviteCodeScreen from './src/screens/InviteCodeScreen';
-import { hasPassedAgeGate } from './src/lib/ageGate';
-import { syncAgeAttestationToProfile } from './src/lib/ageAttestationSync';
+import { storePendingInvite } from './src/lib/onboardingInvite';
+import { parseInviteCodeFromUrl } from './src/lib/inviteLinks';
 import LegalScreen from './src/screens/LegalScreen';
 import LocationSettingsScreen from './src/screens/LocationSettingsScreen';
 import ManagePetsScreen from './src/screens/ManagePetsScreen';
 import EditProfileScreen from './src/screens/EditProfileScreen';
 import EditPetScreen from './src/screens/EditPetScreen';
 import OnboardingUserScreen from './src/screens/OnboardingUserScreen';
+import UnderAgeDeclineScreen from './src/screens/UnderAgeDeclineScreen';
 import OnboardingPetsScreen from './src/screens/OnboardingPetsScreen';
 import OnboardingFinalScreen from './src/screens/OnboardingFinalScreen';
 import PrivacySettingsScreen from './src/screens/PrivacySettingsScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
+import PermissionsScreen from './src/screens/PermissionsScreen';
+import MomentDetailsScreen from './src/screens/MomentDetailsScreen';
 import TermsOfServiceScreen from './src/screens/TermsOfServiceScreen';
 import PrivacyPolicyScreen from './src/screens/PrivacyPolicyScreen';
 import CommunityGuidelinesScreen from './src/screens/CommunityGuidelinesScreen';
@@ -40,138 +49,256 @@ import MeetupDetailsScreen from './src/screens/MeetupDetailsScreen';
 import MyMeetupsScreen from './src/screens/MyMeetupsScreen';
 import PublicUserProfileScreen from './src/screens/PublicUserProfileScreen';
 import CreateMomentScreen from './src/screens/CreateMomentScreen';
-import MatingDiscoveryScreen from './src/screens/MatingDiscoveryScreen';
+import MatingChatListScreen from './src/screens/MatingChatListScreen';
 import MatingIntroductionChatScreen from './src/screens/MatingIntroductionChatScreen';
+import NotificationsScreen from './src/screens/NotificationsScreen';
+import PawpleAnnouncementScreen from './src/screens/PawpleAnnouncementScreen';
 import ViewPetProfileScreen from './src/screens/ViewPetProfileScreen';
+import { AppearanceProvider, useAppearance } from './src/contexts/AppearanceContext';
 import { AuthProvider, useAuth } from './src/contexts/AuthContext';
 import { ActivePetProvider, useActivePet } from './src/contexts/ActivePetContext';
-import { refreshProfileLocationOnAppOpen } from './src/lib/profileLocation';
+import { NotificationProvider } from './src/contexts/NotificationContext';
+import { PhotoValidationProvider } from './src/contexts/PhotoValidationContext';
+import { configurePushNotificationHandlers } from './src/lib/pushNotifications';
+import {
+  buildNotificationFromPushData,
+  getNotificationDestination,
+} from './src/lib/notificationNavigation';
 import { assertContractEnvironment } from './src/config/environment';
-import { EXPOSE_MATING_SURFACES } from './src/config/phase1aSurfaces';
+import { areMatingSurfacesVisible } from './src/config/phase1aSurfaces';
+import { parseShareDestination } from './src/lib/publicShareLinks';
+import {
+  clearPendingShareDestination,
+  getPendingShareDestination,
+  storePendingShareDestination,
+} from './src/lib/pendingShareDestination';
 
 const Stack = createNativeStackNavigator();
 
-/** Pull the moment id out of pawple://moment/{id} (any host/path arrangement). */
-function parseMomentId(url) {
-  if (!url) {
-    return null;
+function parseInviteCode(url) {
+  // Shared helper: custom scheme + https://pawple.com/invite/CODE
+  return parseInviteCodeFromUrl(url);
+}
+
+function navigateToShareDestination(destination) {
+  if (!destination?.id || !navigationRef.isReady()) {
+    return false;
   }
-  try {
-    const { hostname, path } = Linking.parse(url);
-    let raw = null;
-    if (hostname === 'moment') {
-      raw = path;
-    } else if (path && path.includes('moment/')) {
-      raw = path.split('moment/')[1];
-    }
-    if (!raw) {
-      return null;
-    }
-    return raw.split('/')[0].split('?')[0] || null;
-  } catch (e) {
-    return null;
+
+  if (destination.type === 'moment') {
+    navigationRef.navigate('MomentDetailsScreen', {
+      momentId: destination.id,
+      openedAt: destination.openedAt ?? Date.now(),
+    });
+    return true;
   }
+
+  if (destination.type === 'meetup') {
+    navigationRef.navigate('MeetupDetailsScreen', {
+      meetupId: destination.id,
+      openedAt: destination.openedAt ?? Date.now(),
+    });
+    return true;
+  }
+
+  return false;
+}
+
+function PushNotificationBootstrap() {
+  const { setPet } = useActivePet();
+
+  useEffect(() => {
+    let cleanup = () => {};
+
+    configurePushNotificationHandlers({
+      onNotificationResponse: (response) => {
+        const data = response?.notification?.request?.content?.data ?? {};
+        const notification = buildNotificationFromPushData(data);
+        const destination = getNotificationDestination(notification);
+        if (!destination || !navigationRef.isReady()) {
+          return;
+        }
+
+        if (notification?.targetPetId && typeof setPet === 'function') {
+          setPet(String(notification.targetPetId));
+        }
+
+        navigationRef.navigate(destination.screen, destination.params);
+      },
+    }).then((dispose) => {
+      cleanup = dispose;
+    });
+
+    return () => {
+      cleanup();
+    };
+  }, [setPet]);
+
+  return null;
+}
+
+function stackHeaderOptions() {
+  return {
+    headerStyle: { backgroundColor: theme.colors.background.screen },
+    headerTintColor: theme.colors.text.primary.light,
+    headerTitleStyle: {
+      fontFamily: theme.fonts.heading,
+      color: theme.colors.text.primary.light,
+    },
+  };
 }
 
 function AppNavigator() {
-  const { user, authLoading, profileLoading, hasProfile, hasCompletedOnboarding, pendingInviteCode } = useAuth();
-  const { loading: petLoading } = useActivePet();
-  // Phase 1 India: device must pass 18+ gate before Auth or any signed-in surface.
-  const [ageGateLoading, setAgeGateLoading] = useState(true);
-  const [ageGatePassed, setAgeGatePassed] = useState(false);
+  const {
+    user,
+    authLoading,
+    profileLoading,
+    hasProfile,
+    hasCompletedOnboarding,
+    hasAgeAttestation,
+    pendingInviteCode,
+    rememberPendingInvite,
+  } = useAuth();
+  const { colorMode } = useAppearance();
+  const [navigationReady, setNavigationReady] = useState(false);
+  const initialUrlHandledRef = useRef(false);
+  const navigationTheme = {
+    ...(colorMode === 'dark' ? DarkTheme : DefaultTheme),
+    dark: colorMode === 'dark',
+    colors: {
+      primary: theme.colors.brand.sage.value,
+      background: theme.colors.background.screen,
+      card: theme.colors.background.card,
+      text: theme.colors.text.primary.light,
+      border: theme.colors.border.light,
+      notification: theme.colors.brand.sage.value,
+    },
+  };
+  const sharedHeaderOptions = stackHeaderOptions();
 
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const passed = await hasPassedAgeGate();
-        if (!cancelled) {
-          setAgeGatePassed(passed);
+    const handleUrl = async (url) => {
+      const inviteCode = parseInviteCode(url);
+
+      if (inviteCode) {
+        try {
+          if (typeof rememberPendingInvite === 'function') {
+            await rememberPendingInvite(inviteCode);
+          } else {
+            await storePendingInvite(user?.id ?? null, inviteCode);
+          }
+        } catch (error) {
+          console.warn('[Invite] Could not store invite link:', error);
         }
-      } catch (error) {
-        console.error('[AgeGate] bootstrap failed', error);
-        if (!cancelled) {
-          setAgeGatePassed(false);
-        }
-      } finally {
-        if (!cancelled) {
-          setAgeGateLoading(false);
-        }
+
+        return;
       }
-    })();
+
+      const parsedDestination = parseShareDestination(url);
+      if (!parsedDestination) {
+        return;
+      }
+
+      const destination = {
+        ...parsedDestination,
+        openedAt: Date.now(),
+      };
+      await storePendingShareDestination(user?.id ?? null, destination);
+
+      if (
+        user?.id &&
+        hasCompletedOnboarding &&
+        navigationRef.isReady() &&
+        navigateToShareDestination(destination)
+      ) {
+        await clearPendingShareDestination(user.id);
+      }
+    };
+
+    if (!initialUrlHandledRef.current) {
+      initialUrlHandledRef.current = true;
+      Linking.getInitialURL().then(handleUrl).catch(() => {});
+    }
+    const subscription = Linking.addEventListener('url', ({ url }) => handleUrl(url));
+    return () => subscription.remove();
+  }, [hasCompletedOnboarding, rememberPendingInvite, user?.id]);
+
+  useEffect(() => {
+    if (!navigationReady || !user?.id || !hasCompletedOnboarding) {
+      return;
+    }
+
+    let cancelled = false;
+    const continueToPendingDestination = async () => {
+      const destination = await getPendingShareDestination(user.id);
+      if (
+        cancelled ||
+        !destination ||
+        !navigateToShareDestination(destination)
+      ) {
+        return;
+      }
+      await clearPendingShareDestination(user.id);
+    };
+
+    continueToPendingDestination();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [hasCompletedOnboarding, navigationReady, user?.id]);
 
   useEffect(() => {
-    // pawple://moment/{id} → open the app to the Feed, carrying the moment id.
-    // (No standalone moment-detail screen exists yet; Feed is the closest destination.)
-    const handleUrl = (url) => {
-      const momentId = parseMomentId(url);
-      if (!momentId || !navigationRef.isReady() || !ageGatePassed) {
-        return;
-      }
-      navigationRef.navigate('MainTabs', {
-        screen: 'FeedScreen',
-        params: { sharedMomentId: momentId, openedAt: Date.now() },
-      });
-    };
-
-    Linking.getInitialURL().then(handleUrl).catch(() => {});
-    const subscription = Linking.addEventListener('url', ({ url }) => handleUrl(url));
-    return () => subscription.remove();
-  }, [ageGatePassed]);
-
-  // Returning users only: silent coarse refresh or native OS prompt — never custom onboarding UI.
-  useEffect(() => {
-    if (!ageGatePassed || authLoading || profileLoading || !user?.id || !hasCompletedOnboarding) {
+    if (!navigationReady || authLoading || user) {
       return;
     }
-    refreshProfileLocationOnAppOpen(user.id);
-    syncAgeAttestationToProfile(user.id);
-  }, [ageGatePassed, authLoading, hasCompletedOnboarding, profileLoading, user?.id]);
+    const state = navigationRef.getRootState();
+    const currentRoute = state?.routes?.[state.index ?? 0]?.name;
+    if (currentRoute === 'Welcome') {
+      return;
+    }
+    resetToUnauthenticatedEntry();
+  }, [authLoading, navigationReady, user]);
 
-  if (ageGateLoading || authLoading || (user && profileLoading) || (user && petLoading)) {
+  if (authLoading || (user && profileLoading)) {
     return (
-      <View style={styles.bootstrapContainer}>
+      <View style={[styles.bootstrapContainer, { backgroundColor: theme.colors.background.screen }]}>
         <ActivityIndicator color={theme.colors.primary.light} />
       </View>
     );
   }
 
-  const initialRoute = !ageGatePassed
-    ? 'AgeGate'
-    : !user
-      ? 'Auth'
-      : hasCompletedOnboarding
-        ? 'MainTabs'
-        : hasProfile
-          ? 'OnboardingPets'
-          : pendingInviteCode
-            ? 'OnboardingUser'
-            : 'InviteCodeScreen';
+  const initialRoute = !user
+    ? 'Welcome'
+    : hasCompletedOnboarding
+      ? 'MainTabs'
+      : hasProfile && hasAgeAttestation
+        ? 'OnboardingPets'
+        : hasProfile || pendingInviteCode
+          ? 'OnboardingUser'
+          : 'InviteCodeScreen';
 
   return (
-    <NavigationContainer ref={navigationRef}>
+    <NavigationContainer
+      ref={navigationRef}
+      theme={navigationTheme}
+      onReady={() => setNavigationReady(true)}
+    >
+      <PushNotificationBootstrap />
       <Stack.Navigator
-        key={`${user?.id ?? 'guest'}-${ageGatePassed ? 'eligible' : 'gate'}`}
+        key={user?.id ?? 'guest'}
         initialRouteName={initialRoute}
         screenOptions={{ headerShown: false }}
       >
-        <Stack.Screen name="AgeGate">
-          {(props) => (
-            <AgeGateScreen
-              {...props}
-              onPassed={() => {
-                setAgeGatePassed(true);
-              }}
-            />
-          )}
-        </Stack.Screen>
+        <Stack.Screen
+          name="Welcome"
+          component={WelcomeScreen}
+          options={{ gestureEnabled: false }}
+        />
+        <Stack.Screen name="AgeGate" component={AgeGateScreen} />
         <Stack.Screen name="Auth" component={AuthScreen} />
         <Stack.Screen name="InviteCodeScreen" component={InviteCodeScreen} />
         <Stack.Screen name="OnboardingUser" component={OnboardingUserScreen} />
+        <Stack.Screen name="UnderAgeDecline" component={UnderAgeDeclineScreen} />
         <Stack.Screen name="OnboardingPets" component={OnboardingPetsScreen} />
         <Stack.Screen name="OnboardingFinal" component={OnboardingFinalScreen} />
         <Stack.Screen
@@ -186,12 +313,27 @@ function AppNavigator() {
             headerShown: true,
             title: 'Settings',
             headerBackTitleVisible: false,
-            headerStyle: { backgroundColor: theme.colors.background.light },
-            headerTintColor: theme.colors.text.primary.light,
-            headerTitleStyle: {
-              fontFamily: theme.fonts.heading,
-              color: theme.colors.text.primary.light,
-            },
+            ...sharedHeaderOptions,
+          }}
+        />
+        <Stack.Screen
+          name="Permissions"
+          component={PermissionsScreen}
+          options={{
+            headerShown: true,
+            title: 'Permissions',
+            headerBackTitleVisible: false,
+            ...sharedHeaderOptions,
+          }}
+        />
+        <Stack.Screen
+          name="MomentDetailsScreen"
+          component={MomentDetailsScreen}
+          options={{
+            headerShown: true,
+            title: 'Moment',
+            headerBackTitleVisible: false,
+            ...sharedHeaderOptions,
           }}
         />
         <Stack.Screen
@@ -201,12 +343,7 @@ function AppNavigator() {
             headerShown: true,
             title: 'My Profile',
             headerBackTitleVisible: false,
-            headerStyle: { backgroundColor: theme.colors.background.light },
-            headerTintColor: theme.colors.text.primary.light,
-            headerTitleStyle: {
-              fontFamily: theme.fonts.heading,
-              color: theme.colors.text.primary.light,
-            },
+            ...sharedHeaderOptions,
           }}
         />
         <Stack.Screen
@@ -216,12 +353,7 @@ function AppNavigator() {
             headerShown: true,
             title: 'Edit Pet',
             headerBackTitleVisible: false,
-            headerStyle: { backgroundColor: theme.colors.background.light },
-            headerTintColor: theme.colors.text.primary.light,
-            headerTitleStyle: {
-              fontFamily: theme.fonts.heading,
-              color: theme.colors.text.primary.light,
-            },
+            ...sharedHeaderOptions,
           }}
         />
         <Stack.Screen
@@ -232,12 +364,7 @@ function AppNavigator() {
             headerShown: true,
             title: 'Terms of Service',
             headerBackTitleVisible: false,
-            headerStyle: { backgroundColor: theme.colors.background.light },
-            headerTintColor: theme.colors.text.primary.light,
-            headerTitleStyle: {
-              fontFamily: theme.fonts.heading,
-              color: theme.colors.text.primary.light,
-            },
+            ...sharedHeaderOptions,
           }}
         />
         <Stack.Screen
@@ -248,12 +375,7 @@ function AppNavigator() {
             headerShown: true,
             title: 'Privacy Policy',
             headerBackTitleVisible: false,
-            headerStyle: { backgroundColor: theme.colors.background.light },
-            headerTintColor: theme.colors.text.primary.light,
-            headerTitleStyle: {
-              fontFamily: theme.fonts.heading,
-              color: theme.colors.text.primary.light,
-            },
+            ...sharedHeaderOptions,
           }}
         />
         <Stack.Screen
@@ -264,12 +386,7 @@ function AppNavigator() {
             headerShown: true,
             title: 'Community Guidelines',
             headerBackTitleVisible: false,
-            headerStyle: { backgroundColor: theme.colors.background.light },
-            headerTintColor: theme.colors.text.primary.light,
-            headerTitleStyle: {
-              fontFamily: theme.fonts.heading,
-              color: theme.colors.text.primary.light,
-            },
+            ...sharedHeaderOptions,
           }}
         />
         <Stack.Screen
@@ -279,12 +396,7 @@ function AppNavigator() {
             headerShown: true,
             title: 'Location Preferences',
             headerBackTitleVisible: false,
-            headerStyle: { backgroundColor: theme.colors.background.light },
-            headerTintColor: theme.colors.text.primary.light,
-            headerTitleStyle: {
-              fontFamily: theme.fonts.heading,
-              color: theme.colors.text.primary.light,
-            },
+            ...sharedHeaderOptions,
           }}
         />
         <Stack.Screen
@@ -294,12 +406,7 @@ function AppNavigator() {
             headerShown: true,
             title: 'Blocked pets',
             headerBackTitleVisible: false,
-            headerStyle: { backgroundColor: theme.colors.background.light },
-            headerTintColor: theme.colors.text.primary.light,
-            headerTitleStyle: {
-              fontFamily: theme.fonts.heading,
-              color: theme.colors.text.primary.light,
-            },
+            ...sharedHeaderOptions,
           }}
         />
         <Stack.Screen
@@ -309,15 +416,20 @@ function AppNavigator() {
             headerShown: true,
             title: route?.params?.type === 'privacy' ? 'Privacy Policy' : 'Terms & Conditions',
             headerBackTitleVisible: false,
-            headerStyle: { backgroundColor: theme.colors.background.light },
-            headerTintColor: theme.colors.text.primary.light,
-            headerTitleStyle: {
-              fontFamily: theme.fonts.heading,
-              color: theme.colors.text.primary.light,
-            },
+            ...sharedHeaderOptions,
           })}
         />
         <Stack.Screen name="MainTabs" component={MainTabs} />
+        <Stack.Screen
+          name="Notifications"
+          component={NotificationsScreen}
+          options={{ headerShown: false, animation: 'slide_from_right' }}
+        />
+        <Stack.Screen
+          name="PawpleAnnouncement"
+          component={PawpleAnnouncementScreen}
+          options={{ headerShown: false, animation: 'slide_from_right' }}
+        />
         <Stack.Screen
           name="CreateMomentScreen"
           component={CreateMomentScreen}
@@ -343,24 +455,24 @@ function AppNavigator() {
           component={PublicUserProfileScreen}
           options={{ headerShown: false, animation: 'slide_from_right' }}
         />
-        {EXPOSE_MATING_SURFACES ? (
-          <Stack.Screen
-            name="MatingDiscoveryScreen"
-            component={MatingDiscoveryScreen}
-            options={{ headerShown: false, animation: 'slide_from_right' }}
-          />
-        ) : null}
         <Stack.Screen
           name="ViewPetProfileScreen"
           component={ViewPetProfileScreen}
           options={{ headerShown: false, animation: 'slide_from_right' }}
         />
-        {EXPOSE_MATING_SURFACES ? (
-          <Stack.Screen
-            name="MatingIntroductionChatScreen"
-            component={MatingIntroductionChatScreen}
-            options={{ headerShown: false, animation: 'slide_from_right' }}
-          />
+        {areMatingSurfacesVisible() ? (
+          <>
+            <Stack.Screen
+              name="MatingChatListScreen"
+              component={MatingChatListScreen}
+              options={{ headerShown: false, animation: 'slide_from_right' }}
+            />
+            <Stack.Screen
+              name="MatingIntroductionChatScreen"
+              component={MatingIntroductionChatScreen}
+              options={{ headerShown: false, animation: 'slide_from_right' }}
+            />
+          </>
         ) : null}
       </Stack.Navigator>
     </NavigationContainer>
@@ -388,12 +500,18 @@ export default function App() {
             <ActivityIndicator color={theme.colors.primary.light} />
           </View>
         ) : (
-          <AuthProvider>
-            <ActivePetProvider>
-              <AppNavigator />
-              <Toast />
-            </ActivePetProvider>
-          </AuthProvider>
+          <AppearanceProvider>
+            <AuthProvider>
+              <PhotoValidationProvider>
+                <ActivePetProvider>
+                  <NotificationProvider>
+                    <AppNavigator />
+                    <Toast />
+                  </NotificationProvider>
+                </ActivePetProvider>
+              </PhotoValidationProvider>
+            </AuthProvider>
+          </AppearanceProvider>
         )}
       </SafeAreaProvider>
     </GestureHandlerRootView>

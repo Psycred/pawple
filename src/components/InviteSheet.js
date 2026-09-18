@@ -13,12 +13,16 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
+import Toast from 'react-native-toast-message';
 import { supabase } from '../config/supabase';
 import { theme } from '../config/theme';
 import { useAuth } from '../contexts/AuthContext';
+import { useRuntimeThemeColors } from '../hooks/useRuntimeThemeColors';
+import { buildInviteShareMessage, buildInviteUrl } from '../lib/inviteLinks';
 
 const CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-const TOTAL_INVITES = 5;
+const TOTAL_INVITES = 10;
 const INVITE_REMAINING_CACHE_KEY = 'inviteUnusedCount';
 
 const generateCode = () => {
@@ -37,6 +41,7 @@ export default function InviteSheet({ visible, onClose, onRemainingChange }) {
   const backdropOpacity = useRef(new Animated.Value(0)).current;
   const sheetY = useRef(new Animated.Value(320)).current;
 
+  const surfaces = useRuntimeThemeColors();
   const unusedInvites = useMemo(() => invites.filter((item) => item.status === 'unused'), [invites]);
   const currentInvite = unusedInvites[0] ?? null;
   const remaining = unusedInvites.length;
@@ -48,10 +53,10 @@ export default function InviteSheet({ visible, onClose, onRemainingChange }) {
     }
     if (currentInvite?.code) {
       AccessibilityInfo.announceForAccessibility?.(
-        `Invite code ${currentInvite.code}. ${remaining} of ${TOTAL_INVITES} invites remaining.`,
+        `Invite code ${currentInvite.code}. ${remaining} invites left.`,
       );
     } else {
-      AccessibilityInfo.announceForAccessibility?.('All invites sent. Check back later.');
+      AccessibilityInfo.announceForAccessibility?.('All invites sent.');
     }
   }, [currentInvite?.code, remaining, visible]);
 
@@ -89,7 +94,6 @@ export default function InviteSheet({ visible, onClose, onRemainingChange }) {
       if (rows.length < TOTAL_INVITES) {
         const existingCodes = new Set(rows.map((item) => item.code));
         const toCreateCount = TOTAL_INVITES - rows.length;
-        // Prefer server-side generation if the RPC exists; fallback keeps app working in older DBs.
         let insertedWithRpc = false;
         const { error: rpcError } = await supabase.rpc('ensure_user_invites', {
           target_user_id: user.id,
@@ -176,7 +180,9 @@ export default function InviteSheet({ visible, onClose, onRemainingChange }) {
     [backdropOpacity, sheetY],
   );
 
-  const sharePayload = currentInvite?.code ? `Join me on Pawple! Use code: ${currentInvite.code} to get started.` : '';
+  const inviteCode = currentInvite?.code ?? null;
+  const sharePayload = inviteCode ? buildInviteShareMessage({ code: inviteCode }) : '';
+  const inviteUrl = inviteCode ? buildInviteUrl(inviteCode) : '';
 
   const handleShareWhatsApp = async () => {
     if (!sharePayload) return;
@@ -194,19 +200,19 @@ export default function InviteSheet({ visible, onClose, onRemainingChange }) {
     }
   };
 
-  const handleShareEmail = async () => {
-    if (!sharePayload) return;
+  const handleCopyLink = async () => {
+    if (!inviteUrl) return;
     try {
-      const mailto = `mailto:?subject=${encodeURIComponent('Join Pawple')}&body=${encodeURIComponent(sharePayload)}`;
-      const canOpen = await Linking.canOpenURL(mailto);
-      if (!canOpen) {
-        Alert.alert('Email', 'Email app is unavailable on this device.');
-        return;
-      }
-      await Linking.openURL(mailto);
+      await Clipboard.setStringAsync(inviteUrl);
+      Toast.show({
+        type: 'success',
+        text1: 'Invite link copied',
+        position: 'bottom',
+        visibilityTime: 1800,
+      });
     } catch (error) {
-      console.log('[InviteSheet] Email share error:', error);
-      Alert.alert('Invites', 'Could not share via email.');
+      console.log('[InviteSheet] Copy link error:', error);
+      Alert.alert('Invites', 'Could not copy the invite link.');
     }
   };
 
@@ -221,25 +227,26 @@ export default function InviteSheet({ visible, onClose, onRemainingChange }) {
           style={[
             styles.sheet,
             {
+              backgroundColor: surfaces.backgroundElevated,
               paddingBottom: Math.max(insets.bottom, theme.spacing.md),
               transform: [{ translateY: sheetY }],
             },
           ]}
         >
-          <Text style={styles.title}>Invite to Pawple</Text>
+          <Text style={[styles.title, { color: surfaces.textPrimary }]}>Invite to Pawple</Text>
 
           {loading ? (
-            <Text style={styles.helper}>Loading invite codes...</Text>
+            <Text style={[styles.helper, { color: surfaces.textMuted }]}>Loading…</Text>
           ) : currentInvite ? (
             <>
-              <Text style={styles.codeLabel}>Your Invite Code</Text>
+              <Text style={[styles.codeLabel, { color: surfaces.textMuted }]}>Your invite</Text>
               <Text style={styles.code}>{currentInvite.code}</Text>
-              <Text style={styles.counter}>{`${usedCount} of ${TOTAL_INVITES} invites sent.`}</Text>
+              <Text style={[styles.counter, { color: surfaces.textMuted }]}>
+                {`${remaining} invites left`}
+              </Text>
             </>
           ) : (
-            <>
-              <Text style={styles.counter}>All invites sent. Check back later!</Text>
-            </>
+            <Text style={[styles.counter, { color: surfaces.textMuted }]}>All invites sent.</Text>
           )}
 
           <View style={styles.actionsRow}>
@@ -260,7 +267,7 @@ export default function InviteSheet({ visible, onClose, onRemainingChange }) {
               </View>
             </Pressable>
             <Pressable
-              onPress={handleShareEmail}
+              onPress={handleCopyLink}
               disabled={!currentInvite || loading}
               style={({ pressed }) => [
                 styles.shareButton,
@@ -269,11 +276,11 @@ export default function InviteSheet({ visible, onClose, onRemainingChange }) {
                 pressed && styles.actionPressed,
               ]}
               accessibilityRole="button"
-              accessibilityLabel="Share invite via Email"
+              accessibilityLabel="Copy invite link"
             >
               <View style={styles.shareButtonInner}>
-                <Feather name="mail" size={theme.fontSizes.md} color={theme.components.button.primaryText} />
-                <Text style={styles.shareText}>Email</Text>
+                <Feather name="link" size={theme.fontSizes.md} color={theme.components.button.primaryText} />
+                <Text style={styles.shareText}>Copy Link</Text>
               </View>
             </Pressable>
           </View>
@@ -315,7 +322,6 @@ const styles = StyleSheet.create({
     marginTop: theme.spacing.lg,
     fontFamily: 'Inter-Regular',
     fontSize: theme.fontSizes.sm,
-    color: theme.colors.text.muted.light,
     textAlign: 'center',
   },
   code: {
@@ -329,7 +335,6 @@ const styles = StyleSheet.create({
   counter: {
     fontFamily: 'Inter-Regular',
     fontSize: theme.fontSizes.sm,
-    color: theme.colors.text.muted.light,
     textAlign: 'center',
     marginBottom: theme.spacing.lg,
   },
@@ -337,7 +342,6 @@ const styles = StyleSheet.create({
     marginVertical: theme.spacing.lg,
     fontFamily: theme.fonts.body,
     fontSize: theme.fontSizes.sm,
-    color: theme.colors.text.muted.light,
     textAlign: 'center',
   },
   actionsRow: {

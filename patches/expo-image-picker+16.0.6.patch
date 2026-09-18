@@ -1,0 +1,69 @@
+diff --git a/node_modules/expo-image-picker/android/src/main/java/expo/modules/imagepicker/ImagePickerModule.kt b/node_modules/expo-image-picker/android/src/main/java/expo/modules/imagepicker/ImagePickerModule.kt
+index ba07483..5046139 100644
+--- a/node_modules/expo-image-picker/android/src/main/java/expo/modules/imagepicker/ImagePickerModule.kt
++++ b/node_modules/expo-image-picker/android/src/main/java/expo/modules/imagepicker/ImagePickerModule.kt
+@@ -268,31 +268,44 @@ class ImagePickerModule : Module() {
+     }
+   }
+ 
+-  private suspend fun ensureCameraPermissionsAreGranted(): Unit = suspendCancellableCoroutine { continuation ->
+-    val permissions = appContext.permissions ?: throw ModuleNotFoundException("Permissions")
++  private suspend fun ensureCameraPermissionsAreGranted(): Unit {
++    val cameraGranted =
++      ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
++    val storageGranted = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
++      ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
++    } else {
++      true
++    }
++    if (cameraGranted && storageGranted) {
++      return
++    }
++
++    return suspendCancellableCoroutine { continuation ->
++      val permissions = appContext.permissions ?: throw ModuleNotFoundException("Permissions")
+ 
+-    permissions.askForPermissions(
+-      { permissionsResponse ->
+-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+-          if (permissionsResponse[Manifest.permission.CAMERA]?.status == PermissionsStatus.GRANTED) {
++      permissions.askForPermissions(
++        { permissionsResponse ->
++          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
++            if (permissionsResponse[Manifest.permission.CAMERA]?.status == PermissionsStatus.GRANTED) {
++              continuation.resume(Unit)
++            } else {
++              continuation.resumeWithException(UserRejectedPermissionsException())
++            }
++          } else if (
++            permissionsResponse[Manifest.permission.WRITE_EXTERNAL_STORAGE]?.status == PermissionsStatus.GRANTED &&
++            permissionsResponse[Manifest.permission.CAMERA]?.status == PermissionsStatus.GRANTED
++          ) {
+             continuation.resume(Unit)
+           } else {
+             continuation.resumeWithException(UserRejectedPermissionsException())
+           }
+-        } else if (
+-          permissionsResponse[Manifest.permission.WRITE_EXTERNAL_STORAGE]?.status == PermissionsStatus.GRANTED &&
+-          permissionsResponse[Manifest.permission.CAMERA]?.status == PermissionsStatus.GRANTED
+-        ) {
+-          continuation.resume(Unit)
+-        } else {
+-          continuation.resumeWithException(UserRejectedPermissionsException())
+-        }
+-      },
+-      *listOfNotNull(
+-        Manifest.permission.WRITE_EXTERNAL_STORAGE.takeIf { Build.VERSION.SDK_INT < Build.VERSION_CODES.Q },
+-        Manifest.permission.CAMERA
+-      ).toTypedArray()
+-    )
++        },
++        *listOfNotNull(
++          Manifest.permission.WRITE_EXTERNAL_STORAGE.takeIf { Build.VERSION.SDK_INT < Build.VERSION_CODES.Q },
++          Manifest.permission.CAMERA
++        ).toTypedArray()
++      )
++    }
+   }
+ 
+   // endregion

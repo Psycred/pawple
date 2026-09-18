@@ -1,7 +1,7 @@
 /**
  * Phase-1 content reports (Founder F / PAW-47 + Mating wave PAW-60/61).
  * Filed in the name of a reporter pet; flags the human account (reported_user_id).
- * Targets: moment | meetup | mating_interest | introduction_chat (Backend contract).
+ * Targets: moment | meetup | mating_interest | introduction_chat | pet (Backend contract).
  */
 
 import { supabase } from '../config/supabase';
@@ -22,6 +22,7 @@ export const REPORT_TARGET_TYPES = Object.freeze({
   meetup: 'meetup',
   mating_interest: 'mating_interest',
   introduction_chat: 'introduction_chat',
+  pet: 'pet',
 });
 
 const ALLOWED_TARGET_TYPES = new Set(Object.values(REPORT_TARGET_TYPES));
@@ -29,7 +30,7 @@ const ALLOWED_TARGET_TYPES = new Set(Object.values(REPORT_TARGET_TYPES));
 /**
  * @param {{
  *   reporterPetId: string,
- *   targetType: 'moment' | 'meetup' | 'mating_interest' | 'introduction_chat',
+ *   targetType: 'moment' | 'meetup' | 'mating_interest' | 'introduction_chat' | 'pet',
  *   targetId: string,
  *   reportedUserId: string,
  *   reason: string,

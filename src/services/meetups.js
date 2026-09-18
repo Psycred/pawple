@@ -8,12 +8,16 @@
  * | id                   | uuid PK        | |
  * | user_id              | uuid FK        | Creator account |
  * | title                | text           | Required |
+ * | description          | text           | Optional Meetup context |
+ * | city                 | text           | Creator-selected Meetup locality |
  * | date                 | date           | Meetup day |
  * | start_time           | time           | |
  * | end_time             | time           | |
  * | location_lat         | double precision | Nullable |
  * | location_lng         | double precision | Nullable |
- * | google_maps_link     | text           | Optional Google Maps URL |
+ * | google_maps_link     | text           | Optional Google / Apple Maps URL |
+ * | venue_lat            | double precision | Venue pin from maps-link unwrap |
+ * | venue_lng            | double precision | Venue pin from maps-link unwrap |
  * | participation_limit  | integer        | Nullable = unlimited |
  * | open_to              | text           | Open to All \| Dogs Meetup \| Cats Meetup \| Please Specify |
  * | custom_breed_spec    | text           | When open_to = Please Specify |
@@ -49,6 +53,7 @@
  * @property {string} id
  * @property {string} user_id
  * @property {string} title
+ * @property {string|null} [description]
  * @property {string} date
  * @property {string} start_time
  * @property {string} end_time
@@ -67,6 +72,8 @@
  * @typedef {Object} CreateMeetupInput
  * @property {string} userId
  * @property {string} title
+ * @property {string} city
+ * @property {string} [description]
  * @property {string} date ISO date YYYY-MM-DD
  * @property {string} startTime HH:MM:SS
  * @property {string} endTime HH:MM:SS
@@ -74,21 +81,28 @@
  * @property {MeetupOpenTo} openTo
  * @property {string} [customBreedSpec]
  * @property {string} [googleMapsLink]
+ * @property {string} [locationName] — venue label (e.g. Cubbon Park)
  * @property {number|null} [participationLimit]
- * @property {string} [city] — bulletin-board locality (server-set at insert)
+ * @property {string} city — creator-selected bulletin-board locality
  */
 
 import { supabase } from '../config/supabase';
+import { filterPetsNotBlocked, isBlockedByPetIds } from '../lib/petBlockVisibility.js';
+import { promptNotificationPermissionIfNeeded } from '../lib/notifications';
 import {
   joinDemoMeetupWithPets,
   leaveDemoMeetupWithPets,
 } from '../data/demoMeetupRsvp';
 import {
   filterShowablePublicMeetups,
+  getMeetupParticipantDisplayCount,
   getMeetupStartTimestamp,
+  isMeetupPast,
   isShowablePublicMeetup,
+  usesFrozenParticipantCount,
 } from '../lib/meetupPublicFilter';
-import { filterMeetupsByViewerCity } from '../utils/cityUtils';
+import { filterMeetupsByViewerCity, normalizeCityForSave } from '../utils/cityUtils';
+import { resolveMeetupMapLink } from './resolveMapLink';
 import { validateOptionalGoogleMapsLink } from '../utils/mapLinkValidation';
 import { formatMeetupHostedByLine } from '../utils/meetupHostDisplay';
 
@@ -96,8 +110,11 @@ export { filterMeetupsByViewerCity };
 
 export {
   filterShowablePublicMeetups,
+  getMeetupParticipantDisplayCount,
   getMeetupStartTimestamp,
+  isMeetupPast,
   isShowablePublicMeetup,
+  usesFrozenParticipantCount,
 };
 /** @deprecated Use isShowablePublicMeetup */
 export const isShowableMeetup = isShowablePublicMeetup;
@@ -123,13 +140,31 @@ export function validateParticipationLimit(raw) {
   return { valid: true, value: n };
 }
 
-/** Validates optional Google Maps link — empty allowed; Google URLs only when provided. */
+/** Validates optional maps link — empty allowed; Google or Apple URLs when provided. */
 export function validateGoogleMapsLink(url = '') {
   const result = validateOptionalGoogleMapsLink(url);
   if (!result.isValid) {
-    return { valid: false, error: result.message || 'Please use a Google Maps link.' };
+    return { valid: false, error: result.message || 'Please use a Google or Apple Maps link.' };
   }
   return { valid: true, value: result.value };
+}
+
+/** Resolve venue pin from optional maps link for meetup save. */
+async function applyVenueCoordsFromMapLink(payload, mapsLink) {
+  if (!mapsLink) {
+    return {
+      ...payload,
+      venue_lat: null,
+      venue_lng: null,
+    };
+  }
+
+  const { venueLat, venueLng } = await resolveMeetupMapLink(mapsLink);
+  return {
+    ...payload,
+    venue_lat: Number.isFinite(venueLat) ? venueLat : null,
+    venue_lng: Number.isFinite(venueLng) ? venueLng : null,
+  };
 }
 
 /**
@@ -152,10 +187,17 @@ export function buildMeetupInsertPayload(input) {
   const customBreedSpec =
     openTo === 'Please Specify' ? input.customBreedSpec?.trim() || null : null;
   const mapsLink = linkResult.value;
+  const city = normalizeCityForSave(input.city);
+  if (!city) {
+    throw new Error('Meetup city is required.');
+  }
 
   return {
     user_id: input.userId,
     title: input.title.trim(),
+    description: input.description?.trim() || null,
+    city,
+    location_name: input.locationName?.trim() || null,
     date: input.date,
     start_time: input.startTime,
     end_time: input.endTime,
@@ -182,9 +224,16 @@ export function buildMeetupUpdatePayload(input) {
   const customBreedSpec =
     openTo === 'Please Specify' ? input.customBreedSpec?.trim() || null : null;
   const mapsLink = linkResult.value;
+  const city = normalizeCityForSave(input.city);
+  if (!city) {
+    throw new Error('Meetup city is required.');
+  }
 
   return {
     title: input.title.trim(),
+    description: input.description?.trim() || null,
+    city,
+    location_name: input.locationName?.trim() || null,
     date: input.date,
     start_time: input.startTime,
     end_time: input.endTime,
@@ -229,6 +278,10 @@ export function normalizeMeetupRow(row) {
 const MEETUP_SELECT =
   '*, meetup_hosts(pet_id, pets(id, name, breed, photo_url, owner_id)), meetup_participants(pet_id, joined_at, pets(id, name, breed, photo_url, owner_id))';
 
+/** Feed-only payload — host names + RSVP pet ids without heavy pet embeds. */
+const FEED_MEETUP_SELECT =
+  'id, user_id, title, description, city, location_name, date, start_time, end_time, location_lat, location_lng, venue_lat, venue_lng, google_maps_link, participation_limit, open_to, custom_breed_spec, participant_count, status, created_at, meetup_hosts(pet_id, pets(id, name)), meetup_participants(pet_id, joined_at)';
+
 /**
  * Fetch meetups with normalized host and participant pet embeds.
  * @returns {Promise<MeetupRecord[]>}
@@ -237,6 +290,26 @@ export async function fetchMeetups() {
   const { data, error } = await supabase
     .from('meetups')
     .select(MEETUP_SELECT)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('[Supabase]', error);
+    throw error;
+  }
+
+  return (data ?? []).map(normalizeMeetupRow);
+}
+
+/**
+ * Lean meetup fetch for Feed — smaller nested embeds and no cancelled/completed rows.
+ * Detail screens still hydrate via fetchMeetupById.
+ * @returns {Promise<MeetupRecord[]>}
+ */
+export async function fetchMeetupsForFeed() {
+  const { data, error } = await supabase
+    .from('meetups')
+    .select(FEED_MEETUP_SELECT)
+    .or('status.is.null,status.eq.upcoming')
     .order('created_at', { ascending: false });
 
   if (error) {
@@ -424,7 +497,8 @@ export async function createMeetup(input) {
     throw new Error('Not signed in');
   }
 
-  const payload = buildMeetupInsertPayload({ ...input, userId: user.id });
+  let payload = buildMeetupInsertPayload({ ...input, userId: user.id });
+  payload = await applyVenueCoordsFromMapLink(payload, payload.google_maps_link);
 
   const petIds = resolveHostPetIds(input);
 
@@ -433,10 +507,14 @@ export async function createMeetup(input) {
   }
 
   const optionalColumns = [
+    'venue_lat',
+    'venue_lng',
+    'description',
     'participation_limit',
     'google_maps_link',
     'open_to',
     'custom_breed_spec',
+    'location_name',
   ];
 
   let attempt = { ...payload };
@@ -521,13 +599,22 @@ export async function updateMeetup(meetupId, input) {
     throw new Error('You can only edit meetups you created.');
   }
 
-  const payload = buildMeetupUpdatePayload(input);
+  let payload = buildMeetupUpdatePayload(input);
+  try {
+    payload = await applyVenueCoordsFromMapLink(payload, payload.google_maps_link);
+  } catch (coordError) {
+    console.warn('[Meetup] venue coords skipped on update:', coordError?.message ?? coordError);
+  }
 
   const optionalColumns = [
+    'venue_lat',
+    'venue_lng',
+    'description',
     'participation_limit',
     'google_maps_link',
     'open_to',
     'custom_breed_spec',
+    'location_name',
   ];
 
   let attempt = { ...payload };
@@ -558,25 +645,47 @@ export async function updateMeetup(meetupId, input) {
     throw error;
   }
 
-  const { error: deleteHostsError } = await supabase
+  const { data: existingHostRows, error: existingHostsError } = await supabase
     .from('meetup_hosts')
-    .delete()
+    .select('pet_id')
     .eq('meetup_id', meetupId);
 
-  if (deleteHostsError) {
-    console.error('[Supabase]', deleteHostsError);
-    throw deleteHostsError;
+  if (existingHostsError) {
+    console.error('[Supabase]', existingHostsError);
+    throw existingHostsError;
   }
 
-  const hostRows = petIds.map((petId) => ({
-    meetup_id: meetupId,
-    pet_id: petId,
-  }));
+  const existingHostIds = new Set(
+    (existingHostRows ?? []).map((row) => String(row.pet_id)).filter(Boolean),
+  );
+  const nextHostIds = new Set(petIds.map(String));
+  const hostsToRemove = [...existingHostIds].filter((id) => !nextHostIds.has(id));
+  const hostsToAdd = petIds.filter((petId) => !existingHostIds.has(String(petId)));
 
-  const { error: hostError } = await supabase.from('meetup_hosts').insert(hostRows);
-  if (hostError) {
-    console.error('[Supabase]', hostError);
-    throw hostError;
+  if (hostsToRemove.length > 0) {
+    const { error: deleteHostsError } = await supabase
+      .from('meetup_hosts')
+      .delete()
+      .eq('meetup_id', meetupId)
+      .in('pet_id', hostsToRemove);
+
+    if (deleteHostsError) {
+      console.error('[Supabase]', deleteHostsError);
+      throw deleteHostsError;
+    }
+  }
+
+  if (hostsToAdd.length > 0) {
+    const hostRows = hostsToAdd.map((petId) => ({
+      meetup_id: meetupId,
+      pet_id: petId,
+    }));
+
+    const { error: hostError } = await supabase.from('meetup_hosts').insert(hostRows);
+    if (hostError) {
+      console.error('[Supabase]', hostError);
+      throw hostError;
+    }
   }
 
   const refreshed = await fetchMeetupById(meetupId);
@@ -707,6 +816,8 @@ export async function joinMeetupWithPets(meetupId, petIdsArray, demoContext = {}
   if (!refreshedMeetup) {
     throw new Error('Meetup could not be refreshed.');
   }
+
+  await promptNotificationPermissionIfNeeded();
 
   return { joined: true, petIds, meetup: refreshedMeetup };
 }
@@ -865,6 +976,26 @@ export function extractMeetupParticipantPets(meetup) {
 }
 
 /**
+ * Participant pets visible to the signed-in viewer (blocked pets hidden).
+ * @param {object} meetup
+ * @param {Set<string>|string[]} blockedPetIds
+ */
+export function extractVisibleMeetupParticipantPets(meetup, blockedPetIds) {
+  return filterPetsNotBlocked(extractMeetupParticipantPets(meetup), blockedPetIds);
+}
+
+/**
+ * Host pet ids excluding pets blocked by the viewer.
+ * @param {object} meetup
+ * @param {Set<string>|string[]} blockedPetIds
+ */
+export function extractVisibleMeetupHostPetIds(meetup, blockedPetIds) {
+  return extractMeetupHostPetIds(meetup).filter(
+    (petId) => !isBlockedByPetIds([petId], blockedPetIds),
+  );
+}
+
+/**
  * Joiners only — pets in meetup_participants who are NOT hosts.
  * Hosts appear under "Hosted by"; this list is for RSVPs beyond hosting.
  * @returns {Array<{ id: string, name: string, breed?: string, photo_url?: string|null }>}
@@ -961,17 +1092,3 @@ export async function cancelMeetup(meetupId) {
   return { cancelled: true, meetupId: String(data[0].id) };
 }
 
-/** Whether a meetup date/time has passed. */
-export function isMeetupPast(meetup) {
-  if (!meetup?.date) {
-    return false;
-  }
-  if (meetup?.status === 'completed') {
-    return true;
-  }
-
-  const dateStr = String(meetup.date).split('T')[0];
-  const timeStr = String(meetup.end_time ?? meetup.start_time ?? '23:59:59').slice(0, 8);
-  const endAt = new Date(`${dateStr}T${timeStr}`);
-  return !Number.isNaN(endAt.getTime()) && endAt.getTime() < Date.now();
-}

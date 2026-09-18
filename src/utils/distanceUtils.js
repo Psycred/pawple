@@ -4,7 +4,8 @@
  * omit the label when GPS or venue coords are missing.
  */
 
-import { calculateDistance } from './locationUtils';
+import { getMeetupVenueCoords } from '../lib/meetupVenueCoords.js';
+import { calculateDistance } from './locationUtils.js';
 
 /**
  * Format a real distance for UI. Returns null when unavailable (honest omit).
@@ -19,20 +20,25 @@ export function formatDistanceLabel(km) {
   return `${n.toFixed(1)} km away`;
 }
 
+function hasViewerGps(viewerCoords) {
+  const lat = Number(viewerCoords?.latitude);
+  const lng = Number(viewerCoords?.longitude);
+  return Number.isFinite(lat) && Number.isFinite(lng);
+}
+
 /**
- * Distance (km) from viewer GPS to a meetup venue.
- * Requires both real venue coords and real viewer coords — no mock fallbacks.
+ * Distance (km) from viewer GPS to a meetup venue pin.
+ * Uses venue_lat/lng from maps-link unwrap first.
  * @returns {number|null}
  */
 export function computeHonestMeetupDistanceKm(meetup, viewerLat, viewerLng) {
-  const mLat = Number(meetup?.location_lat ?? meetup?.lat);
-  const mLng = Number(meetup?.location_lng ?? meetup?.lng);
+  const venue = getMeetupVenueCoords(meetup);
   const uLat = Number(viewerLat);
   const uLng = Number(viewerLng);
-  if (![mLat, mLng, uLat, uLng].every((n) => Number.isFinite(n))) {
+  if (!venue || !Number.isFinite(uLat) || !Number.isFinite(uLng)) {
     return null;
   }
-  return calculateDistance(uLat, uLng, mLat, mLng);
+  return calculateDistance(uLat, uLng, venue.latitude, venue.longitude);
 }
 
 /**
@@ -57,4 +63,24 @@ export function withHonestMeetupDistance(meetup, viewerCoords) {
     return rest;
   }
   return { ...meetup, distanceKm };
+}
+
+/**
+ * Precompute distanceKm on meetup rows for feed / carousel consumers.
+ * MeetupCard reads meetup.distanceKm when present (display wired separately).
+ */
+export function enrichMeetupsWithVenueDistance(meetups = [], viewerLocation = null) {
+  if (!Array.isArray(meetups) || !meetups.length) {
+    return meetups;
+  }
+  const viewerCoords = hasViewerGps(viewerLocation)
+    ? {
+        latitude: viewerLocation.latitude,
+        longitude: viewerLocation.longitude,
+      }
+    : null;
+  if (!viewerCoords) {
+    return meetups;
+  }
+  return meetups.map((meetup) => withHonestMeetupDistance(meetup, viewerCoords));
 }

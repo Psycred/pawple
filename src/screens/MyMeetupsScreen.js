@@ -12,10 +12,13 @@ import {
   View,
 } from 'react-native';
 import MeetupCard from '../components/MeetupCard';
+import MeetupUnavailableModal from '../components/MeetupUnavailableModal';
 import LoadErrorRetry from '../components/LoadErrorRetry';
+import { openMeetupIfAvailable } from '../lib/openMeetupIfAvailable';
 import ScreenWrapper from '../components/ScreenWrapper';
 import { theme } from '../config/theme';
 import { useActivePet } from '../contexts/ActivePetContext';
+import { useRuntimeThemeColors } from '../hooks/useRuntimeThemeColors';
 import { getDemoMeetupsForFeed } from '../data/demoFeed';
 import {
   applyDemoMeetupRsvp,
@@ -27,13 +30,8 @@ import {
   sortMeetupsByDateAsc,
 } from '../services/meetups';
 
-const SCREEN_BG = '#FFFCF8';
-const SEGMENT_CONTAINER = '#F5F5F5';
 const SEGMENT_ACTIVE_BG = '#9EB8A0';
 const SEGMENT_ACTIVE_TEXT = '#FFFFFF';
-const SEGMENT_INACTIVE_TEXT = '#6B625C';
-const EMPTY_TEXT = '#888888';
-const SKELETON = '#E8E4DF';
 
 const HORIZONTAL_PADDING = 24;
 const CARD_GAP = 16;
@@ -80,9 +78,12 @@ function getDemoMembershipMeetups(petId) {
   };
 }
 
-function MeetupSegmentedControl({ activeTab, onSelect }) {
+function MeetupSegmentedControl({ activeTab, onSelect, surfaces }) {
   return (
-    <View style={styles.segmentContainer} accessibilityRole="tablist">
+    <View
+      style={[styles.segmentContainer, { backgroundColor: surfaces.profileTraitChipBackground }]}
+      accessibilityRole="tablist"
+    >
       {TABS.map((tab) => {
         const active = activeTab === tab.key;
         return (
@@ -94,7 +95,14 @@ function MeetupSegmentedControl({ activeTab, onSelect }) {
             accessibilityState={{ selected: active }}
             accessibilityLabel={tab.label}
           >
-            <Text style={[styles.segmentText, active && styles.segmentTextActive]} allowFontScaling>
+            <Text
+              style={[
+                styles.segmentText,
+                !active && { color: surfaces.meetupMetaText },
+                active && styles.segmentTextActive,
+              ]}
+              allowFontScaling
+            >
               {tab.label}
             </Text>
           </Pressable>
@@ -104,11 +112,13 @@ function MeetupSegmentedControl({ activeTab, onSelect }) {
   );
 }
 
-function SkeletonCard({ opacity }) {
-  return <Animated.View style={[styles.skeletonCard, { opacity }]} />;
+function SkeletonCard({ opacity, fillColor }) {
+  return (
+    <Animated.View style={[styles.skeletonCard, { backgroundColor: fillColor, opacity }]} />
+  );
 }
 
-function MeetupListSkeleton() {
+function MeetupListSkeleton({ fillColor }) {
   const pulse = useRef(new Animated.Value(0.45)).current;
 
   useEffect(() => {
@@ -124,17 +134,17 @@ function MeetupListSkeleton() {
 
   return (
     <View style={styles.skeletonList}>
-      <SkeletonCard opacity={pulse} />
-      <SkeletonCard opacity={pulse} />
-      <SkeletonCard opacity={pulse} />
+      <SkeletonCard opacity={pulse} fillColor={fillColor} />
+      <SkeletonCard opacity={pulse} fillColor={fillColor} />
+      <SkeletonCard opacity={pulse} fillColor={fillColor} />
     </View>
   );
 }
 
-function EmptyState() {
+function EmptyState({ surfaces }) {
   return (
-    <View style={styles.emptyWrap}>
-      <Text style={styles.emptyText} allowFontScaling>
+    <View style={[styles.emptyWrap, { backgroundColor: surfaces.backgroundCard }]}>
+      <Text style={[styles.emptyText, { color: surfaces.profileHeroBioColor }]} allowFontScaling>
         Nothing yet.
       </Text>
     </View>
@@ -147,6 +157,7 @@ function EmptyState() {
 export default function MyMeetupsScreen({ navigation }) {
   const rootNavigation = useNavigation();
   const { activePetId } = useActivePet();
+  const surfaces = useRuntimeThemeColors();
 
   const [activeTab, setActiveTab] = useState('going');
   const [goingMeetups, setGoingMeetups] = useState([]);
@@ -154,6 +165,7 @@ export default function MyMeetupsScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState(false);
+  const [unavailableOpen, setUnavailableOpen] = useState(false);
   const [manageMeetup, setManageMeetup] = useState(null);
   const loadRequestRef = useRef(0);
 
@@ -228,9 +240,11 @@ export default function MyMeetupsScreen({ navigation }) {
 
   const openMeetupDetails = useCallback(
     (meetup) => {
-      stackNavigation.navigate('MeetupDetailsScreen', {
+      openMeetupIfAvailable({
+        navigation: stackNavigation,
         meetupId: meetup?.id,
         meetup,
+        onUnavailable: () => setUnavailableOpen(true),
       });
     },
     [stackNavigation],
@@ -254,16 +268,11 @@ export default function MyMeetupsScreen({ navigation }) {
         meetup={item}
         actionVariant={actionVariant}
         onManage={actionVariant === 'hosting' ? setManageMeetup : undefined}
-        onPress={(meetup) =>
-          stackNavigation.navigate('MeetupDetailsScreen', {
-            meetupId: meetup.id,
-            meetup,
-          })
-        }
+        onPress={openMeetupDetails}
         style={index < activeMeetups.length - 1 ? styles.meetupCard : styles.meetupCardLast}
       />
     ),
-    [actionVariant, activeMeetups.length, stackNavigation],
+    [actionVariant, activeMeetups.length, openMeetupDetails],
   );
 
   return (
@@ -271,15 +280,19 @@ export default function MyMeetupsScreen({ navigation }) {
       title="My Meetups"
       showBackButton
       onClose={() => stackNavigation.goBack()}
-      backgroundColor={SCREEN_BG}
-      contentStyle={styles.screenContent}
-      titleStyle={styles.headerTitle}
+      backgroundColor={surfaces.meetupCardBackground}
+      contentStyle={[styles.screenContent, { backgroundColor: surfaces.meetupCardBackground }]}
+      titleStyle={[styles.headerTitle, { color: surfaces.profileHeroNameColor }]}
     >
       <View style={styles.body}>
-        <MeetupSegmentedControl activeTab={activeTab} onSelect={setActiveTab} />
+        <MeetupSegmentedControl
+          activeTab={activeTab}
+          onSelect={setActiveTab}
+          surfaces={surfaces}
+        />
 
         {loading ? (
-          <MeetupListSkeleton />
+          <MeetupListSkeleton fillColor={surfaces.meetupSkeletonFill} />
         ) : loadError ? (
           <ScrollView
             contentContainerStyle={styles.emptyScrollContent}
@@ -294,7 +307,7 @@ export default function MyMeetupsScreen({ navigation }) {
             showsVerticalScrollIndicator={false}
             refreshControl={refreshControl}
           >
-            <EmptyState />
+            <EmptyState surfaces={surfaces} />
           </ScrollView>
         ) : (
           <FlatList
@@ -316,8 +329,12 @@ export default function MyMeetupsScreen({ navigation }) {
         onRequestClose={() => setManageMeetup(null)}
       >
         <Pressable style={styles.sheetBackdrop} onPress={() => setManageMeetup(null)} />
-        <View style={styles.sheet}>
-          <Text style={styles.sheetTitle} numberOfLines={2} allowFontScaling>
+        <View style={[styles.sheet, { backgroundColor: surfaces.meetupCardBackground }]}>
+          <Text
+            style={[styles.sheetTitle, { color: surfaces.profileHeroNameColor }]}
+            numberOfLines={2}
+            allowFontScaling
+          >
             {manageMeetup?.title || 'Meetup'}
           </Text>
           <Pressable
@@ -328,7 +345,7 @@ export default function MyMeetupsScreen({ navigation }) {
               openMeetupDetails(meetup);
             }}
           >
-            <Text style={styles.sheetRowText} allowFontScaling>
+            <Text style={[styles.sheetRowText, { color: surfaces.profileHeroNameColor }]} allowFontScaling>
               View details
             </Text>
           </Pressable>
@@ -336,12 +353,17 @@ export default function MyMeetupsScreen({ navigation }) {
             style={({ pressed }) => [styles.sheetCancel, pressed && styles.pressed]}
             onPress={() => setManageMeetup(null)}
           >
-            <Text style={styles.sheetCancelText} allowFontScaling>
+            <Text style={[styles.sheetCancelText, { color: surfaces.meetupMetaText }]} allowFontScaling>
               Close
             </Text>
           </Pressable>
         </View>
       </Modal>
+
+      <MeetupUnavailableModal
+        visible={unavailableOpen}
+        onClose={() => setUnavailableOpen(false)}
+      />
     </ScreenWrapper>
   );
 }
@@ -349,13 +371,11 @@ export default function MyMeetupsScreen({ navigation }) {
 const styles = StyleSheet.create({
   screenContent: {
     flex: 1,
-    backgroundColor: SCREEN_BG,
   },
   headerTitle: {
     fontFamily: theme.fonts.semibold,
     fontSize: 18,
     lineHeight: 24,
-    color: '#3A312E',
   },
   body: {
     flex: 1,
@@ -363,7 +383,6 @@ const styles = StyleSheet.create({
   },
   segmentContainer: {
     flexDirection: 'row',
-    backgroundColor: SEGMENT_CONTAINER,
     borderRadius: 20,
     padding: 4,
     marginTop: 8,
@@ -384,7 +403,6 @@ const styles = StyleSheet.create({
     fontFamily: theme.fonts.medium,
     fontSize: 14,
     lineHeight: 20,
-    color: SEGMENT_INACTIVE_TEXT,
   },
   segmentTextActive: {
     color: SEGMENT_ACTIVE_TEXT,
@@ -407,7 +425,6 @@ const styles = StyleSheet.create({
   skeletonCard: {
     height: 280,
     borderRadius: 20,
-    backgroundColor: SKELETON,
   },
   emptyWrap: {
     alignItems: 'center',
@@ -415,13 +432,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.spacing.lg,
     paddingVertical: theme.spacing.xl,
     borderRadius: theme.borderRadius.lg,
-    backgroundColor: theme.colors.background.card,
   },
   emptyText: {
     fontFamily: theme.fonts.body,
     fontSize: 14,
     lineHeight: 20,
-    color: EMPTY_TEXT,
     textAlign: 'center',
   },
   sheetBackdrop: {
@@ -429,7 +444,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.35)',
   },
   sheet: {
-    backgroundColor: SCREEN_BG,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     paddingHorizontal: 24,
@@ -440,7 +454,6 @@ const styles = StyleSheet.create({
     fontFamily: theme.fonts.semibold,
     fontSize: 18,
     lineHeight: 24,
-    color: '#3A312E',
     marginBottom: 16,
   },
   sheetRow: {
@@ -450,7 +463,6 @@ const styles = StyleSheet.create({
   sheetRowText: {
     fontFamily: theme.fonts.body,
     fontSize: 16,
-    color: '#3A312E',
   },
   sheetCancel: {
     marginTop: 16,
@@ -461,7 +473,6 @@ const styles = StyleSheet.create({
   sheetCancelText: {
     fontFamily: theme.fonts.medium,
     fontSize: 16,
-    color: SEGMENT_INACTIVE_TEXT,
   },
   pressed: {
     opacity: theme.opacity.pressedUi,

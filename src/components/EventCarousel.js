@@ -1,6 +1,7 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import { Dimensions, ScrollView, StyleSheet, View } from 'react-native';
 import { theme } from '../config/theme';
+import { useRuntimeThemeColors } from '../hooks/useRuntimeThemeColors';
 import MeetupCard from './MeetupCard';
 
 /**
@@ -19,6 +20,7 @@ export default function EventCarousel({
   );
   const { width: windowWidth } = Dimensions.get('window');
   const [activeIndex, setActiveIndex] = useState(0);
+  const surfaces = useRuntimeThemeColors();
 
   const cardWidth = windowWidth * theme.feed.carouselCardWidthRatio;
   const cardGap = theme.feed.carouselCardGap;
@@ -77,7 +79,9 @@ export default function EventCarousel({
               style={[
                 styles.dot,
                 index === slides.length - 1 && styles.dotLast,
-                index === activeIndex ? styles.dotActive : styles.dotInactive,
+                index === activeIndex
+                  ? styles.dotActive
+                  : { backgroundColor: surfaces.textMuted },
               ]}
               accessibilityLabel={
                 index === activeIndex
@@ -127,8 +131,5 @@ const styles = StyleSheet.create({
   },
   dotActive: {
     backgroundColor: theme.colors.brand.sage.value,
-  },
-  dotInactive: {
-    backgroundColor: theme.colors.text.muted.light,
   },
 });

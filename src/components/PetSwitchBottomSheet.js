@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { Animated, FlatList, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { theme } from '../config/theme';
+import { useRuntimeThemeColors } from '../hooks/useRuntimeThemeColors';
 import PetContextSelector from './PetContextSelector';
 
 const { avatarSize } = theme.feed;
@@ -18,6 +19,7 @@ export default function PetSwitchBottomSheet({
   onAddPet,
 }) {
   const insets = useSafeAreaInsets();
+  const surfaces = useRuntimeThemeColors();
   const backdrop = useRef(new Animated.Value(0)).current;
   const sheetY = useRef(new Animated.Value(320)).current;
 
@@ -69,21 +71,28 @@ export default function PetSwitchBottomSheet({
           style={[
             styles.sheet,
             {
+              backgroundColor: surfaces.backgroundElevated,
               paddingBottom: Math.max(insets.bottom, theme.spacing.md),
               transform: [{ translateY: sheetY }],
             },
           ]}
         >
-          <Text style={styles.sheetTitle}>Your pets</Text>
+          <Text style={[styles.sheetTitle, { color: surfaces.textPrimary }]}>Your pets</Text>
           <FlatList
             data={pets}
             keyExtractor={(item) => item.id}
-            ItemSeparatorComponent={() => <View style={styles.sep} />}
+            ItemSeparatorComponent={() => (
+              <View style={[styles.sep, { backgroundColor: surfaces.border }]} />
+            )}
             renderItem={({ item }) => {
               const active = item.id === activePetId;
               return (
                 <Pressable
-                  style={({ pressed }) => [styles.row, active && styles.rowActive, pressed && styles.rowPressed]}
+                  style={({ pressed }) => [
+                    styles.row,
+                    active && [styles.rowActive, { backgroundColor: surfaces.backgroundScreen }],
+                    pressed && styles.rowPressed,
+                  ]}
                   onPress={() => handleSelect(item.id)}
                   accessibilityRole="button"
                   accessibilityState={{ selected: active }}
@@ -94,7 +103,7 @@ export default function PetSwitchBottomSheet({
                     size={avatarSize + 4}
                     style={styles.rowAvatar}
                   />
-                  <Text style={styles.rowName}>{item.name}</Text>
+                  <Text style={[styles.rowName, { color: surfaces.textPrimary }]}>{item.name}</Text>
                 </Pressable>
               );
             }}
@@ -126,7 +135,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.35)',
   },
   sheet: {
-    backgroundColor: theme.colors.card.light,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     paddingTop: theme.spacing.lg,
@@ -137,12 +145,10 @@ const styles = StyleSheet.create({
   sheetTitle: {
     fontFamily: theme.fonts.heading,
     fontSize: theme.fontSizes.md,
-    color: theme.colors.text.primary.light,
     marginBottom: theme.spacing.md,
   },
   sep: {
     height: StyleSheet.hairlineWidth,
-    backgroundColor: theme.colors.border.light,
   },
   row: {
     flexDirection: 'row',
@@ -151,7 +157,6 @@ const styles = StyleSheet.create({
     minHeight: 56,
   },
   rowActive: {
-    backgroundColor: theme.colors.background.light,
     marginHorizontal: -theme.spacing.lg,
     paddingHorizontal: theme.spacing.lg,
     borderRadius: theme.borderRadius.md,
@@ -165,7 +170,6 @@ const styles = StyleSheet.create({
   rowName: {
     fontFamily: theme.fonts.body,
     fontSize: theme.fontSizes.md,
-    color: theme.colors.text.primary.light,
     fontWeight: theme.fontWeights.medium,
   },
   addBtn: {

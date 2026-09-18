@@ -1,16 +1,17 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import React from 'react';
-import { Alert, Linking, Platform, ToastAndroid } from 'react-native';
+import { Alert, Linking } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { supabase } from '../config/supabase';
 import AccountSheet from './AccountSheet';
+import { useAuth } from '../contexts/AuthContext';
 
 /**
  * Compatibility wrapper around the account settings sheet.
  */
 export default function UserSheet(props) {
   const navigation = useNavigation();
+  const { openLogoutConfirm, openDeleteConfirm } = useAuth();
   const {
+    onClose,
     onManagePets: _onManagePetsFromProps,
     onLocationPreferences: _onLocationPreferencesFromProps,
     onPrivacy: _onPrivacyFromProps,
@@ -19,6 +20,7 @@ export default function UserSheet(props) {
     onAboutPawple: _onAboutPawpleFromProps,
     onInviteFriends: _onInviteFriendsFromProps,
     onDeleteAccount: _onDeleteAccountFromProps,
+    onLogout: _onLogoutFromProps,
     ...restProps
   } = props;
 
@@ -73,7 +75,6 @@ export default function UserSheet(props) {
 
   const handleTermsPolicy = () => {
     console.log('[Settings] Opened Terms & Privacy Policy');
-    // Canonical screens only — retired conflicting Legal route content.
     Alert.alert('Legal', 'Choose what to read', [
       {
         text: 'Terms of Service',
@@ -99,44 +100,20 @@ export default function UserSheet(props) {
     console.log('[Settings] Invite Friends tapped');
   };
 
-  const showDeletionToast = () => {
-    const message = 'Account deletion requested (stub)';
-    if (Platform.OS === 'android') {
-      ToastAndroid.show(message, ToastAndroid.SHORT);
-      return;
-    }
-    Alert.alert('Account', message);
+  const handleDeleteAccount = () => {
+    onClose?.();
+    openDeleteConfirm();
   };
 
-  const handleDeleteAccount = () => {
-    Alert.alert(
-      'Delete account?',
-      'This will permanently remove your profile, pets, and data. This cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            console.log('[Settings] Delete account requested (stub)');
-            await AsyncStorage.clear();
-            await supabase.auth.signOut();
-            showDeletionToast();
-            const stackNav = navigation.getParent?.()?.getParent?.();
-            if (stackNav?.navigate) {
-              stackNav.navigate('Auth');
-              return;
-            }
-            navigation.navigate('Auth');
-          },
-        },
-      ],
-    );
+  const handleLogout = () => {
+    onClose?.();
+    openLogoutConfirm();
   };
 
   return (
     <AccountSheet
       {...restProps}
+      onClose={onClose}
       onManagePets={handleManagePets}
       onLocationPreferences={handleLocationPreferences}
       onPrivacy={handlePrivacy}
@@ -145,6 +122,7 @@ export default function UserSheet(props) {
       onAboutPawple={handleAboutPawple}
       onInviteFriends={handleInviteFriends}
       onDeleteAccount={handleDeleteAccount}
+      onLogout={handleLogout}
       appVersionLabel="1.0.0 (beta)"
     />
   );

@@ -10,8 +10,9 @@
  * Usage:
  *   npm run test:rls
  *
- * Creates two ephemeral test users, seeds minimal rows, asserts cross-tenant
- * boundaries and anon denial, then deletes test auth users via service role.
+ * Creates ephemeral test users (A/B, plus C in the mating section), seeds
+ * minimal rows, asserts cross-tenant boundaries and anon denial, then deletes
+ * test auth users via service role.
  */
 
 const { createClient } = require('@supabase/supabase-js');
@@ -23,6 +24,7 @@ const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const TEST_PASSWORD = 'PawpleRlsTest!2026';
 const TEST_EMAIL_A = `rls-test-a-${Date.now()}@pawple-test.invalid`;
 const TEST_EMAIL_B = `rls-test-b-${Date.now()}@pawple-test.invalid`;
+const TEST_EMAIL_C = `rls-test-c-${Date.now()}@pawple-test.invalid`;
 
 let failures = 0;
 let passes = 0;
@@ -64,6 +66,12 @@ async function main() {
     if (!SERVICE_KEY) console.error('  - SUPABASE_SERVICE_ROLE_KEY');
     console.error('');
     console.error('Run against staging scratch project only. See docs/SUPABASE_DB_RECREATE.md');
+    process.exit(1);
+  }
+
+  if (/pexurgcfkxkouthuhlnb/i.test(SUPABASE_URL)) {
+    console.error('Refusing to run RLS tests against live pexurgcfkxkouthuhlnb (PAW-170).');
+    console.error('Point SUPABASE_URL at a staging or scratch project.');
     process.exit(1);
   }
 
@@ -241,19 +249,22 @@ async function main() {
       .insert({
         user_id: userBId,
         title: 'Meetup B',
+        description: 'A calm test meetup.',
+        city: 'Meetup City B',
         date: '2026-06-01',
         start_time: '10:00:00',
         end_time: '12:00:00',
         location_lat: 12.97,
         location_lng: 77.59,
       })
-      .select('id, city')
+      .select('id, city, description')
       .single();
     assertNoError(meetupBErr, 'User B creates meetup');
     assert(
-      meetupB?.city === 'City B',
-      'meetups.city derived from creator profiles.city at insert (PAW-96)',
+      meetupB?.city === 'Meetup City B',
+      'meetups.city uses the creator-selected Meetup city at insert',
     );
+    assert(meetupB?.description === 'A calm test meetup.', 'Meetup About text is stored');
 
     console.log('');
     console.log('Anon / public denial (B)');
@@ -403,7 +414,7 @@ async function main() {
     assertNoError(likeOwnErr, 'User A can like own-visible moment');
 
     console.log('');
-    console.log('Meetups (Product Contract §7 + PAW-96 city-only)');
+    console.log('Meetups (Product Contract §7 + Step 6 creator-selected city)');
 
     const { error: meetupCoordSelectErr } = await clientA
       .from('meetups')
@@ -419,7 +430,7 @@ async function main() {
       .maybeSingle();
     assertNoError(meetupVenueErr, 'Authenticated non-creator can read meetup bulletin fields');
     assert(Boolean(meetupVenue), 'Meetup row visible to authenticated users');
-    assert(meetupVenue?.city === 'City B', 'Meetup city visible for bulletin discovery');
+    assert(meetupVenue?.city === 'Meetup City B', 'Meetup city visible for bulletin discovery');
 
     const { error: hostForeignPetErr } = await clientA.from('meetup_hosts').insert({
       meetup_id: meetupB.id,
@@ -530,7 +541,7 @@ async function main() {
     assertNoError(deleteBlockErr, 'User A can delete own block');
 
     console.log('');
-    console.log('Introduction chat — mutual Paw + link block (PAW-100)');
+    console.log('Introduction chat — mutual Paw + link block + repair wave (PAW-100 / PAW-207)');
 
     // Fail-closed age attestation required for mating RPCs / message INSERT.
     const { error: ageAErr } = await admin
@@ -545,15 +556,23 @@ async function main() {
       .eq('id', userBId);
     assertNoError(ageBErr, 'Service role sets User B age_attested_adult');
 
-    const { error: locAErr } = await admin
+    // Both fixtures get a fresh coarse location (CTO map §4.16).
+    const nearbyLoc = {
+      last_location_lat: 12.972,
+      last_location_lng: 77.595,
+      location_updated_at: new Date().toISOString(),
+    };
+    const { error: locAErr } = await admin.from('profiles').update(nearbyLoc).eq('id', userAId);
+    assertNoError(locAErr, 'Service role sets User A fresh location for mating RPCs');
+    const { error: locBErr } = await admin
       .from('profiles')
       .update({
-        last_location_lat: 12.972,
-        last_location_lng: 77.595,
+        last_location_lat: 12.973,
+        last_location_lng: 77.596,
         location_updated_at: new Date().toISOString(),
       })
-      .eq('id', userAId);
-    assertNoError(locAErr, 'Service role sets User A fresh location for mating RPCs');
+      .eq('id', userBId);
+    assertNoError(locBErr, 'Service role sets User B fresh location for mating RPCs');
 
     const { data: petAMating, error: petAMatingErr } = await clientA
       .from('pets')
@@ -580,6 +599,111 @@ async function main() {
       .select('id')
       .single();
     assertNoError(petBMatingErr, 'User B creates mating-eligible pet');
+
+    const { data: userCAuth, error: userCCreateErr } = await admin.auth.admin.createUser({
+      email: TEST_EMAIL_C,
+      password: TEST_PASSWORD,
+      email_confirm: true,
+    });
+    assertNoError(userCCreateErr, 'Service role creates User C for isolation / 100 km');
+    const userCId = userCAuth.user.id;
+    createdUserIds.push(userCId);
+
+    const clientC = createClient(SUPABASE_URL, ANON_KEY, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+    await signInAs(clientC, TEST_EMAIL_C);
+    await clientC.from('profiles').upsert({
+      id: userCId,
+      name: 'RLS Test C',
+      city: 'City C',
+      email: TEST_EMAIL_C,
+    });
+    const { error: attestCErr } = await clientC.rpc('attest_adult_account', {
+      p_birth_date: ADULT_BIRTH_DATE,
+    });
+    assertNoError(attestCErr, 'User C attests adult account');
+    const { error: locCErr } = await admin
+      .from('profiles')
+      .update({
+        last_location_lat: 51.5074,
+        last_location_lng: -0.1278,
+        location_updated_at: new Date().toISOString(),
+      })
+      .eq('id', userCId);
+    assertNoError(locCErr, 'Service role sets User C far location (outside 100 km)');
+
+    const { data: petCFar, error: petCFarErr } = await clientC
+      .from('pets')
+      .insert({
+        owner_id: userCId,
+        name: 'Pet C Far',
+        breed: 'Labrador',
+        gender: 'female',
+        is_looking_for_companion: true,
+      })
+      .select('id')
+      .single();
+    assertNoError(petCFarErr, 'User C creates far mating-eligible pet');
+
+    const { data: discoverCtx, error: discoverCtxErr } = await clientA.rpc(
+      'get_mating_discovery_context',
+      { viewer_pet_id: petAMating.id },
+    );
+    assertNoError(discoverCtxErr, 'Owner can read discovery context');
+    const ctxRow = Array.isArray(discoverCtx) ? discoverCtx[0] : discoverCtx;
+    assert(ctxRow?.opted_in === true, 'Discovery context opted_in is true');
+    assert(ctxRow?.location_fresh === true, 'Discovery context location_fresh is true');
+    assert(
+      ctxRow?.last_location_lat == null && ctxRow?.last_location_lng == null,
+      'Discovery context does not expose coordinates',
+    );
+
+    const { data: beforeMatchOpp, error: beforeMatchOppErr } = await clientA.rpc(
+      'get_mating_opportunities',
+      { viewer_pet_id: petAMating.id },
+    );
+    assertNoError(beforeMatchOppErr, 'Discovery RPC succeeds before mutual Paw');
+    const nearbyIds = (beforeMatchOpp ?? []).map((row) => row.pet_id);
+    const nearbyB = (beforeMatchOpp ?? []).find((row) => row.pet_id === petBMating.id);
+    assert(Boolean(nearbyB), 'Discovery includes eligible pet within 100 km');
+    assert(
+      typeof nearbyB?.distance_km === 'number' && nearbyB.distance_km <= 100,
+      'Discovery distance_km is honest and within 100 km',
+    );
+    assert(
+      nearbyB?.last_location_lat == null && nearbyB?.last_location_lng == null,
+      'Discovery does not return raw coordinates',
+    );
+    assert(!nearbyIds.includes(petCFar.id), 'Discovery excludes pet outside 100 km');
+
+    const staleAt = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+    const { error: staleLocErr } = await admin
+      .from('profiles')
+      .update({ location_updated_at: staleAt })
+      .eq('id', userAId);
+    assertNoError(staleLocErr, 'Service role can stale User A location');
+
+    const { data: staleCtx, error: staleCtxErr } = await clientA.rpc(
+      'get_mating_discovery_context',
+      { viewer_pet_id: petAMating.id },
+    );
+    assertNoError(staleCtxErr, 'Discovery context readable when location is stale');
+    const staleCtxRow = Array.isArray(staleCtx) ? staleCtx[0] : staleCtx;
+    assert(staleCtxRow?.location_fresh === false, 'Stale location reports location_fresh false');
+
+    const { data: staleOpp, error: staleOppErr } = await clientA.rpc(
+      'get_mating_opportunities',
+      { viewer_pet_id: petAMating.id },
+    );
+    assertNoError(staleOppErr, 'Stale location discovery does not error');
+    assert((staleOpp ?? []).length === 0, 'Stale location discovery returns empty (no fabricated matches)');
+
+    const { error: restoreLocErr } = await admin
+      .from('profiles')
+      .update({ location_updated_at: new Date().toISOString() })
+      .eq('id', userAId);
+    assertNoError(restoreLocErr, 'Service role restores User A fresh location');
 
     const { error: pawABErr } = await clientA.rpc('express_paw', {
       from_pet_id: petAMating.id,
@@ -645,6 +769,213 @@ async function main() {
       body: 'Sounds good — meet at the park this weekend?',
     });
     assertNoError(plainMsgErr, 'Plain text message sends in open mutual-Paw channel');
+
+    const { data: afterMatchOpp, error: afterMatchOppErr } = await clientA.rpc(
+      'get_mating_opportunities',
+      { viewer_pet_id: petAMating.id },
+    );
+    assertNoError(afterMatchOppErr, 'Discovery RPC succeeds after mutual Paw');
+    assert(
+      !(afterMatchOpp ?? []).some((row) => row.pet_id === petBMating.id),
+      'Discovery excludes pets with an open mutual-Paw introduction',
+    );
+
+    const { data: listA, error: listAErr } = await clientA.rpc('list_my_introduction_channels');
+    assertNoError(listAErr, 'Participant can list own open introduction channels');
+    assert(
+      (listA ?? []).some((row) => row.channel_id === introChannel.id),
+      'Chat list includes the caller open channel',
+    );
+    const listARow = (listA ?? []).find((row) => row.channel_id === introChannel.id);
+    assert(Boolean(listARow?.pet_low_name) && Boolean(listARow?.pet_high_name), 'Chat list returns pet names');
+    assert(
+      listARow?.last_location_lat == null && listARow?.last_location_lng == null,
+      'Chat list does not expose coordinates',
+    );
+    assert(
+      typeof listARow?.distance_km === 'number' || listARow?.distance_km == null,
+      'Chat list distance is approximate km or omitted',
+    );
+
+    const { data: listB, error: listBErr } = await clientB.rpc('list_my_introduction_channels');
+    assertNoError(listBErr, 'Counterpart can list the same open channel');
+    assert(
+      (listB ?? []).some((row) => row.channel_id === introChannel.id),
+      'Counterpart chat list includes the pair channel',
+    );
+
+    const { data: listC, error: listCErr } = await clientC.rpc('list_my_introduction_channels');
+    assertNoError(listCErr, 'Unrelated parent can call the chat list RPC');
+    assert(
+      !(listC ?? []).some((row) => row.channel_id === introChannel.id),
+      'Chat list does not leak another pair channel',
+    );
+
+    const { data: crossChannel, error: crossChannelErr } = await clientC
+      .from('mating_introduction_channels')
+      .select('id')
+      .eq('id', introChannel.id);
+    assertNoError(crossChannelErr, 'Third-party channel SELECT does not error');
+    assert((crossChannel ?? []).length === 0, 'User C cannot SELECT A–B channel');
+
+    const { error: crossMsgErr } = await clientC.from('mating_introduction_messages').insert({
+      channel_id: introChannel.id,
+      sender_user_id: userCId,
+      body: 'Should not send',
+    });
+    assertError(crossMsgErr, 'User C cannot INSERT on A–B channel');
+
+    const { error: anonEligibleErr } = await anonClient.rpc('mating_eligible_pair', {
+      p_from_pet_id: petAMating.id,
+      p_to_pet_id: petBMating.id,
+      p_viewer_lat: 12.972,
+      p_viewer_lng: 77.595,
+      p_viewer_loc_fresh: true,
+      p_radius_km: 100,
+    });
+    assertError(anonEligibleErr, 'Anon cannot EXECUTE mating_eligible_pair');
+
+    const { error: anonAgeErr } = await anonClient.rpc('assert_mating_age_ok', {
+      p_user_id: userAId,
+    });
+    assertError(anonAgeErr, 'Anon cannot EXECUTE assert_mating_age_ok');
+
+    const { error: anonMutualErr } = await anonClient.rpc('pets_have_mutual_paw', {
+      pet_x: petAMating.id,
+      pet_y: petBMating.id,
+    });
+    assertError(anonMutualErr, 'Anon cannot EXECUTE pets_have_mutual_paw');
+
+    const { error: authEligibleErr } = await clientA.rpc('mating_eligible_pair', {
+      p_from_pet_id: petAMating.id,
+      p_to_pet_id: petBMating.id,
+      p_viewer_lat: 12.972,
+      p_viewer_lng: 77.595,
+      p_viewer_loc_fresh: true,
+      p_radius_km: 100,
+    });
+    assertError(authEligibleErr, 'Authenticated client cannot EXECUTE mating_eligible_pair');
+
+    const { error: authAgeErr } = await clientA.rpc('assert_mating_age_ok', {
+      p_user_id: userAId,
+    });
+    assertError(authAgeErr, 'Authenticated client cannot EXECUTE assert_mating_age_ok');
+
+    const { data: petASib, error: petASibErr } = await clientA
+      .from('pets')
+      .insert({
+        owner_id: userAId,
+        name: 'Pet A Sibling',
+        breed: 'Beagle',
+        gender: 'female',
+        is_looking_for_companion: true,
+      })
+      .select('id')
+      .single();
+    assertNoError(petASibErr, 'User A creates sibling companion pet');
+
+    const { data: petBSib, error: petBSibErr } = await clientB
+      .from('pets')
+      .insert({
+        owner_id: userBId,
+        name: 'Pet B Sibling',
+        breed: 'Beagle',
+        gender: 'male',
+        is_looking_for_companion: true,
+      })
+      .select('id')
+      .single();
+    assertNoError(petBSibErr, 'User B creates sibling companion pet');
+
+    const { error: pawSibABErr } = await clientA.rpc('express_paw', {
+      from_pet_id: petASib.id,
+      to_pet_id: petBSib.id,
+    });
+    assertNoError(pawSibABErr, 'Sibling pair: User A expresses Paw');
+    const { error: pawSibBAErr } = await clientB.rpc('express_paw', {
+      from_pet_id: petBSib.id,
+      to_pet_id: petASib.id,
+    });
+    assertNoError(pawSibBAErr, 'Sibling pair: mutual Paw opens second channel');
+
+    const sibLow = petASib.id < petBSib.id ? petASib.id : petBSib.id;
+    const sibHigh = petASib.id < petBSib.id ? petBSib.id : petASib.id;
+    const { data: sibChannel, error: sibChannelErr } = await clientA
+      .from('mating_introduction_channels')
+      .select('id, status')
+      .eq('pet_low_id', sibLow)
+      .eq('pet_high_id', sibHigh)
+      .maybeSingle();
+    assertNoError(sibChannelErr, 'Sibling introduction channel is readable');
+    assert(sibChannel?.status === 'open', 'Sibling channel is open');
+
+    const { error: optOffErr } = await clientA
+      .from('pets')
+      .update({ is_looking_for_companion: false })
+      .eq('id', petAMating.id);
+    assertNoError(optOffErr, 'User A turns companionship OFF for pet A only');
+
+    const { data: frozenChannel, error: frozenChannelErr } = await clientA
+      .from('mating_introduction_channels')
+      .select('id, status, freeze_reason')
+      .eq('id', introChannel.id)
+      .maybeSingle();
+    assertNoError(frozenChannelErr, 'Opted-out pet channel remains SELECTable');
+    assert(frozenChannel?.status === 'frozen', 'Companionship OFF freezes that pet channel');
+    assert(frozenChannel?.freeze_reason === 'opt_out', 'Freeze reason is opt_out');
+
+    const { data: keptMsgs, error: keptMsgsErr } = await clientA
+      .from('mating_introduction_messages')
+      .select('id')
+      .eq('channel_id', introChannel.id);
+    assertNoError(keptMsgsErr, 'Frozen channel messages remain SELECTable');
+    assert((keptMsgs ?? []).length >= 1, 'Opt-out does not delete message rows');
+
+    const { data: listAfterOff, error: listAfterOffErr } = await clientA.rpc(
+      'list_my_introduction_channels',
+    );
+    assertNoError(listAfterOffErr, 'Chat list readable after companionship OFF');
+    assert(
+      !(listAfterOff ?? []).some((row) => row.channel_id === introChannel.id),
+      'Frozen opt-out channel is omitted from the Chat list',
+    );
+    assert(
+      (listAfterOff ?? []).some((row) => row.channel_id === sibChannel.id),
+      'Other pet open chats remain on the Chat list',
+    );
+
+    const { data: sibStillOpen, error: sibStillOpenErr } = await clientA
+      .from('mating_introduction_channels')
+      .select('status')
+      .eq('id', sibChannel.id)
+      .maybeSingle();
+    assertNoError(sibStillOpenErr, 'Sibling channel still readable');
+    assert(sibStillOpen?.status === 'open', 'Other pets channels stay open after sibling opt-out');
+
+    const { error: optOnErr } = await clientA
+      .from('pets')
+      .update({ is_looking_for_companion: true })
+      .eq('id', petAMating.id);
+    assertNoError(optOnErr, 'User A can turn companionship back ON');
+
+    const { data: rematchOpp, error: rematchOppErr } = await clientA.rpc(
+      'get_mating_opportunities',
+      { viewer_pet_id: petAMating.id },
+    );
+    assertNoError(rematchOppErr, 'Discovery after opt-back-on succeeds');
+    assert(
+      (rematchOpp ?? []).some((row) => row.pet_id === petBMating.id),
+      'After companionship OFF, pair can return to discovery (mutuality gone, no duplicate open chat)',
+    );
+
+    const { data: stillOnePair, error: stillOnePairErr } = await clientA
+      .from('mating_introduction_channels')
+      .select('id, status')
+      .eq('pet_low_id', petLowId)
+      .eq('pet_high_id', petHighId);
+    assertNoError(stillOnePairErr, 'Pair channel query succeeds after rematch eligibility');
+    assert((stillOnePair ?? []).length === 1, 'No duplicate channel row for the same pet pair');
+    assert(stillOnePair[0].status === 'frozen', 'Prior channel stays frozen until mutual Paw reopens it');
 
     console.log('');
     console.log('Invites');

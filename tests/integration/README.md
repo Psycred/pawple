@@ -11,6 +11,7 @@ Node-based smoke tests against a **staging/dev Supabase project**. They validate
 | `moment-create.test.js` | `src/services/moments.js` | `moments` insert scoped to `auth.uid()` |
 | `meetup-rsvp.test.js` | `src/services/meetups.js` | `meetup_participants` upsert; pet ownership enforced client-side + RLS |
 | `account-delete.test.js` | `src/lib/deleteAccount.js` | `delete_user_account` RPC (`authenticated` grant only) |
+| `account-notifications.test.js` | `src/services/accountNotifications.js` | Account-owned inbox SELECT/read UPDATE RLS; client INSERT denied |
 
 Helper functions in `helpers/fixtures.js` mirror client Supabase calls so tests stay aligned with app behaviour without importing React Native modules.
 
@@ -25,6 +26,8 @@ npm run test:integration
 ```
 
 Without `SUPABASE_SERVICE_ROLE_KEY`, tests **skip** with a clear message. Static demo-gating audit still runs via `npm run test:static`.
+
+**PAW-170 live ban:** helpers never default to `pexurgcfkxkouthuhlnb`. Tests skip (and clients throw) if `SUPABASE_URL` points at live. Provision users with `admin.createUser({ email_confirm: true })` only — never client `signUp` / OTP / password-reset against production.
 
 ## CI recommendation
 

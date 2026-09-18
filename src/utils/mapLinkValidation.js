@@ -1,12 +1,10 @@
 /**
- * Optional Google Maps link validation for meetup directions.
- * Empty/null is always valid. When provided, must be a Google Maps URL.
+ * Optional maps link validation for meetup directions.
+ * Empty/null is always valid. When provided, must be Google or Apple Maps.
  */
 
-const APPLE_MAPS_HINT =
-  'Apple Maps links do not work on Android. Please use Google Maps.';
-
-const GOOGLE_MAPS_HINT = 'Please use a Google Maps link (google.com/maps or maps.app.goo.gl).';
+const MAPS_HINT =
+  'Please use a Google Maps or Apple Maps link (google.com/maps, maps.app.goo.gl, or maps.apple.com).';
 
 /**
  * @param {string} [url]
@@ -14,6 +12,7 @@ const GOOGLE_MAPS_HINT = 'Please use a Google Maps link (google.com/maps or maps
  *   isEmpty: boolean,
  *   isValid: boolean,
  *   isAppleMaps: boolean,
+ *   isGoogleMaps: boolean,
  *   value: string|null,
  *   message: string|null,
  * }}
@@ -26,6 +25,7 @@ export function validateOptionalGoogleMapsLink(url = '') {
       isEmpty: true,
       isValid: true,
       isAppleMaps: false,
+      isGoogleMaps: false,
       value: null,
       message: null,
     };
@@ -38,33 +38,27 @@ export function validateOptionalGoogleMapsLink(url = '') {
     lower.includes('apple.com/maps') ||
     (lower.includes('apple.com') && !lower.includes('google'));
 
-  if (isAppleMaps) {
-    return {
-      isEmpty: false,
-      isValid: false,
-      isAppleMaps: true,
-      value: null,
-      message: APPLE_MAPS_HINT,
-    };
-  }
-
   const isGoogleMaps =
-    lower.includes('google.com') || lower.includes('maps.app.goo.gl');
+    lower.includes('google.com') ||
+    lower.includes('maps.app.goo.gl') ||
+    lower.includes('goo.gl/maps');
 
-  if (!isGoogleMaps) {
+  if (!isAppleMaps && !isGoogleMaps) {
     return {
       isEmpty: false,
       isValid: false,
       isAppleMaps: false,
+      isGoogleMaps: false,
       value: null,
-      message: GOOGLE_MAPS_HINT,
+      message: MAPS_HINT,
     };
   }
 
   return {
     isEmpty: false,
     isValid: true,
-    isAppleMaps: false,
+    isAppleMaps,
+    isGoogleMaps,
     value: trimmed,
     message: null,
   };

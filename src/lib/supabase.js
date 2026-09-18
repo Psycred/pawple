@@ -12,10 +12,9 @@
  * Owner-scoped writes (authenticated):
  *   INSERT / UPDATE / DELETE when (storage.foldername(name))[1] = auth.uid()::text
  *
- * Beta residual (accepted):
- *   Buckets are public; SELECT is open so Image can load getPublicUrl() URLs.
- *   Public object URLs are not authenticated-only media. Owner-scoped writes
- *   still block cross-user upload/overwrite/delete.
+ * Media privacy (20260911):
+ *   moments + pet-photos buckets are private; authenticated read + signed URLs.
+ *   share-previews bucket stays public for temporary OG link-share cards (24h retention).
  *
  * Bucket settings (migration): public ON; file_size_limit 5 MB when column exists.
  * =====================================================================

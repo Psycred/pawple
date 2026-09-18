@@ -3,6 +3,7 @@ import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/nativ
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  AppState,
   FlatList,
   Pressable,
   RefreshControl,
@@ -10,9 +11,11 @@ import {
   Text,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import AppHeader from '../components/AppHeader';
 import EventCarousel from '../components/EventCarousel';
 import LoadErrorRetry from '../components/LoadErrorRetry';
+import PawpleEmptyState from '../components/PawpleEmptyState';
+import { FEED_EMPTY_BODY, FEED_EMPTY_TITLE } from '../content/legalDocuments';
 import MeetupCard from '../components/MeetupCard';
 import MomentCard from '../components/MomentCard';
 import { theme } from '../config/theme';
@@ -22,7 +25,6 @@ import {
   DEMO_FEED_SHOW_ALL_MEETUPS,
   getDemoMeetupsForFeed,
   getDemoMomentsForFeed,
-  isDemoMomentId,
   USE_DEMO_FEED_WHEN_EMPTY,
 } from '../data/demoFeed';
 import { applyDemoMeetupRsvp } from '../data/demoMeetupRsvp';
@@ -32,13 +34,29 @@ import {
   fetchUserFeedLocation,
   sortFeedMoments,
 } from '../services/moments';
-import { fetchMeetups, filterMeetupsByViewerCity, filterShowablePublicMeetups, isDemoMeetupId, extractMeetupHostPetIds } from '../services/meetups';
+import {
+  fetchMeetupsForFeed,
+  filterShowablePublicMeetups,
+  isDemoMeetupId,
+  extractMeetupHostPetIds,
+} from '../services/meetups';
 import { fetchBlockedPetIds, isBlockedByPetIds } from '../services/blocks';
+import { fetchViewerHeartedPetIds } from '../services/momentHearts';
 import { supabase } from '../lib/supabase';
+import { readCachedFeedSnapshot, writeCachedFeedSnapshot } from '../lib/feedCache';
+import { refreshViewerFeedLocationOnAppOpen } from '../lib/viewerFeedLocation';
+import { createFeedSessionSeed, sortMomentsForFeed } from '../lib/feedProximity';
+import { isForegroundLocationGranted } from '../lib/locationPermission';
 import { useMeetupFeedLogic } from '../hooks/useMeetupFeedLogic';
+import { useNotifications } from '../contexts/NotificationContext';
+import { useActivePet } from '../contexts/ActivePetContext';
+import { useRuntimeThemeColors } from '../hooks/useRuntimeThemeColors';
 
 /** Inject a meetup suggestion after every Nth moment in the main vertical feed. */
 const MEETUP_INJECTION_INTERVAL = 9;
+
+/** Skip focus-triggered reloads when Feed was refreshed recently. */
+const FOCUS_RELOAD_MIN_INTERVAL_MS = 45_000;
 
 /** Append a real Moment page without allowing offset-page overlap to duplicate cards. */
 function appendUniqueMoments(current, incoming) {
@@ -58,28 +76,64 @@ export default function FeedScreen() {
   const navigation = useNavigation();
   const route = useRoute();
   const tabBarHeight = useBottomTabBarHeight();
+  const { hasUnreadNotifications } = useNotifications();
+  const { userPets: viewerPets, refreshUserPets } = useActivePet();
+  const surfaces = useRuntimeThemeColors();
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [meetups, setMeetups] = useState([]);
   const [realMoments, setRealMoments] = useState([]);
   const [pendingMoments, setPendingMoments] = useState([]);
-  const [likedIds, setLikedIds] = useState(new Set());
-  const [userPets, setUserPets] = useState([]);
   const [blockedPetIds, setBlockedPetIds] = useState(() => new Set());
   const [userFeedLocation, setUserFeedLocation] = useState(null);
+  const [locationGranted, setLocationGranted] = useState(false);
+  const [heartedPetIds, setHeartedPetIds] = useState(() => new Set());
+  const [feedSessionSeed, setFeedSessionSeed] = useState(() => createFeedSessionSeed());
   const [currentUserId, setCurrentUserId] = useState(null);
   const [momentPage, setMomentPage] = useState(0);
   const [hasMoreMoments, setHasMoreMoments] = useState(true);
   const [loadingMoreMoments, setLoadingMoreMoments] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [loadMoreError, setLoadMoreError] = useState(false);
+  const [hasDisplayedFeed, setHasDisplayedFeed] = useState(false);
   const hasCompletedInitialLoadRef = useRef(false);
+  const hasDisplayedFeedRef = useRef(false);
   const feedGenerationRef = useRef(0);
   const feedLoadInProgressRef = useRef(false);
   const loadingMoreMomentsRef = useRef(false);
   const momentPageRef = useRef(0);
   const hasMoreMomentsRef = useRef(true);
+  const viewerPetsRef = useRef(viewerPets);
+  const lastLoadedPetsKeyRef = useRef('');
+  const lastSuccessfulFeedLoadAtRef = useRef(0);
+  const shouldRefreshAfterCacheHydrateRef = useRef(false);
+
+  viewerPetsRef.current = viewerPets;
+
+  const applyCachedSnapshot = useCallback((cached) => {
+    if (!cached) {
+      return;
+    }
+
+    setCurrentUserId(cached.userId ?? null);
+    // Re-apply the same showability gate as fresh loads — cache may be stale.
+    setMeetups(filterShowablePublicMeetups(cached.meetups ?? []));
+    setRealMoments(cached.realMoments ?? []);
+    setBlockedPetIds(new Set(cached.blockedPetIds ?? []));
+    setUserFeedLocation(cached.userFeedLocation ?? null);
+    setLocationGranted(Boolean(cached.locationGranted));
+    setHeartedPetIds(new Set(cached.heartedPetIds ?? []));
+    momentPageRef.current = cached.momentPage ?? 0;
+    setMomentPage(momentPageRef.current);
+    hasMoreMomentsRef.current = Boolean(cached.hasMoreMoments);
+    setHasMoreMoments(hasMoreMomentsRef.current);
+    setLoadError(false);
+    hasCompletedInitialLoadRef.current = true;
+    hasDisplayedFeedRef.current = true;
+    setHasDisplayedFeed(true);
+    setLoading(false);
+  }, []);
 
   const loadFeed = useCallback(async (opts = {}) => {
     const { isRefresh, isBackground } = opts;
@@ -89,8 +143,13 @@ export default function FeedScreen() {
 
     if (isRefresh) {
       setRefreshing(true);
-    } else if (!isBackground) {
+      setFeedSessionSeed(createFeedSessionSeed());
+    } else if (!isBackground && !hasDisplayedFeedRef.current) {
+      // First visit only — returning to Feed keeps the last cards visible.
       setLoading(true);
+      if (!hasCompletedInitialLoadRef.current) {
+        setFeedSessionSeed(createFeedSessionSeed());
+      }
     }
     if (!isBackground) {
       setLoadError(false);
@@ -101,42 +160,28 @@ export default function FeedScreen() {
       const {
         data: { user },
       } = await supabase.auth.getUser();
+      const userId = user?.id ?? null;
 
-      const feedLocation = user?.id ? await fetchUserFeedLocation(user.id) : null;
-
-      const [meetupsData, momentsPageResult, likesRes, petsRes, blockedIds] = await Promise.all([
-        fetchMeetups(),
-        fetchFeedMoments(user?.id, feedLocation, 0, DEFAULT_FEED_MOMENT_PAGE_LIMIT),
-        user?.id
-          ? supabase.from('likes').select('moment_id').eq('user_id', user.id)
-          : Promise.resolve({ data: [], error: null }),
-        user?.id
-          ? supabase
-              .from('pets')
-              .select('id, name, photo_url, pet_type, breed')
-              .eq('owner_id', user.id)
-              .order('created_at', { ascending: true })
-          : Promise.resolve({ data: [], error: null }),
-        user?.id ? fetchBlockedPetIds().catch((err) => {
-          console.error('[Supabase]', err);
-          return [];
-        }) : Promise.resolve([]),
-      ]);
-
-      if (likesRes.error) {
-        console.error('[Supabase]', likesRes.error);
-      }
-      if (petsRes.error) {
-        console.error('[Supabase]', petsRes.error);
-      }
+      const [feedLocation, meetupsData, momentsPageResult, blockedIds, granted, heartedIds] =
+        await Promise.all([
+          userId ? fetchUserFeedLocation(userId) : Promise.resolve(null),
+          fetchMeetupsForFeed(),
+          fetchFeedMoments(userId, null, 0, DEFAULT_FEED_MOMENT_PAGE_LIMIT),
+          userId
+            ? fetchBlockedPetIds(userId).catch((err) => {
+                console.error('[Supabase]', err);
+                return [];
+              })
+            : Promise.resolve([]),
+          isForegroundLocationGranted(),
+          userId ? fetchViewerHeartedPetIds(userId) : Promise.resolve(new Set()),
+        ]);
 
       const realMeetups = meetupsData ?? [];
       const firstMomentPage = momentsPageResult?.moments ?? [];
-      const likedMomentIds = likesRes.error ? [] : (likesRes.data ?? []).map((row) => row.moment_id);
-      const viewerPets = petsRes.error ? [] : petsRes.data ?? [];
+      const ownedPets = viewerPetsRef.current ?? [];
       const blockedSet = new Set((blockedIds ?? []).map(String));
 
-      // Meetups are city-scoped for bulletin-board discovery (carousel + inline injection).
       let nextMeetups = realMeetups;
 
       if (USE_DEMO_FEED_WHEN_EMPTY) {
@@ -163,21 +208,19 @@ export default function FeedScreen() {
       nextMeetups = filterShowablePublicMeetups(
         nextMeetups.map((m) =>
           isDemoContentEnabled && isDemoMeetupId(m?.id)
-            ? applyDemoMeetupRsvp(m, viewerPets)
+            ? applyDemoMeetupRsvp(m, ownedPets)
             : m,
         ),
       );
-
-      // Phase 1a bulletin board — same-city discovery only.
-      nextMeetups = filterMeetupsByViewerCity(nextMeetups, feedLocation?.city);
 
       // Hide meetups hosted by blocked pets (client filter; RLS does not filter blocks).
       nextMeetups = nextMeetups.filter(
         (m) => !isBlockedByPetIds(extractMeetupHostPetIds(m), blockedSet),
       );
 
-      const visibleMoments = firstMomentPage.filter(
-        (m) => !isBlockedByPetIds(m?.pet_ids ?? [], blockedSet),
+      const visibleMoments = sortFeedMoments(
+        firstMomentPage.filter((m) => !isBlockedByPetIds(m?.pet_ids ?? [], blockedSet)),
+        feedLocation,
       );
 
       if (generation !== feedGenerationRef.current) {
@@ -186,6 +229,8 @@ export default function FeedScreen() {
 
       setCurrentUserId(user?.id ?? null);
       setUserFeedLocation(feedLocation);
+      setLocationGranted(Boolean(granted));
+      setHeartedPetIds(heartedIds instanceof Set ? heartedIds : new Set(heartedIds));
       setMeetups(nextMeetups);
       setRealMoments(visibleMoments);
       setBlockedPetIds(blockedSet);
@@ -193,9 +238,27 @@ export default function FeedScreen() {
       hasMoreMomentsRef.current = Boolean(momentsPageResult?.hasMore);
       setMomentPage(0);
       setHasMoreMoments(hasMoreMomentsRef.current);
-      setUserPets(viewerPets);
-      setLikedIds(new Set(likedMomentIds.map(String)));
+      lastLoadedPetsKeyRef.current = ownedPets
+        .map((pet) => String(pet?.id ?? ''))
+        .filter(Boolean)
+        .join(',');
+      lastSuccessfulFeedLoadAtRef.current = Date.now();
       setLoadError(false);
+
+      if (user?.id) {
+        void writeCachedFeedSnapshot(user.id, {
+          meetups: nextMeetups,
+          realMoments: visibleMoments,
+          blockedPetIds: [...blockedSet],
+          userFeedLocation: feedLocation,
+          locationGranted: Boolean(granted),
+          heartedPetIds: [
+            ...(heartedIds instanceof Set ? heartedIds : new Set(heartedIds)),
+          ],
+          momentPage: 0,
+          hasMoreMoments: Boolean(momentsPageResult?.hasMore),
+        });
+      }
     } catch (error) {
       if (generation !== feedGenerationRef.current) {
         return;
@@ -214,6 +277,8 @@ export default function FeedScreen() {
       if (generation === feedGenerationRef.current) {
         feedLoadInProgressRef.current = false;
         hasCompletedInitialLoadRef.current = true;
+        hasDisplayedFeedRef.current = true;
+        setHasDisplayedFeed(true);
         setLoading(false);
         setRefreshing(false);
       }
@@ -222,21 +287,116 @@ export default function FeedScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      const incoming = route.params?.newMoment;
-      if (incoming) {
-        // Optimistic insert: show the brand-new moment immediately, dedupe by id.
-        setPendingMoments((prev) =>
-          prev.some((m) => String(m.id) === String(incoming.id)) ? prev : [incoming, ...prev],
-        );
-        navigation.setParams({ newMoment: undefined });
-      }
-      loadFeed({ isBackground: hasCompletedInitialLoadRef.current });
-    }, [loadFeed, route.params?.refreshFeed, route.params?.newMoment, navigation]),
+      let cancelled = false;
+
+      const run = async () => {
+        const incoming = route.params?.newMoment;
+        if (incoming) {
+          // Optimistic insert: show the brand-new moment immediately, dedupe by id.
+          setPendingMoments((prev) =>
+            prev.some((m) => String(m.id) === String(incoming.id)) ? prev : [incoming, ...prev],
+          );
+          navigation.setParams({ newMoment: undefined });
+        }
+
+        if (!hasDisplayedFeedRef.current) {
+          try {
+            const {
+              data: { user },
+            } = await supabase.auth.getUser();
+            if (!cancelled && user?.id) {
+              const cached = await readCachedFeedSnapshot(user.id);
+              if (!cancelled && cached) {
+                applyCachedSnapshot(cached);
+                shouldRefreshAfterCacheHydrateRef.current = true;
+              }
+            }
+          } catch (error) {
+            console.log('[FeedScreen] feed cache hydrate failed:', error?.message ?? error);
+          }
+        }
+
+        if (cancelled) {
+          return;
+        }
+
+        const forceReload =
+          Boolean(route.params?.refreshFeed) || shouldRefreshAfterCacheHydrateRef.current;
+        if (route.params?.refreshFeed) {
+          navigation.setParams({ refreshFeed: undefined });
+        }
+        if (shouldRefreshAfterCacheHydrateRef.current) {
+          shouldRefreshAfterCacheHydrateRef.current = false;
+        }
+
+        const isBackground = hasDisplayedFeedRef.current;
+        const recentlyLoaded =
+          lastSuccessfulFeedLoadAtRef.current > 0 &&
+          Date.now() - lastSuccessfulFeedLoadAtRef.current < FOCUS_RELOAD_MIN_INTERVAL_MS;
+
+        if (isBackground && !forceReload && recentlyLoaded) {
+          return;
+        }
+
+        loadFeed({ isBackground });
+      };
+
+      run();
+
+      return () => {
+        cancelled = true;
+      };
+    }, [applyCachedSnapshot, loadFeed, route.params?.refreshFeed, route.params?.newMoment, navigation]),
   );
 
-  const onRefresh = useCallback(() => {
+  useEffect(() => {
+    const petsKey = (viewerPets ?? [])
+      .map((pet) => String(pet?.id ?? ''))
+      .filter(Boolean)
+      .join(',');
+    if (!hasDisplayedFeed || !petsKey || petsKey === lastLoadedPetsKeyRef.current) {
+      return;
+    }
+    loadFeed({ isBackground: true });
+  }, [hasDisplayedFeed, loadFeed, viewerPets]);
+
+  // Re-read refreshed device city/GPS for Meetup ranking without blocking or reloading the feed.
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState !== 'active') {
+        return;
+      }
+
+      void (async () => {
+        try {
+          const {
+            data: { user },
+          } = await supabase.auth.getUser();
+          if (!user?.id) {
+            return;
+          }
+          await refreshViewerFeedLocationOnAppOpen();
+          const feedLocation = await fetchUserFeedLocation(user.id);
+          setUserFeedLocation(feedLocation);
+        } catch (error) {
+          console.log('[FeedScreen] foreground location refresh skipped:', error?.message ?? error);
+        }
+      })();
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, []);
+
+  const onRefresh = useCallback(async () => {
+    try {
+      await refreshUserPets();
+    } catch (error) {
+      console.error('[FeedScreen] refresh user pets failed:', error);
+    }
     loadFeed({ isRefresh: true });
-  }, [loadFeed]);
+  }, [loadFeed, refreshUserPets]);
 
   const loadMore = useCallback(async () => {
     if (
@@ -322,24 +482,34 @@ export default function FeedScreen() {
 
   // Merge optimistic moments above fetched ones; dedupe so a refetch never doubles a card.
   const mergedMoments = useMemo(() => {
-    const source = (() => {
-      if (!pendingMoments.length) {
-        return feedMoments;
-      }
+    let merged = feedMoments;
+    if (pendingMoments.length) {
       const seen = new Set();
-      const merged = [];
+      const combined = [];
       for (const m of [...pendingMoments, ...feedMoments]) {
         const key = String(m?.id);
         if (seen.has(key)) {
           continue;
         }
         seen.add(key);
-        merged.push(m);
+        combined.push(m);
       }
-      return sortFeedMoments(merged, userFeedLocation);
-    })();
-    return source.filter((m) => !isBlockedByPetIds(m?.pet_ids ?? [], blockedPetIds));
-  }, [blockedPetIds, feedMoments, pendingMoments, userFeedLocation]);
+      merged = combined;
+    }
+    return sortMomentsForFeed(merged, userFeedLocation, {
+      locationGranted,
+      heartedPetIds,
+      sessionSeed: feedSessionSeed,
+    }).filter((m) => !isBlockedByPetIds(m?.pet_ids ?? [], blockedPetIds));
+  }, [
+    blockedPetIds,
+    feedMoments,
+    feedSessionSeed,
+    heartedPetIds,
+    locationGranted,
+    pendingMoments,
+    userFeedLocation,
+  ]);
 
   const useExpandedDemoFeed = USE_DEMO_FEED_WHEN_EMPTY && DEMO_FEED_SHOW_ALL_MEETUPS;
 
@@ -349,6 +519,9 @@ export default function FeedScreen() {
     mergedMoments,
     injectionInterval: MEETUP_INJECTION_INTERVAL,
     carouselSize: useExpandedDemoFeed ? DEMO_FEED_CAROUSEL_SIZE : undefined,
+    userFeedLocation,
+    locationGranted,
+    sessionSeed: feedSessionSeed,
   });
 
   useEffect(() => {
@@ -365,60 +538,6 @@ export default function FeedScreen() {
     });
   }, [loading, meetups.length, headerMeetups.length, feedRows, meetupRowCount, useExpandedDemoFeed]);
 
-  const handleLikeToggle = useCallback(async (postId, liked) => {
-    if (!postId) {
-      return;
-    }
-    const sid = String(postId);
-    setLikedIds((prev) => {
-      const next = new Set(prev);
-      if (liked) {
-        next.add(sid);
-      } else {
-        next.delete(sid);
-      }
-      return next;
-    });
-    if (isDemoMomentId(String(postId))) {
-      return;
-    }
-    try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user?.id) {
-        return;
-      }
-
-      if (liked) {
-        const { error } = await supabase.from('likes').insert({ user_id: user.id, moment_id: sid });
-        if (error) {
-          throw error;
-        }
-      } else {
-        const { error } = await supabase
-          .from('likes')
-          .delete()
-          .eq('user_id', user.id)
-          .eq('moment_id', sid);
-        if (error) {
-          throw error;
-        }
-      }
-    } catch (e) {
-      console.error('[Supabase]', e);
-      setLikedIds((prev) => {
-        const next = new Set(prev);
-        if (liked) {
-          next.delete(sid);
-        } else {
-          next.add(sid);
-        }
-        return next;
-      });
-    }
-  }, []);
-
   const openPlanMeetup = useCallback(() => {
     navigation.getParent()?.navigate('CreateMeetupScreen');
   }, [navigation]);
@@ -427,12 +546,21 @@ export default function FeedScreen() {
     navigation.navigate('CreateMomentScreen');
   }, [navigation]);
 
-  const isEmpty = !loading && !loadError && meetups.length === 0 && mergedMoments.length === 0;
+  const showBlockingLoader = loading && !hasDisplayedFeed;
+  const isEmpty =
+    hasDisplayedFeed &&
+    !showBlockingLoader &&
+    !loadError &&
+    meetups.length === 0 &&
+    mergedMoments.length === 0;
   const showCarousel = headerMeetups.length > 0;
-  const viewerCityMissing =
-    Boolean(currentUserId) && !loading && !String(userFeedLocation?.city ?? '').trim();
-
   const scrollBottomPad = theme.feed.shellPaddingBottom + Math.max(tabBarHeight - theme.spacing.lg, 0);
+
+  const handleMomentDeleted = useCallback((momentId) => {
+    const id = String(momentId);
+    setRealMoments((prev) => prev.filter((moment) => String(moment?.id) !== id));
+    setPendingMoments((prev) => prev.filter((moment) => String(moment?.id) !== id));
+  }, []);
 
   const renderFeedItem = useCallback(
     ({ item: row }) => {
@@ -441,11 +569,10 @@ export default function FeedScreen() {
         return (
           <MomentCard
             moment={moment}
-            userPets={userPets}
+            userPets={viewerPets}
             viewerUserId={currentUserId}
-            initialLiked={likedIds.has(String(moment.id))}
-            onLikeToggle={handleLikeToggle}
             onPetBlocked={handlePetBlocked}
+            onMomentDeleted={handleMomentDeleted}
           />
         );
       }
@@ -453,36 +580,29 @@ export default function FeedScreen() {
       return (
         <MeetupCard
           meetup={row.data}
-          viewerPets={userPets}
+          viewerPets={viewerPets}
           viewerId={currentUserId}
         />
       );
     },
-    [currentUserId, handleLikeToggle, handlePetBlocked, likedIds, userPets],
+    [currentUserId, handleMomentDeleted, handlePetBlocked, viewerPets],
   );
 
   const keyExtractor = useCallback((row) => String(row.key), []);
 
   const listHeaderComponent = useMemo(() => {
-    if (loading || isEmpty) {
+    if (showBlockingLoader || isEmpty) {
       return null;
     }
 
     return (
       <>
-        {viewerCityMissing ? (
-          <View style={styles.cityHintWrap}>
-            <Text style={styles.cityHintText} allowFontScaling>
-              Add your city in profile settings to discover local meetups.
-            </Text>
-          </View>
-        ) : null}
         {showCarousel ? (
           <>
             <EventCarousel
               data={headerMeetups}
               maxSlides={useExpandedDemoFeed ? DEMO_FEED_CAROUSEL_SIZE : 3}
-              viewerPets={userPets}
+              viewerPets={viewerPets}
               viewerId={currentUserId}
             />
             <View style={styles.carouselGap} />
@@ -494,15 +614,14 @@ export default function FeedScreen() {
     currentUserId,
     headerMeetups,
     isEmpty,
-    loading,
+    showBlockingLoader,
     showCarousel,
     useExpandedDemoFeed,
-    userPets,
-    viewerCityMissing,
+    viewerPets,
   ]);
 
   const listEmptyComponent = useMemo(() => {
-    if (loading) {
+    if (showBlockingLoader) {
       return (
         <View style={styles.loadingWrap}>
           <ActivityIndicator size="large" color={theme.colors.brand.sage.value} />
@@ -511,7 +630,11 @@ export default function FeedScreen() {
     }
 
     if (loadError) {
-      return <LoadErrorRetry onRetry={() => loadFeed()} />;
+      return (
+        <LoadErrorRetry
+          onRetry={() => loadFeed({ isBackground: hasDisplayedFeedRef.current })}
+        />
+      );
     }
 
     if (!isEmpty) {
@@ -519,10 +642,11 @@ export default function FeedScreen() {
     }
 
     return (
-      <View style={styles.emptyWrap}>
-        <Text style={styles.emptyTitle} allowFontScaling>
-          Nothing here yet.
-        </Text>
+      <PawpleEmptyState
+        style={styles.emptyWrap}
+        title={FEED_EMPTY_TITLE}
+        body={FEED_EMPTY_BODY}
+      >
         <View style={styles.emptyActions}>
           <Pressable
             onPress={openPlanMeetup}
@@ -545,9 +669,9 @@ export default function FeedScreen() {
             </Text>
           </Pressable>
         </View>
-      </View>
+      </PawpleEmptyState>
     );
-  }, [isEmpty, loadError, loadFeed, loading, openCaptureMoment, openPlanMeetup]);
+  }, [isEmpty, loadError, loadFeed, openCaptureMoment, openPlanMeetup, showBlockingLoader]);
 
   const retryLoadMore = useCallback(() => {
     setLoadMoreError(false);
@@ -558,7 +682,7 @@ export default function FeedScreen() {
     if (loadMoreError) {
       return (
         <View style={styles.loadMoreErrorWrap}>
-          <Text style={styles.loadMoreErrorText} allowFontScaling>
+          <Text style={[styles.loadMoreErrorText, { color: surfaces.textSecondary }]} allowFontScaling>
             Couldn&apos;t load more.
           </Text>
           <Pressable
@@ -584,13 +708,18 @@ export default function FeedScreen() {
         <ActivityIndicator size="small" color={theme.colors.brand.sage.value} />
       </View>
     );
-  }, [loadMoreError, loadingMoreMoments, retryLoadMore]);
+  }, [loadMoreError, loadingMoreMoments, retryLoadMore, surfaces.textSecondary]);
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+    <View style={[styles.safe, { backgroundColor: surfaces.backgroundScreen }]}>
+      <AppHeader
+        showSettings={false}
+        showNotifications
+        hasUnreadNotifications={hasUnreadNotifications}
+      />
       <FlatList
-        style={styles.scroll}
-        data={loading || loadError || isEmpty ? [] : feedRows}
+        style={[styles.scroll, { backgroundColor: surfaces.backgroundScreen }]}
+        data={showBlockingLoader || (loadError && !hasDisplayedFeed) || isEmpty ? [] : feedRows}
         renderItem={renderFeedItem}
         keyExtractor={keyExtractor}
         ListHeaderComponent={listHeaderComponent}
@@ -618,7 +747,7 @@ export default function FeedScreen() {
         maxToRenderPerBatch={6}
         windowSize={7}
       />
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -633,7 +762,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    paddingTop: theme.feed.shellPaddingTop,
+    paddingTop: theme.spacing.lg,
     paddingHorizontal: theme.feed.shellPaddingHorizontal,
   },
   scrollContentEmpty: {
@@ -696,17 +825,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: theme.spacing.lg,
   },
-  emptyTitle: {
-    fontFamily: theme.fonts.semibold,
-    fontSize: theme.fontSizes.lg,
-    lineHeight: Math.round(theme.fontSizes.lg * theme.lineHeights.normal),
-    color: theme.colors.text.primary.light,
-    textAlign: 'center',
-    marginBottom: theme.spacing.xl,
-  },
   emptyActions: {
     alignItems: 'center',
     gap: theme.spacing.sm,
+    marginTop: theme.spacing.md,
   },
   pill: {
     minHeight: theme.components.button.minHeight,

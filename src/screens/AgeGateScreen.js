@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { theme } from '../config/theme';
+import { useRuntimeThemeColors } from '../hooks/useRuntimeThemeColors';
 import {
   getMaximumEligibleBirthDate,
   isEligibleBirthDate,
@@ -33,9 +34,12 @@ function formatBirthDate(date) {
 
 /**
  * Store-compliant Phase 1 age gate (Founder: 18+ India launch).
- * Quiet confirmation before Auth / app use. Under-age users stay here.
+ * Design Wave 1 (D1): quiet attestation during onboarding — never the cold-open screen.
  */
-export default function AgeGateScreen({ onPassed }) {
+export default function AgeGateScreen({ navigation, route, onPassed }) {
+  const surfaces = useRuntimeThemeColors();
+  const fromOnboarding = Boolean(route?.params?.fromOnboarding);
+  const returnParams = route?.params?.returnParams ?? {};
   const insets = useSafeAreaInsets();
   const maxEligibleBirthDate = useMemo(() => getMaximumEligibleBirthDate(), []);
   const defaultBirthDate = useMemo(() => {
@@ -47,6 +51,31 @@ export default function AgeGateScreen({ onPassed }) {
   const [showPicker, setShowPicker] = useState(Platform.OS === 'ios');
   const [denied, setDenied] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+
+  const ageGateTheme = useMemo(
+    () => ({
+      safe: { backgroundColor: surfaces.backgroundScreen },
+      brand: { color: surfaces.textMuted },
+      title: { color: surfaces.textPrimary },
+      body: { color: surfaces.textSecondary },
+      label: { color: surfaces.textSecondary },
+      dateReveal: {
+        backgroundColor: surfaces.backgroundCard,
+        borderColor: surfaces.border,
+      },
+      dateRevealText: { color: surfaces.textPrimary },
+      denied: { color: surfaces.textSecondary },
+      footnote: { color: surfaces.textMuted },
+    }),
+    [
+      surfaces.backgroundCard,
+      surfaces.backgroundScreen,
+      surfaces.border,
+      surfaces.textMuted,
+      surfaces.textPrimary,
+      surfaces.textSecondary,
+    ],
+  );
 
   const handleContinue = async () => {
     if (submitting) {
@@ -63,7 +92,19 @@ export default function AgeGateScreen({ onPassed }) {
       await recordAgeGatePass(birthDate);
       await syncAgeAttestationAfterLocalPass();
       setDenied(false);
-      // Parent remounts navigator with Auth / signed-in route once eligible.
+      if (fromOnboarding) {
+        navigation.navigate({
+          name: 'OnboardingPets',
+          params: {
+            resumeSave: true,
+            fullName: returnParams.fullName,
+            city: returnParams.city,
+            inviteCode: returnParams.inviteCode,
+          },
+          merge: true,
+        });
+        return;
+      }
       if (typeof onPassed === 'function') {
         onPassed();
       }
@@ -76,7 +117,7 @@ export default function AgeGateScreen({ onPassed }) {
   };
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={[styles.safe, ageGateTheme.safe]}>
       <ScrollView
         contentContainerStyle={[
           styles.content,
@@ -88,20 +129,26 @@ export default function AgeGateScreen({ onPassed }) {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <Text style={styles.brand}>pawple</Text>
-        <Text style={styles.title}>Before you continue</Text>
-        <Text style={styles.body}>
-          Pawple is for adults. Phase 1 is 18+ only — for accounts, Terms, and Meetups.
-        </Text>
+        {fromOnboarding ? null : <Text style={[styles.brand, ageGateTheme.brand]}>pawple</Text>}
+        {fromOnboarding ? null : (
+          <Text style={[styles.title, ageGateTheme.title]}>Before you sign in</Text>
+        )}
+        <Text style={[styles.body, ageGateTheme.body]}>Pawple is for adults 18 and older.</Text>
 
-        <Text style={styles.label}>Birthday</Text>
+        <Text style={[styles.label, ageGateTheme.label]}>Birthday</Text>
         <Pressable
           onPress={() => setShowPicker(true)}
-          style={({ pressed }) => [styles.dateReveal, pressed && styles.pressed]}
+          style={({ pressed }) => [
+            styles.dateReveal,
+            ageGateTheme.dateReveal,
+            pressed && styles.pressed,
+          ]}
           accessibilityRole="button"
           accessibilityLabel="Choose your birthday"
         >
-          <Text style={styles.dateRevealText}>{formatBirthDate(birthDate)}</Text>
+          <Text style={[styles.dateRevealText, ageGateTheme.dateRevealText]}>
+            {formatBirthDate(birthDate)}
+          </Text>
         </Pressable>
 
         {showPicker ? (
@@ -139,8 +186,8 @@ export default function AgeGateScreen({ onPassed }) {
         ) : null}
 
         {denied ? (
-          <Text style={styles.denied} accessibilityLiveRegion="polite">
-            Pawple is for people {MINIMUM_ACCOUNT_AGE} and older. You can’t continue with this birthday.
+          <Text style={[styles.denied, ageGateTheme.denied]} accessibilityLiveRegion="polite">
+            You need to be 18 or older to use Pawple.
           </Text>
         ) : null}
 
@@ -156,13 +203,11 @@ export default function AgeGateScreen({ onPassed }) {
           accessibilityLabel={`Confirm I am ${MINIMUM_ACCOUNT_AGE} or older`}
         >
           <Text style={styles.primaryButtonText}>
-            {submitting ? 'Saving…' : `I am ${MINIMUM_ACCOUNT_AGE} or older`}
+            {submitting ? 'Saving.' : `I'm ${MINIMUM_ACCOUNT_AGE} or older`}
           </Text>
         </Pressable>
 
-        <Text style={styles.footnote}>
-          By continuing you confirm your age. Meetup attendance also requires an 18+ account holder.
-        </Text>
+        <Text style={[styles.footnote, ageGateTheme.footnote]}>Meetups also require an 18+ account holder.</Text>
       </ScrollView>
     </SafeAreaView>
   );

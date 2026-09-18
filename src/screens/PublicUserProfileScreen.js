@@ -1,5 +1,5 @@
 import { useFocusEffect } from '@react-navigation/native';
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   ScrollView,
@@ -11,6 +11,7 @@ import MeetupCard from '../components/MeetupCard';
 import LoadErrorRetry from '../components/LoadErrorRetry';
 import ScreenWrapper from '../components/ScreenWrapper';
 import { theme } from '../config/theme';
+import { useRuntimeThemeColors } from '../hooks/useRuntimeThemeColors';
 import { supabase } from '../config/supabase';
 import { fetchPublicUserProfile } from '../services/userProfile';
 
@@ -19,6 +20,7 @@ import { fetchPublicUserProfile } from '../services/userProfile';
  * Going / RSVP history is never shown unless viewer === profile owner.
  */
 export default function PublicUserProfileScreen({ navigation, route }) {
+  const surfaces = useRuntimeThemeColors();
   const viewedUserId = route?.params?.userId ?? route?.params?.viewedUserId ?? null;
   const viewerUserId = route?.params?.viewerUserId ?? null;
 
@@ -29,6 +31,15 @@ export default function PublicUserProfileScreen({ navigation, route }) {
   const [isSelfView, setIsSelfView] = useState(false);
   const [resolvedViewerId, setResolvedViewerId] = useState(viewerUserId);
   const [viewerPets, setViewerPets] = useState([]);
+
+  const profileTheme = useMemo(
+    () => ({
+      city: { color: surfaces.textMuted },
+      sectionTitle: { color: surfaces.textPrimary },
+      emptyText: { color: surfaces.textSecondary },
+    }),
+    [surfaces.textMuted, surfaces.textPrimary, surfaces.textSecondary],
+  );
 
   const loadProfile = useCallback(async () => {
     if (!viewedUserId) {
@@ -99,17 +110,17 @@ export default function PublicUserProfileScreen({ navigation, route }) {
           showsVerticalScrollIndicator={false}
         >
           {profile?.city ? (
-            <Text style={styles.city} allowFontScaling>
+            <Text style={[styles.city, profileTheme.city]} allowFontScaling>
               {profile.city}
             </Text>
           ) : null}
 
-          <Text style={styles.sectionTitle} allowFontScaling>
+          <Text style={[styles.sectionTitle, profileTheme.sectionTitle]} allowFontScaling>
             Hosted Meetups
           </Text>
 
           {hostedMeetups.length === 0 ? (
-            <Text style={styles.emptyText} allowFontScaling>
+            <Text style={[styles.emptyText, profileTheme.emptyText]} allowFontScaling>
               {isSelfView
                 ? "You haven't hosted a meetup yet."
                 : `${displayName} hasn't hosted a meetup yet.`}

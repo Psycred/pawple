@@ -1,4 +1,7 @@
 import { supabase } from '../config/supabase';
+import { deleteMomentSharePreview } from '../lib/momentSharePreview';
+import { readCachedViewerFeedLocation } from '../lib/viewerFeedLocation';
+import { fetchMomentHeartStates } from './momentHearts';
 
 /**
  * Moment data flow for Pawple.
@@ -117,6 +120,10 @@ export function normalizePetIds(value) {
 
 /** Feed/MomentCard expects: photo_url, caption, location, memory_date, created_at, pet_names (+ safety ids). */
 function toFeedMoment(moment, petNames = '') {
+  const lat = moment.location_lat ?? moment.latitude ?? moment.lat;
+  const lng = moment.location_lng ?? moment.longitude ?? moment.lng ?? moment.lon;
+  const latitude = Number(lat);
+  const longitude = Number(lng);
   return {
     id: moment.id,
     photo_url: moment.image_url ?? moment.photo_url ?? null,
@@ -125,10 +132,38 @@ function toFeedMoment(moment, petNames = '') {
     memory_date: formatMomentDisplayDate(moment),
     created_at: moment.created_at ?? '',
     pet_names: petNames,
+    latitude: Number.isFinite(latitude) ? latitude : null,
+    longitude: Number.isFinite(longitude) ? longitude : null,
     // Safety (PAW-47): report flags human account; block filters by pet_ids.
     user_id: moment.user_id ?? null,
     pet_ids: normalizePetIds(moment.pet_ids),
+    moment_date: moment.moment_date ?? null,
   };
+}
+
+async function withMomentHeartStates(moments) {
+  if (!moments.length) {
+    return moments;
+  }
+
+  try {
+    const stateByMomentId = await fetchMomentHeartStates(moments.map((moment) => moment.id));
+    return moments.map((moment) => {
+      const state = stateByMomentId.get(String(moment.id));
+      return {
+        ...moment,
+        heart_count: state?.heartCount ?? 0,
+        viewer_has_hearted: state?.viewerHasHearted ?? false,
+      };
+    });
+  } catch {
+    // Keep Moment loading resilient while a backend migration is being deployed.
+    return moments.map((moment) => ({
+      ...moment,
+      heart_count: Math.max(0, Number(moment?.heart_count) || 0),
+      viewer_has_hearted: Boolean(moment?.viewer_has_hearted),
+    }));
+  }
 }
 
 /**
@@ -157,6 +192,8 @@ export async function createMoment({
   caption,
   momentDate,
   location,
+  locationLat = null,
+  locationLng = null,
   petIds = [],
   petNames,
 }) {
@@ -164,12 +201,17 @@ export async function createMoment({
   const normalizedPetIds = [...new Set(petIds.filter(Boolean).map(String))].slice(0, MAX_MOMENT_PETS);
   const petNamesText = normalizePetNamesForInsert(petNames);
 
+  const lat = Number(locationLat);
+  const lng = Number(locationLng);
+  const hasCoords = Number.isFinite(lat) && Number.isFinite(lng);
+
   const basePayload = {
     user_id: userId,
     image_url: imageUrl,
     caption: caption?.trim() || null,
     moment_date: momentDate,
     location: location?.trim() || null,
+    ...(hasCoords ? { location_lat: lat, location_lng: lng } : {}),
     pet_ids: normalizedPetIds,
     pet_names: petNamesText,
     created_at: new Date().toISOString(),
@@ -187,6 +229,10 @@ export async function createMoment({
     } else if (/pet_ids/i.test(msg)) {
       console.warn('[Moment] moments.pet_ids column missing — retrying without it.');
       const { pet_ids, ...rest } = basePayload;
+      response = await supabase.from('moments').insert(rest).select().single();
+    } else if (/location_lat|location_lng/i.test(msg)) {
+      console.warn('[Moment] moments location columns missing — retrying without coords.');
+      const { location_lat, location_lng, ...rest } = basePayload;
       response = await supabase.from('moments').insert(rest).select().single();
     }
   }
@@ -208,6 +254,85 @@ export async function createMoment({
     throw response.error;
   }
   return response.data;
+}
+
+/**
+ * Update caption, memory date, and location on an owned moment.
+ * Photo and pet attribution stay unchanged.
+ */
+export async function updateMoment(momentId, { caption, momentDate, location }) {
+  if (!momentId) {
+    throw new Error('Missing moment id.');
+  }
+
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
+  if (authError) {
+    console.error('[Supabase]', authError);
+    throw authError;
+  }
+  if (!user?.id) {
+    throw new Error('Not signed in.');
+  }
+
+  const payload = {
+    caption: caption?.trim() || null,
+    moment_date: momentDate,
+    location: location?.trim() || null,
+  };
+
+  const { data, error } = await supabase
+    .from('moments')
+    .update(payload)
+    .eq('id', momentId)
+    .eq('user_id', user.id)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('[Supabase]', error);
+    throw error;
+  }
+
+  return data;
+}
+
+/** Delete an owned moment row (RLS enforces user_id). */
+export async function deleteMoment(momentId) {
+  if (!momentId) {
+    throw new Error('Missing moment id.');
+  }
+
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
+  if (authError) {
+    console.error('[Supabase]', authError);
+    throw authError;
+  }
+  if (!user?.id) {
+    throw new Error('Not signed in.');
+  }
+
+  const { error } = await supabase
+    .from('moments')
+    .delete()
+    .eq('id', momentId)
+    .eq('user_id', user.id);
+
+  if (error) {
+    console.error('[Supabase]', error);
+    throw error;
+  }
+
+  try {
+    await deleteMomentSharePreview(user.id, momentId);
+  } catch (previewError) {
+    console.warn('[moments] share preview cleanup skipped', previewError);
+  }
 }
 
 /** Link one moment to up to two pets (unique constraint dedupes server-side). */
@@ -267,23 +392,28 @@ export function haversineDistanceKm(lat1, lon1, lat2, lon2) {
 
 /**
  * Viewer location for feed proximity sorting.
- * Phase 1: profile city only. Phase 2: add latitude/longitude from device or profile.
+ * Wave 5 §2: device cache from About You capture; city-only fallback when declined.
  */
 export async function fetchUserFeedLocation(userId) {
   if (!userId) {
     return null;
   }
   try {
+    const cached = await readCachedViewerFeedLocation();
     const { data, error } = await supabase.from('profiles').select('city').eq('id', userId).single();
     if (error) {
       console.log('[moments] fetchUserFeedLocation failed:', error?.message);
-      return null;
     }
-    // Phase 2: extend select with latitude, longitude when columns exist on profiles/moments.
+    const profileCity = String(data?.city ?? '').trim() || null;
+    const deviceCity = String(cached?.city ?? '').trim() || null;
+    // Legacy `city` field — device city when available, else profile (moments GPS sort).
+    const city = deviceCity ?? profileCity;
     return {
-      city: String(data?.city ?? '').trim() || null,
-      latitude: null,
-      longitude: null,
+      city,
+      profileCity,
+      deviceCity,
+      latitude: cached?.latitude ?? null,
+      longitude: cached?.longitude ?? null,
     };
   } catch (e) {
     console.log('[moments] fetchUserFeedLocation error', e);
@@ -369,6 +499,50 @@ async function fetchPetNamesById(petIds) {
 }
 
 /**
+ * Read one share-linked Moment without changing Feed/Profile pagination queries.
+ * RLS remains the authority for whether the signed-in viewer may see it.
+ */
+export async function fetchMomentById(momentId) {
+  if (!momentId) {
+    return null;
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('moments')
+      .select('*')
+      .eq('id', momentId)
+      .maybeSingle();
+
+    if (error) {
+      console.error('[Supabase]', error);
+      throw error;
+    }
+    if (!data) {
+      return null;
+    }
+
+    let petNames = String(data.pet_names ?? '').trim();
+    if (!petNames) {
+      const petIds = normalizePetIds(data.pet_ids);
+      const nameById = await fetchPetNamesById(petIds);
+      petNames = petIds
+        .map((id) => nameById.get(String(id)))
+        .filter(Boolean)
+        .join(', ');
+    }
+
+    const [moment] = await withMomentHeartStates([
+      toFeedMoment(data, petNames),
+    ]);
+    return moment ?? null;
+  } catch (error) {
+    console.error('[moments] fetchMomentById failed:', error);
+    throw error;
+  }
+}
+
+/**
  * Feed moments: current user + everyone (small early community).
  * No joins — pet attribution from pet_names / pet_ids on the row.
  * Sorted by proximity when lat/lng exist (Phase 2); otherwise created_at DESC (Phase 1).
@@ -412,7 +586,9 @@ export async function fetchFeedMoments(
       .order('created_at', { ascending: false })
       .range(rangeStart, rangeEnd);
     const fallbackRows = fallback.data ?? [];
-    const legacy = fallbackRows.map((m) => toFeedMoment(m, m.pet_names ?? ''));
+    const legacy = await withMomentHeartStates(
+      fallbackRows.map((m) => toFeedMoment(m, m.pet_names ?? '')),
+    );
     return {
       moments: sortFeedMoments(legacy, location),
       hasMore: fallbackRows.length === safeLimit,
@@ -443,8 +619,10 @@ export async function fetchFeedMoments(
     return toFeedMoment(m, names.join(', '));
   });
 
+  const momentsWithHeartState = await withMomentHeartStates(mapped);
+
   return {
-    moments: sortFeedMoments(mapped, location),
+    moments: sortFeedMoments(momentsWithHeartState, location),
     hasMore: rows.length === safeLimit,
   };
 }
@@ -490,7 +668,8 @@ export async function fetchMomentsForPet(petId) {
   }
 
   const rows = (data ?? []).map((m) => ({ ...m, photo_url: m.image_url ?? m.photo_url ?? null }));
-  return sortPetProfileMoments(rows);
+  const momentsWithHeartState = await withMomentHeartStates(rows);
+  return sortPetProfileMoments(momentsWithHeartState);
 }
 
 /** Feed attribution: "— Tyson" or "— Tyson & Peter" (Phase 1 cap: 2). */

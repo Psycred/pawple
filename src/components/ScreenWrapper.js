@@ -3,6 +3,7 @@ import { Pressable, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { theme } from '../config/theme';
+import { useRuntimeThemeColors } from '../hooks/useRuntimeThemeColors';
 import { HEADER_ICON_TARGET, HEADER_MIN_HEIGHT, SCREEN_HORIZONTAL_PADDING } from '../utils/layout';
 
 /**
@@ -17,6 +18,7 @@ import { HEADER_ICON_TARGET, HEADER_MIN_HEIGHT, SCREEN_HORIZONTAL_PADDING } from
  * @param {boolean}  [props.showBackButton]  Render a back chevron instead of an "X".
  * @param {Function} [props.onClose]         Dismiss handler; also shows the left button.
  * @param {React.ReactNode} [props.headerRight] Optional right-aligned header content.
+ * @param {React.ReactNode} [props.headerContent] Optional full header replacement.
  * @param {object}   [props.titleStyle]      Optional override for header title typography.
  * @param {React.ReactNode} props.children   Screen body.
  * @param {string[]} [props.edges]           Safe-area edges (default top + bottom).
@@ -31,22 +33,33 @@ export default function ScreenWrapper({
   showBackButton = false,
   onClose,
   headerRight = null,
+  headerContent = null,
   titleStyle = null,
   children,
   edges = ['top', 'bottom'],
   padded = false,
-  backgroundColor = theme.colors.background.screen,
-  statusBarStyle = 'dark-content',
+  backgroundColor,
+  statusBarStyle,
   contentStyle,
 }) {
+  const surfaces = useRuntimeThemeColors();
+  const resolvedBackground = backgroundColor ?? surfaces.backgroundScreen;
+  const resolvedStatusBarStyle = statusBarStyle ?? surfaces.statusBarStyle;
   const showLeftButton = typeof onClose === 'function';
-  const showHeader = showLeftButton || Boolean(title) || Boolean(headerRight);
+  const showHeader =
+    Boolean(headerContent) || showLeftButton || Boolean(title) || Boolean(headerRight);
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor }]} edges={edges}>
-      <StatusBar barStyle={statusBarStyle} backgroundColor={backgroundColor} translucent={false} />
+    <SafeAreaView style={[styles.safe, { backgroundColor: resolvedBackground }]} edges={edges}>
+      <StatusBar
+        barStyle={resolvedStatusBarStyle}
+        backgroundColor={resolvedBackground}
+        translucent={false}
+      />
 
-      {showHeader ? (
+      {headerContent ? headerContent : null}
+
+      {!headerContent && showHeader ? (
         <View style={styles.header}>
           <View style={styles.headerSide}>
             {showLeftButton ? (
@@ -60,7 +73,7 @@ export default function ScreenWrapper({
                 <Feather
                   name={showBackButton ? 'chevron-left' : 'x'}
                   size={theme.fontSizes.xxl}
-                  color={theme.colors.text.primary.light}
+                  color={surfaces.textPrimary}
                 />
               </Pressable>
             ) : null}
@@ -68,7 +81,11 @@ export default function ScreenWrapper({
 
           <View style={styles.headerCenter}>
             {title ? (
-              <Text style={[styles.headerTitle, titleStyle]} numberOfLines={1} allowFontScaling>
+              <Text
+                style={[styles.headerTitle, { color: surfaces.textPrimary }, titleStyle]}
+                numberOfLines={1}
+                allowFontScaling
+              >
                 {title}
               </Text>
             ) : null}
@@ -86,7 +103,6 @@ export default function ScreenWrapper({
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: theme.colors.background.screen,
   },
   header: {
     minHeight: HEADER_MIN_HEIGHT,
@@ -109,7 +125,6 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontFamily: theme.fonts.heading,
     fontSize: theme.fontSizes.lg,
-    color: theme.colors.text.primary.light,
   },
   iconButton: {
     width: HEADER_ICON_TARGET,

@@ -1,5 +1,5 @@
 import DateTimePicker from '@react-native-community/datetimepicker';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
@@ -16,6 +16,7 @@ import Toast from 'react-native-toast-message';
 import { CommonActions, StackActions } from '@react-navigation/native';
 import { theme } from '../config/theme';
 import { supabase } from '../config/supabase';
+import RequiredBadge from '../components/RequiredBadge';
 import ScreenWrapper from '../components/ScreenWrapper';
 import { useAuth } from '../contexts/AuthContext';
 import { useActivePet } from '../contexts/ActivePetContext';
@@ -24,44 +25,87 @@ import { validateOptionalGoogleMapsLink } from '../utils/mapLinkValidation';
 import { createMeetup, extractMeetupHostPetIds, updateMeetup } from '../services/meetups';
 import { petTypeEmoji } from '../utils/petTypeEmoji';
 import { useFieldShake } from '../hooks/useFieldShake';
+import { useRuntimeThemeColors } from '../hooks/useRuntimeThemeColors';
+import { captureLocationOnUserConsent } from '../lib/locationManager';
+import { resolveCityFromCoords } from '../lib/cityFromLocation';
+import { cacheViewerFeedLocation } from '../lib/viewerFeedLocation';
+import { normalizeCityForSave } from '../utils/cityUtils';
 
-const OPEN_TO_OPTIONS = ['Open to All', 'Dogs Meetup', 'Cats Meetup', 'Please Specify'];
+const OPEN_TO_OPTIONS = [
+  { label: 'Open to all', value: 'Open to All' },
+  { label: 'Dogs', value: 'Dogs Meetup' },
+  { label: 'Cats', value: 'Cats Meetup' },
+];
 
 const DURATION_HOURS = [1, 2, 3];
 
-function FieldLabel({ children, required = false, style }) {
+function FieldLabel({ children, required = false, style, labelColor }) {
   return (
-    <View style={style}>
-      <Text style={styles.label} allowFontScaling>
+    <View style={[styles.labelRow, style]}>
+      <Text style={[styles.label, { color: labelColor }]} allowFontScaling>
         {children}
       </Text>
-      {required ? (
-        <Text style={styles.requiredHint} allowFontScaling>
-          Required
-        </Text>
-      ) : null}
+      {required ? <RequiredBadge /> : null}
     </View>
   );
 }
 
 function buildMeetupValidation({
   title,
+  venueName,
+  meetupCity,
+  participationLimit,
   meetupDate,
   startTime,
   endTime,
   selectedHostPets,
   mapLinkResult,
-  selectedOpenTo,
-  customBreedText,
 }) {
   const fieldErrors = {};
   const shakeFields = [];
   const messages = [];
 
   if (!title.trim()) {
-    const message = 'Please fill in the event title';
+    const message = 'Please add a meetup name';
     fieldErrors.title = message;
     shakeFields.push('title');
+    messages.push(message);
+  }
+
+  if (!normalizeCityForSave(meetupCity)) {
+    const message = 'Please add the meetup city';
+    fieldErrors.city = message;
+    shakeFields.push('city');
+    messages.push(message);
+  }
+
+  const trimmedVenue = venueName.trim();
+  if (!trimmedVenue) {
+    const message = 'Please add a venue';
+    fieldErrors.venue = message;
+    shakeFields.push('venue');
+    messages.push(message);
+  } else if (
+    meetupCity &&
+    trimmedVenue.toLowerCase() === String(meetupCity).trim().toLowerCase()
+  ) {
+    const message = 'Add a real venue — not just your city';
+    fieldErrors.venue = message;
+    shakeFields.push('venue');
+    messages.push(message);
+  }
+
+  const trimmedLimit = String(participationLimit ?? '').trim();
+  const parsedLimit = Number(trimmedLimit);
+  if (!trimmedLimit) {
+    const message = 'Please add a participation limit';
+    fieldErrors.participation = message;
+    shakeFields.push('participation');
+    messages.push(message);
+  } else if (!Number.isInteger(parsedLimit) || parsedLimit <= 0) {
+    const message = 'Use a positive whole number';
+    fieldErrors.participation = message;
+    shakeFields.push('participation');
     messages.push(message);
   }
 
@@ -86,14 +130,8 @@ function buildMeetupValidation({
     messages.push(message);
   }
 
-  if (selectedOpenTo === 'Please Specify' && !customBreedText.trim()) {
-    const message = 'Tell nearby paws which pets can join';
-    fieldErrors.openTo = message;
-    messages.push(message);
-  }
-
   if (!mapLinkResult.isEmpty && !mapLinkResult.isValid) {
-    const message = mapLinkResult.message || 'Please use a Google Maps link';
+    const message = mapLinkResult.message || 'Please use a Google or Apple Maps link';
     fieldErrors.directions = message;
     shakeFields.push('directions');
   }
@@ -165,8 +203,10 @@ export default function CreateMeetupScreen({ navigation, route }) {
 
   const [pets, setPets] = useState([]);
   const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [meetupCity, setMeetupCity] = useState('');
+  const [venueName, setVenueName] = useState('');
   const [selectedOpenTo, setSelectedOpenTo] = useState('Open to All');
-  const [customBreedText, setCustomBreedText] = useState('');
   const [participationLimit, setParticipationLimit] = useState('');
   const [directionsUrl, setDirectionsUrl] = useState('');
   const [meetupDate, setMeetupDate] = useState(() => {
@@ -191,9 +231,17 @@ export default function CreateMeetupScreen({ navigation, route }) {
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const [networkError, setNetworkError] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [profileCity, setProfileCity] = useState('');
+  const cityEditedRef = useRef(false);
 
   const { anims: shakeAnims, shakeField } = useFieldShake();
+  const surfaces = useRuntimeThemeColors();
+  const chipSelectedBg = surfaces.isDark
+    ? surfaces.meetupChipBackground
+    : theme.colors.brand.sageLight.light;
+  const inputSurfaceStyle = {
+    color: surfaces.textPrimary,
+    backgroundColor: surfaces.backgroundCard,
+  };
 
   const mapLinkResult = useMemo(
     () => validateOptionalGoogleMapsLink(directionsUrl),
@@ -222,21 +270,14 @@ export default function CreateMeetupScreen({ navigation, route }) {
       return;
     }
     try {
-      const [{ data, error }, profileRes] = await Promise.all([
-        supabase
-          .from('pets')
-          .select('id, name, photo_url, pet_type')
-          .eq('owner_id', user.id)
-          .order('created_at', { ascending: true }),
-        supabase.from('profiles').select('city').eq('id', user.id).maybeSingle(),
-      ]);
+      const { data, error } = await supabase
+        .from('pets')
+        .select('id, name, photo_url, pet_type')
+        .eq('owner_id', user.id)
+        .order('created_at', { ascending: true });
       if (error) {
         throw error;
       }
-      if (profileRes.error) {
-        console.error('[Supabase]', profileRes.error);
-      }
-      setProfileCity(String(profileRes.data?.city ?? '').trim());
       setPets(data ?? []);
       if (isEditing && seedMeetup) {
         const hostIds = extractMeetupHostPetIds(seedMeetup);
@@ -269,8 +310,10 @@ export default function CreateMeetupScreen({ navigation, route }) {
     const parsedEnd = parseTimeString(seedMeetup.end_time, parsedDate);
 
     setTitle(seedMeetup.title ?? '');
+    setDescription(seedMeetup.description ?? '');
+    setMeetupCity(seedMeetup.city ?? '');
+    setVenueName(seedMeetup.location_name ?? '');
     setSelectedOpenTo(seedMeetup.open_to ?? 'Open to All');
-    setCustomBreedText(seedMeetup.custom_breed_spec ?? '');
     setParticipationLimit(
       seedMeetup.participation_limit != null ? String(seedMeetup.participation_limit) : '',
     );
@@ -289,6 +332,41 @@ export default function CreateMeetupScreen({ navigation, route }) {
   useEffect(() => {
     loadPets();
   }, [loadPets]);
+
+  useEffect(() => {
+    if (isEditing) {
+      return undefined;
+    }
+
+    let cancelled = false;
+    const prefillCurrentCity = async () => {
+      const location = await captureLocationOnUserConsent();
+      if (cancelled || !location.granted || !location.coords) {
+        return;
+      }
+
+      const detectedCity = await resolveCityFromCoords(
+        location.coords.latitude,
+        location.coords.longitude,
+      );
+      if (normalizeCityForSave(detectedCity)) {
+        await cacheViewerFeedLocation(location.coords, detectedCity);
+      }
+      if (
+        cancelled ||
+        cityEditedRef.current ||
+        !normalizeCityForSave(detectedCity)
+      ) {
+        return;
+      }
+      setMeetupCity(detectedCity);
+    };
+
+    prefillCurrentCity();
+    return () => {
+      cancelled = true;
+    };
+  }, [isEditing]);
 
   const applyDuration = (hours) => {
     setDurationMode(hours);
@@ -324,25 +402,27 @@ export default function CreateMeetupScreen({ navigation, route }) {
   const runValidation = useCallback(() => {
     const result = buildMeetupValidation({
       title,
+      venueName,
+      meetupCity,
+      participationLimit,
       meetupDate,
       startTime,
       endTime,
       selectedHostPets,
       mapLinkResult,
-      selectedOpenTo,
-      customBreedText,
     });
     setFieldErrors(result.fieldErrors);
     return result;
   }, [
     title,
+    venueName,
+    meetupCity,
+    participationLimit,
     meetupDate,
     startTime,
     endTime,
     selectedHostPets,
     mapLinkResult,
-    selectedOpenTo,
-    customBreedText,
   ]);
 
   const goFeed = () => {
@@ -399,21 +479,19 @@ export default function CreateMeetupScreen({ navigation, route }) {
     if (!user?.id) {
       return;
     }
-    if (!isEditing && !profileCity) {
-      showValidationToast('Add your city in profile settings first.');
-      return;
-    }
     setSaving(true);
     try {
       const parsedLimit = participationLimit.trim() ? parseInt(participationLimit, 10) : null;
       const meetupInput = {
         title: title.trim(),
+        description: description.trim() || null,
+        city: normalizeCityForSave(meetupCity),
+        locationName: venueName.trim(),
         date: toISODate(meetupDate),
         startTime: toTimeString(startTime),
         endTime: toTimeString(endTime),
         hostPetIds: selectedHostPets,
         openTo: selectedOpenTo,
-        customBreedSpec: customBreedText,
         googleMapsLink: directionsUrl.trim() || null,
         participationLimit: Number.isFinite(parsedLimit) ? parsedLimit : null,
       };
@@ -478,12 +556,12 @@ export default function CreateMeetupScreen({ navigation, route }) {
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={styles.screenTitle} allowFontScaling>
+        <Text style={[styles.screenTitle, { color: surfaces.textPrimary }]} allowFontScaling>
           {isEditing ? 'Edit Meetup' : 'Plan a meetup'}
         </Text>
 
-        <FieldLabel required style={styles.labelBlock}>
-          Meetup
+        <FieldLabel required style={styles.labelBlock} labelColor={surfaces.textPrimary}>
+          Meetup name
         </FieldLabel>
         <Animated.View style={{ transform: [{ translateX: shakeAnims.title }] }}>
           <TextInput
@@ -499,11 +577,16 @@ export default function CreateMeetupScreen({ navigation, route }) {
               }
             }}
             onBlur={() => markTouched('title')}
-            placeholder="Beagle Meetup at Cubbon Park"
-            placeholderTextColor={theme.colors.placeholder.value}
-            style={[styles.input, shouldShowError('title') && styles.inputError]}
+            placeholder="Sunday morning playdate"
+            placeholderTextColor={surfaces.placeholder}
+            style={[
+              styles.input,
+              inputSurfaceStyle,
+              shouldShowError('title') && styles.inputError,
+              shouldShowError('title') && { backgroundColor: surfaces.backgroundCard },
+            ]}
             maxLength={50}
-            accessibilityLabel="Meetup title"
+            accessibilityLabel="Meetup name"
           />
         </Animated.View>
         {shouldShowError('title') ? (
@@ -512,8 +595,29 @@ export default function CreateMeetupScreen({ navigation, route }) {
           </Text>
         ) : null}
 
-        <Text style={[styles.label, styles.labelSpaced]} allowFontScaling>
-          Open to
+        <Text
+          style={[styles.label, styles.standaloneLabel, styles.labelSpaced, { color: surfaces.textPrimary }]}
+          allowFontScaling
+        >
+          About
+        </Text>
+        <TextInput
+          value={description}
+          onChangeText={setDescription}
+          placeholder="A relaxed morning for friendly paws"
+          placeholderTextColor={surfaces.placeholder}
+          style={[styles.input, styles.aboutInput, inputSurfaceStyle]}
+          multiline
+          maxLength={280}
+          textAlignVertical="top"
+          accessibilityLabel="About"
+        />
+
+        <Text
+          style={[styles.label, styles.standaloneLabel, styles.labelSpaced, { color: surfaces.textPrimary }]}
+          allowFontScaling
+        >
+          Who can join?
         </Text>
         <ScrollView
           horizontal
@@ -521,62 +625,152 @@ export default function CreateMeetupScreen({ navigation, route }) {
           contentContainerStyle={styles.openToRow}
         >
           {OPEN_TO_OPTIONS.map((option) => {
-            const on = selectedOpenTo === option;
+            const on = selectedOpenTo === option.value;
             return (
               <Pressable
-                key={option}
-                onPress={() => setSelectedOpenTo(option)}
+                key={option.value}
+                onPress={() => setSelectedOpenTo(option.value)}
                 style={({ pressed }) => [
                   styles.openToChip,
-                  on && styles.openToChipOn,
+                  {
+                    backgroundColor: surfaces.backgroundCard,
+                    borderColor: surfaces.border,
+                  },
+                  on && {
+                    backgroundColor: chipSelectedBg,
+                    borderColor: theme.colors.brand.sage.value,
+                  },
                   pressed && styles.pressed,
                 ]}
                 accessibilityRole="radio"
                 accessibilityState={{ selected: on }}
-                accessibilityLabel={option}
+                accessibilityLabel={option.label}
               >
-                <Text style={[styles.openToChipText, on && styles.openToChipTextOn]} allowFontScaling>
-                  {on ? `${option} ✓` : option}
+                <Text
+                  style={[
+                    styles.openToChipText,
+                    { color: surfaces.textPrimary },
+                    on && styles.openToChipTextOn,
+                  ]}
+                  allowFontScaling
+                >
+                  {on ? `${option.label} ✓` : option.label}
                 </Text>
               </Pressable>
             );
           })}
         </ScrollView>
-        {selectedOpenTo === 'Please Specify' ? (
+
+        <FieldLabel required style={[styles.labelBlock, styles.labelSpaced]} labelColor={surfaces.textPrimary}>
+          City
+        </FieldLabel>
+        <Animated.View style={{ transform: [{ translateX: shakeAnims.city }] }}>
           <TextInput
-            value={customBreedText}
-            onChangeText={setCustomBreedText}
-            onBlur={() => markTouched('openTo')}
-            placeholder="e.g., Beagle only, Persian Cat only, St. Bernard only"
-            placeholderTextColor={theme.colors.placeholder.value}
-            style={[styles.input, styles.openToSpecifyInput]}
-            accessibilityLabel="Specify which pets can join"
+            value={meetupCity}
+            onChangeText={(text) => {
+              cityEditedRef.current = true;
+              setMeetupCity(text);
+              if (fieldErrors.city) {
+                setFieldErrors((prev) => {
+                  const next = { ...prev };
+                  delete next.city;
+                  return next;
+                });
+              }
+            }}
+            onBlur={() => markTouched('city')}
+            placeholder="Jaipur"
+            placeholderTextColor={surfaces.placeholder}
+            style={[
+              styles.input,
+              inputSurfaceStyle,
+              shouldShowError('city') && styles.inputError,
+              shouldShowError('city') && { backgroundColor: surfaces.backgroundCard },
+            ]}
+            accessibilityLabel="City"
           />
-        ) : null}
-        {fieldErrors.openTo && (submitAttempted || touched.openTo) ? (
+        </Animated.View>
+        {shouldShowError('city') ? (
           <Text style={styles.inlineError} allowFontScaling>
-            {fieldErrors.openTo}
+            {fieldErrors.city}
           </Text>
         ) : null}
 
-        <Text style={[styles.label, styles.labelSpaced]} allowFontScaling>
-          Participation Limit
-        </Text>
-        <TextInput
-          value={participationLimit}
-          onChangeText={(t) => setParticipationLimit(t.replace(/[^0-9]/g, ''))}
-          placeholder="Max number of pets (e.g., 5, 10, 15)"
-          placeholderTextColor={theme.colors.placeholder.value}
-          keyboardType="number-pad"
-          style={[styles.input, styles.participationInput]}
-          accessibilityLabel="Participation limit"
-        />
-        <Text style={styles.helperMuted} allowFontScaling>
-          Leave empty for unlimited participants
-        </Text>
+        <FieldLabel required style={[styles.labelBlock, styles.labelSpaced]} labelColor={surfaces.textPrimary}>
+          Where?
+        </FieldLabel>
+        <Animated.View style={{ transform: [{ translateX: shakeAnims.venue }] }}>
+          <TextInput
+            value={venueName}
+            onChangeText={(text) => {
+              setVenueName(text);
+              if (fieldErrors.venue) {
+                setFieldErrors((prev) => {
+                  const next = { ...prev };
+                  delete next.venue;
+                  return next;
+                });
+              }
+            }}
+            onBlur={() => markTouched('venue')}
+            placeholder="Cubbon Park"
+            placeholderTextColor={surfaces.placeholder}
+            style={[
+              styles.input,
+              inputSurfaceStyle,
+              shouldShowError('venue') && styles.inputError,
+              shouldShowError('venue') && { backgroundColor: surfaces.backgroundCard },
+            ]}
+            accessibilityLabel="Venue"
+          />
+        </Animated.View>
+        {shouldShowError('venue') ? (
+          <Text style={styles.inlineError} allowFontScaling>
+            {fieldErrors.venue}
+          </Text>
+        ) : null}
 
-        <Text style={[styles.label, styles.labelSpaced]} allowFontScaling>
-          Directions
+        <FieldLabel required style={[styles.labelBlock, styles.labelSpaced]} labelColor={surfaces.textPrimary}>
+          Maximum participants
+        </FieldLabel>
+        <Animated.View style={{ transform: [{ translateX: shakeAnims.participation }] }}>
+          <TextInput
+            value={participationLimit}
+            onChangeText={(text) => {
+              setParticipationLimit(text.replace(/[^0-9]/g, ''));
+              if (fieldErrors.participation) {
+                setFieldErrors((prev) => {
+                  const next = { ...prev };
+                  delete next.participation;
+                  return next;
+                });
+              }
+            }}
+            onBlur={() => markTouched('participation')}
+            placeholder="20"
+            placeholderTextColor={surfaces.placeholder}
+            keyboardType="number-pad"
+            style={[
+              styles.input,
+              styles.participationInput,
+              inputSurfaceStyle,
+              shouldShowError('participation') && styles.inputError,
+              shouldShowError('participation') && { backgroundColor: surfaces.backgroundCard },
+            ]}
+            accessibilityLabel="Maximum participants"
+          />
+        </Animated.View>
+        {shouldShowError('participation') ? (
+          <Text style={styles.inlineError} allowFontScaling>
+            {fieldErrors.participation}
+          </Text>
+        ) : null}
+
+        <Text
+          style={[styles.label, styles.standaloneLabel, styles.labelSpaced, { color: surfaces.textPrimary }]}
+          allowFontScaling
+        >
+          Directions — optional
         </Text>
         <Animated.View style={{ transform: [{ translateX: shakeAnims.directions }] }}>
           <TextInput
@@ -592,12 +786,14 @@ export default function CreateMeetupScreen({ navigation, route }) {
               }
             }}
             onBlur={() => markTouched('directions')}
-            placeholder="Paste a Google Maps link (optional)"
-            placeholderTextColor={theme.colors.placeholder.value}
+            placeholder="Paste a Google or Apple Maps link (optional)"
+            placeholderTextColor={surfaces.placeholder}
             style={[
               styles.input,
               styles.directionsInput,
+              inputSurfaceStyle,
               shouldShowError('directions') && styles.inputError,
+              shouldShowError('directions') && { backgroundColor: surfaces.backgroundCard },
             ]}
             autoCapitalize="none"
             autoCorrect={false}
@@ -605,15 +801,15 @@ export default function CreateMeetupScreen({ navigation, route }) {
             accessibilityLabel="Directions link"
           />
         </Animated.View>
-        <Text style={styles.helperMuted} allowFontScaling>
-          Optional — Google Maps only, so everyone can navigate
+        <Text style={[styles.helperMuted, { color: surfaces.textMuted }]} allowFontScaling>
+          Paste a Google or Apple Maps link
         </Text>
         {shouldShowError('directions') ? (
           <Text style={styles.inlineError} allowFontScaling>
             {fieldErrors.directions}
           </Text>
         ) : null}
-        <FieldLabel required style={[styles.labelBlock, styles.labelSpaced]}>
+        <FieldLabel style={[styles.labelBlock, styles.labelSpaced]} labelColor={surfaces.textPrimary}>
           Date
         </FieldLabel>
         <Animated.View style={{ transform: [{ translateX: shakeAnims.date }] }}>
@@ -624,13 +820,15 @@ export default function CreateMeetupScreen({ navigation, route }) {
             }}
             style={({ pressed }) => [
               styles.dateReveal,
+              inputSurfaceStyle,
               shouldShowError('date') && styles.inputError,
+              shouldShowError('date') && { backgroundColor: surfaces.backgroundCard },
               pressed && styles.pressed,
             ]}
             accessibilityRole="button"
             accessibilityLabel="Choose meetup date"
           >
-            <Text style={styles.dateRevealText} allowFontScaling>
+            <Text style={[styles.dateRevealText, { color: surfaces.textPrimary }]} allowFontScaling>
               {formatDayMonthYear(meetupDate)}
             </Text>
           </Pressable>
@@ -664,13 +862,13 @@ export default function CreateMeetupScreen({ navigation, route }) {
           </View>
         ) : null}
 
-        <FieldLabel required style={[styles.labelBlock, styles.labelSpaced]}>
+        <FieldLabel style={[styles.labelBlock, styles.labelSpaced]} labelColor={surfaces.textPrimary}>
           Time
         </FieldLabel>
         <Animated.View style={{ transform: [{ translateX: shakeAnims.time }] }}>
           <View style={styles.timeRow}>
             <View style={styles.timeCol}>
-              <Text style={styles.timeColLabel} allowFontScaling>
+              <Text style={[styles.timeColLabel, { color: surfaces.textPrimary }]} allowFontScaling>
                 Starts
               </Text>
               <Pressable
@@ -680,18 +878,20 @@ export default function CreateMeetupScreen({ navigation, route }) {
                 }}
                 style={({ pressed }) => [
                   styles.dateReveal,
+                  inputSurfaceStyle,
                   shouldShowError('time') && styles.inputError,
+                  shouldShowError('time') && { backgroundColor: surfaces.backgroundCard },
                   pressed && styles.pressed,
                 ]}
                 accessibilityLabel="Choose start time"
               >
-                <Text style={styles.dateRevealText} allowFontScaling>
+                <Text style={[styles.dateRevealText, { color: surfaces.textPrimary }]} allowFontScaling>
                   {formatLocalTime(startTime)}
                 </Text>
               </Pressable>
             </View>
             <View style={styles.timeCol}>
-              <Text style={styles.timeColLabel} allowFontScaling>
+              <Text style={[styles.timeColLabel, { color: surfaces.textPrimary }]} allowFontScaling>
                 Ends
               </Text>
               <Pressable
@@ -701,12 +901,14 @@ export default function CreateMeetupScreen({ navigation, route }) {
                 }}
                 style={({ pressed }) => [
                   styles.dateReveal,
+                  inputSurfaceStyle,
                   shouldShowError('time') && styles.inputError,
+                  shouldShowError('time') && { backgroundColor: surfaces.backgroundCard },
                   pressed && styles.pressed,
                 ]}
                 accessibilityLabel="Choose end time"
               >
-                <Text style={styles.dateRevealText} allowFontScaling>
+                <Text style={[styles.dateRevealText, { color: surfaces.textPrimary }]} allowFontScaling>
                   {formatLocalTime(endTime)}
                 </Text>
               </Pressable>
@@ -720,11 +922,23 @@ export default function CreateMeetupScreen({ navigation, route }) {
               <Pressable
                 key={h}
                 onPress={() => applyDuration(h)}
-                style={({ pressed }) => [styles.durChip, active && styles.durChipOn, pressed && styles.pressed]}
+                style={({ pressed }) => [
+                  styles.durChip,
+                  { backgroundColor: surfaces.backgroundCard },
+                  active && { backgroundColor: chipSelectedBg },
+                  pressed && styles.pressed,
+                ]}
                 accessibilityRole="button"
                 accessibilityLabel={`Duration ${h} hours`}
               >
-                <Text style={[styles.durChipText, active && styles.durChipTextOn]} allowFontScaling>
+                <Text
+                  style={[
+                    styles.durChipText,
+                    { color: surfaces.textPrimary },
+                    active && styles.durChipTextOn,
+                  ]}
+                  allowFontScaling
+                >
                   {h}h
                 </Text>
               </Pressable>
@@ -734,13 +948,18 @@ export default function CreateMeetupScreen({ navigation, route }) {
             onPress={() => setDurationMode('custom')}
             style={({ pressed }) => [
               styles.durChip,
-              durationMode === 'custom' && styles.durChipOn,
+              { backgroundColor: surfaces.backgroundCard },
+              durationMode === 'custom' && { backgroundColor: chipSelectedBg },
               pressed && styles.pressed,
             ]}
             accessibilityLabel="Custom duration"
           >
             <Text
-              style={[styles.durChipText, durationMode === 'custom' && styles.durChipTextOn]}
+              style={[
+                styles.durChipText,
+                { color: surfaces.textPrimary },
+                durationMode === 'custom' && styles.durChipTextOn,
+              ]}
               allowFontScaling
             >
               Custom
@@ -783,14 +1002,15 @@ export default function CreateMeetupScreen({ navigation, route }) {
           </Text>
         ) : null}
 
-        <FieldLabel required style={[styles.labelBlock, styles.labelSpaced]}>
+        <FieldLabel style={[styles.labelBlock, styles.labelSpaced]} labelColor={surfaces.textPrimary}>
           Who is hosting?
         </FieldLabel>
         <Animated.View
           style={[
             styles.hostList,
-            { transform: [{ translateX: shakeAnims.pets }] },
+            { backgroundColor: surfaces.backgroundCard, transform: [{ translateX: shakeAnims.pets }] },
             shouldShowError('pets') && styles.inputError,
+            shouldShowError('pets') && { backgroundColor: surfaces.backgroundCard },
           ]}
         >
           {pets.map((p) => {
@@ -799,7 +1019,14 @@ export default function CreateMeetupScreen({ navigation, route }) {
             const emoji = petTypeEmoji(p.pet_type);
             return (
               <View key={petId} style={styles.hostRow}>
-                <Text style={[styles.hostName, isSelected && styles.hostNameOn]} allowFontScaling>
+                <Text
+                  style={[
+                    styles.hostName,
+                    { color: surfaces.textPrimary },
+                    isSelected && styles.hostNameOn,
+                  ]}
+                  allowFontScaling
+                >
                   {p.name} {emoji}
                 </Text>
                 <Switch
@@ -816,10 +1043,10 @@ export default function CreateMeetupScreen({ navigation, route }) {
                     }
                   }}
                   trackColor={{
-                    false: theme.colors.border.light,
-                    true: theme.colors.brand.sage.light,
+                    false: surfaces.border,
+                    true: theme.colors.brand.sage.value,
                   }}
-                  thumbColor={theme.colors.background.card}
+                  thumbColor={surfaces.backgroundCard}
                   accessibilityLabel={`${p.name} hosting`}
                   accessibilityRole="checkbox"
                   accessibilityState={{ checked: Boolean(isSelected) }}
@@ -829,7 +1056,7 @@ export default function CreateMeetupScreen({ navigation, route }) {
           })}
         </Animated.View>
         {pets.length === 0 ? (
-          <Text style={styles.helperText} allowFontScaling>
+          <Text style={[styles.helperText, { color: surfaces.textMuted }]} allowFontScaling>
             Add a pet to your profile first.
           </Text>
         ) : null}
@@ -897,7 +1124,6 @@ const styles = StyleSheet.create({
   },
   screenTitle: {
     ...theme.fonts.scale.creationTitle,
-    color: theme.colors.text.primary.light,
     marginBottom: theme.spacing.sm,
   },
   screenSub: {
@@ -910,16 +1136,17 @@ const styles = StyleSheet.create({
   },
   label: {
     ...theme.fonts.scale.label,
-    color: theme.colors.text.primary.light,
+  },
+  labelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+    marginBottom: theme.spacing.sm,
+  },
+  standaloneLabel: {
     marginBottom: theme.spacing.xs,
   },
   labelBlock: {
-    marginBottom: 0,
-  },
-  requiredHint: {
-    fontFamily: theme.fonts.body,
-    fontSize: theme.fontSizes.xs,
-    color: theme.colors.text.muted.light,
     marginBottom: theme.spacing.sm,
   },
   labelSpaced: {
@@ -927,8 +1154,6 @@ const styles = StyleSheet.create({
   },
   input: {
     ...theme.fonts.scale.input,
-    color: theme.colors.text.primary.light,
-    backgroundColor: theme.colors.background.card,
     borderRadius: theme.borderRadius.lg,
     paddingVertical: theme.components.meetupForm.fieldPaddingY,
     paddingHorizontal: theme.spacing.lg,
@@ -937,14 +1162,16 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
   },
   inputError: {
-    borderColor: theme.colors.border.light,
-    backgroundColor: theme.colors.background.card,
+    borderColor: theme.colors.feedback.error.value,
+  },
+  aboutInput: {
+    minHeight: 96,
   },
   inlineError: {
     fontFamily: theme.fonts.body,
     fontSize: theme.fontSizes.sm,
     lineHeight: Math.round(theme.fontSizes.sm * theme.lineHeights.normal),
-    color: theme.colors.text.secondary.light,
+    color: theme.colors.feedback.error.value,
     marginBottom: theme.spacing.md,
   },
   chipRow: {
@@ -964,18 +1191,11 @@ const styles = StyleSheet.create({
     borderRadius: theme.borderRadius.full,
     paddingVertical: theme.spacing.sm,
     paddingHorizontal: theme.spacing.lg,
-    backgroundColor: theme.colors.background.card,
     borderWidth: 1,
-    borderColor: theme.colors.border.light,
-  },
-  openToChipOn: {
-    backgroundColor: theme.colors.brand.sageLight.light,
-    borderColor: theme.colors.brand.sage.value,
   },
   openToChipText: {
     fontFamily: theme.fonts.body,
     fontSize: theme.fontSizes.sm,
-    color: theme.colors.text.primary.light,
   },
   openToChipTextOn: {
     color: theme.colors.brand.sageDark.light,
@@ -993,7 +1213,6 @@ const styles = StyleSheet.create({
   },
   helperMuted: {
     ...theme.fonts.scale.helper,
-    color: theme.colors.text.muted.light,
     marginTop: theme.spacing.xs,
     marginBottom: theme.spacing.sm,
   },
@@ -1004,18 +1223,15 @@ const styles = StyleSheet.create({
   },
   dateReveal: {
     ...theme.fonts.scale.input,
-    color: theme.colors.text.primary.light,
     marginBottom: theme.spacing.sm,
     paddingVertical: theme.spacing.sm,
     paddingHorizontal: theme.spacing.lg,
-    backgroundColor: theme.colors.background.card,
     borderRadius: theme.borderRadius.lg,
     borderWidth: 1,
     borderColor: 'transparent',
   },
   dateRevealText: {
     ...theme.fonts.scale.input,
-    color: theme.colors.text.primary.light,
   },
   timeRow: {
     flexDirection: 'row',
@@ -1028,7 +1244,6 @@ const styles = StyleSheet.create({
   },
   timeColLabel: {
     ...theme.fonts.scale.label,
-    color: theme.colors.text.primary.light,
     marginBottom: theme.spacing.sm,
   },
   durRow: {
@@ -1041,22 +1256,16 @@ const styles = StyleSheet.create({
     paddingVertical: theme.spacing.sm,
     paddingHorizontal: theme.spacing.lg,
     borderRadius: theme.borderRadius.full,
-    backgroundColor: theme.colors.background.card,
-  },
-  durChipOn: {
-    backgroundColor: theme.colors.brand.sageLight.light,
   },
   durChipText: {
     fontFamily: theme.fonts.body,
     fontSize: theme.fontSizes.sm,
-    color: theme.colors.text.primary.light,
   },
   durChipTextOn: {
     color: theme.colors.brand.sageDark.light,
     fontFamily: theme.fonts.medium,
   },
   hostList: {
-    backgroundColor: theme.colors.background.card,
     borderRadius: theme.borderRadius.lg,
     paddingVertical: theme.spacing.xs,
     marginBottom: theme.spacing.sm,
@@ -1076,7 +1285,6 @@ const styles = StyleSheet.create({
     paddingRight: theme.spacing.md,
     fontFamily: theme.fonts.body,
     fontSize: theme.fontSizes.md,
-    color: theme.colors.text.primary.light,
   },
   hostNameOn: {
     fontFamily: theme.fonts.medium,
@@ -1085,7 +1293,6 @@ const styles = StyleSheet.create({
   helperText: {
     fontFamily: theme.fonts.body,
     fontSize: theme.fontSizes.sm,
-    color: theme.colors.text.muted.light,
     marginBottom: theme.spacing.md,
   },
   petChip: {

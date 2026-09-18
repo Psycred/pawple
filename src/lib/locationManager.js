@@ -87,6 +87,20 @@ export async function getLocationPermissionState() {
   }
 }
 
+/** Explicit foreground permission request from a deliberate user action. */
+export async function requestLocationPermission() {
+  try {
+    const result = await Location.requestForegroundPermissionsAsync();
+    return {
+      status: result.status,
+      canAskAgain: result.canAskAgain ?? true,
+    };
+  } catch (e) {
+    console.log('[LocationManager] requestLocationPermission failed:', e?.message);
+    return { status: 'undetermined', canAskAgain: true };
+  }
+}
+
 /**
  * Explicit user-tap consent (e.g. settings or future pre-prompt UI).
  * Never call during auth/signup — only from deliberate user actions in-app.
@@ -128,7 +142,7 @@ export async function getValidLocation(options = {}) {
   try {
     let permission = await Location.getForegroundPermissionsAsync();
 
-    if (permission.status === 'undetermined' && requestIfNeeded) {
+    if (permission.status !== 'granted' && requestIfNeeded) {
       permission = await Location.requestForegroundPermissionsAsync();
     }
 

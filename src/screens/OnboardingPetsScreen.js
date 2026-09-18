@@ -1,8 +1,11 @@
 import { Feather } from '@expo/vector-icons';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  AppState,
+  KeyboardAvoidingView,
   LayoutAnimation,
   Platform,
   Pressable,
@@ -14,33 +17,39 @@ import {
   UIManager,
   View,
 } from 'react-native';
-import * as ImagePicker from 'expo-image-picker';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../config/supabase';
 import { theme } from '../config/theme';
+import { useRuntimeThemeColors } from '../hooks/useRuntimeThemeColors';
 import PawPhotoFrame from '../components/PawPhotoFrame';
 import PhotoPickerModal from '../components/PhotoPickerModal';
 import LegalConsentRow from '../components/LegalConsentRow';
+import RequiredBadge from '../components/RequiredBadge';
 import {
-  openAppSettings,
-  requestCameraPermissionJIT,
-} from '../lib/permissions';
+  abandonCameraCapture,
+  captureFromCamera,
+} from '../lib/cameraCapture';
+import { nextCameraTraceId, logCameraTrace } from '../lib/cameraCaptureDiagnostics';
+import { logPhotoFlow } from '../lib/photoFlowDiagnostics';
 import { pickFromGallery } from '../lib/photoPicker';
+import { promptNotificationPermissionIfNeeded } from '../lib/notifications';
 import { useActivePet } from '../contexts/ActivePetContext';
 import { useAuth } from '../contexts/AuthContext';
 import { formatPetIdentityLine } from '../utils/petDisplay';
 import { completeOnboarding, getPendingInvite, validateInviteCode } from '../lib/onboardingInvite';
+import { getPetFieldErrors, isPetValid } from '../lib/petOnboardingValidation';
 import { resolvePetPhotoUrl } from '../lib/petPhotoUpload';
+import { approvePickedPhotoUri } from '../lib/photoValidationGate';
+import { usePhotoValidationGate } from '../contexts/PhotoValidationContext';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-const GENDER_OPTIONS = ['Male', 'Female', 'Other'];
+const GENDER_OPTIONS = ['Male', 'Female'];
 
 /** Inputs and placeholders always use Inter — never Caveat. */
 const INPUT_FONT_FAMILY = 'Inter-Regular';
-const INPUT_PLACEHOLDER_COLOR = theme.colors.placeholder.value;
 
 const PET_TYPE_CHIPS = [
   { key: 'dog', label: '🐕 Dog' },
@@ -85,16 +94,6 @@ const parseAgeForStorage = (ageStr) => {
   return Number.isFinite(n) ? n : parseFloat(t.replace(/[^0-9.]/g, '')) || 0;
 };
 
-/** Ready to save: name + one chip (and custom text if Other). Everything else optional. */
-const isPetValid = (pet) => {
-  const typeOk =
-    pet.pet_type === 'dog' ||
-    pet.pet_type === 'cat' ||
-    pet.pet_type === 'fish' ||
-    (pet.pet_type === 'other' && !!pet.pet_type_custom?.trim());
-  return typeOk && !!pet.name.trim();
-};
-
 /** Conversational line above chips; updates as `pet.name` changes. */
 const getPetTypePromptLine = (pet, petIndex) => {
   const n = pet.name.trim();
@@ -108,8 +107,10 @@ const getPetTypePromptLine = (pet, petIndex) => {
 const formatPetSummary = (pet) => `🐾 ${formatPetIdentityLine(pet)}`;
 
 export default function OnboardingPetsScreen({ navigation, route }) {
+  const insets = useSafeAreaInsets();
   const { setPet } = useActivePet();
   const { profile, refreshProfile, pendingInviteCode } = useAuth();
+  const { ready: photoValidationReady, validatePhoto } = usePhotoValidationGate();
   const mode = route?.params?.mode;
   const petId = route?.params?.petId ?? null;
   const isManageAddMode = mode === 'add';
@@ -123,34 +124,121 @@ export default function OnboardingPetsScreen({ navigation, route }) {
   const [expandedPetIndex, setExpandedPetIndex] = useState(0);
   const [loading, setLoading] = useState(false);
   const [invalidPetIndexes, setInvalidPetIndexes] = useState([]);
+  const [petFieldErrors, setPetFieldErrors] = useState({});
   const [photoModalVisible, setPhotoModalVisible] = useState(false);
   const [photoModalPetIndex, setPhotoModalPetIndex] = useState(null);
+  const [photoValidatingPetIndex, setPhotoValidatingPetIndex] = useState(null);
   const [prefillLoading, setPrefillLoading] = useState(false);
   const [existingPetIds, setExistingPetIds] = useState([]);
   const [secondaryPetFocusToken, setSecondaryPetFocusToken] = useState(0);
   const nameInputRef = useRef(null);
   const scrollViewRef = useRef(null);
+  const screenMountedRef = useRef(true);
 
   const showInviteInvalidFeedback = () => {
-    const message = 'Code invalid or already used.';
+    const message = 'This invite may have expired or already been used.';
     if (Platform.OS === 'android') {
       ToastAndroid.show(message, ToastAndroid.SHORT);
       return;
     }
-    Alert.alert('Invite code', message);
+    Alert.alert('Invite not valid', message);
   };
 
-  const completedCount = useMemo(() => petForms.filter((pet) => isPetValid(pet)).length, [petForms]);
-  const hasAtLeastOneValidPet = completedCount > 0;
-  const hasPartiallyInvalidPet = useMemo(
-    () => petForms.some((pet) => !isPetEmpty(pet) && !isPetValid(pet)),
-    [petForms],
+  const onboardingPetOptions = useMemo(
+    () => ({ requireBreed: !isManageCrudMode }),
+    [isManageCrudMode],
   );
-  const canSubmitFinalOnboarding = Boolean(fullName?.trim() && city?.trim() && hasAtLeastOneValidPet && !hasPartiallyInvalidPet);
-
+  const completedCount = useMemo(
+    () => petForms.filter((pet) => isPetValid(pet, onboardingPetOptions)).length,
+    [petForms, onboardingPetOptions],
+  );
   const collapsedIndices = useMemo(
     () => petForms.map((_, i) => i).filter((i) => i !== expandedPetIndex),
     [petForms, expandedPetIndex],
+  );
+
+  const surfaces = useRuntimeThemeColors();
+
+  const onboardingTheme = useMemo(
+    () => ({
+      container: { backgroundColor: surfaces.backgroundScreen },
+      title: { color: surfaces.textPrimary },
+      subtitle: { color: surfaces.textSecondary },
+      card: {
+        backgroundColor: surfaces.backgroundCard,
+        borderColor: surfaces.border,
+      },
+      photoNameDivider: { backgroundColor: surfaces.border },
+      petFormIndex: { color: surfaces.textMuted },
+      petTypePrompt: { color: surfaces.textPrimary },
+      optionalFieldsBorder: { borderTopColor: surfaces.border },
+      labelOptional: { color: surfaces.textMuted },
+      label: { color: surfaces.textSecondary },
+      requiredFieldLabel: { color: surfaces.textSecondary },
+      input: {
+        backgroundColor: surfaces.inputBackground,
+        borderColor: surfaces.inputBorder,
+        color: surfaces.textPrimary,
+      },
+      inputOptional: {
+        backgroundColor: surfaces.backgroundCard,
+        borderColor: surfaces.border,
+      },
+      petTypeChipIdle: {
+        backgroundColor: surfaces.backgroundCard,
+        borderColor: surfaces.border,
+      },
+      petTypeChipText: { color: surfaces.textPrimary },
+      summaryCard: {
+        backgroundColor: surfaces.backgroundCard,
+        borderColor: surfaces.border,
+      },
+      summaryMainText: { color: surfaces.textPrimary },
+      editLabel: { color: surfaces.textSecondary },
+      optionChip: {
+        backgroundColor: surfaces.backgroundScreen,
+        borderColor: surfaces.border,
+      },
+      optionChipOptional: {
+        backgroundColor: surfaces.backgroundCard,
+        borderColor: surfaces.border,
+      },
+      optionChipText: { color: surfaces.textSecondary },
+      vaccineButtonText: { color: surfaces.textSecondary },
+      vaccineUnselected: {
+        backgroundColor: surfaces.backgroundScreen,
+        borderColor: surfaces.border,
+      },
+      secondaryBottomActionsBorder: { borderTopColor: surfaces.border },
+      secondaryBottomBtn: {
+        backgroundColor: surfaces.backgroundScreen,
+        borderColor: surfaces.border,
+      },
+      secondaryBottomBtnTextCancel: { color: surfaces.textSecondary },
+      secondaryButton: {
+        backgroundColor: surfaces.backgroundCard,
+        borderColor: surfaces.border,
+      },
+      secondaryButtonText: { color: surfaces.textPrimary },
+      addPetSubtitle: { color: surfaces.textSecondary },
+      primaryActionSpinner: surfaces.isDark
+        ? theme.colors.text.inverse.value
+        : theme.colors.background.light,
+      placeholder: surfaces.placeholder,
+      cancelIcon: surfaces.textMuted,
+    }),
+    [
+      surfaces.backgroundCard,
+      surfaces.backgroundScreen,
+      surfaces.border,
+      surfaces.inputBackground,
+      surfaces.inputBorder,
+      surfaces.isDark,
+      surfaces.placeholder,
+      surfaces.textMuted,
+      surfaces.textPrimary,
+      surfaces.textSecondary,
+    ],
   );
 
   useEffect(() => {
@@ -251,6 +339,21 @@ export default function OnboardingPetsScreen({ navigation, route }) {
 
   const updatePetField = (index, field, value) => {
     setPetForms((prev) => prev.map((pet, i) => (i === index ? { ...pet, [field]: value } : pet)));
+    setPetFieldErrors((prev) => {
+      const currentErrors = prev[index];
+      if (!currentErrors?.[field]) {
+        return prev;
+      }
+      const nextForPet = { ...currentErrors };
+      delete nextForPet[field];
+      const next = { ...prev };
+      if (Object.keys(nextForPet).length) {
+        next[index] = nextForPet;
+      } else {
+        delete next[index];
+      }
+      return next;
+    });
     setInvalidPetIndexes((prev) => prev.filter((item) => item !== index));
   };
 
@@ -266,6 +369,24 @@ export default function OnboardingPetsScreen({ navigation, route }) {
         return next;
       }),
     );
+    setPetFieldErrors((prev) => {
+      const currentErrors = prev[index];
+      if (!currentErrors) {
+        return prev;
+      }
+      const nextForPet = { ...currentErrors };
+      delete nextForPet.pet_type;
+      if (typeKey !== 'other') {
+        delete nextForPet.pet_type_custom;
+      }
+      const next = { ...prev };
+      if (Object.keys(nextForPet).length) {
+        next[index] = nextForPet;
+      } else {
+        delete next[index];
+      }
+      return next;
+    });
     setInvalidPetIndexes((prev) => prev.filter((item) => item !== index));
   };
 
@@ -300,11 +421,29 @@ export default function OnboardingPetsScreen({ navigation, route }) {
         .filter((i) => i !== idx)
         .map((i) => (i > idx ? i - 1 : i)),
     );
+    setPetFieldErrors((prev) => {
+      const next = {};
+      Object.entries(prev).forEach(([rawIndex, errors]) => {
+        const itemIndex = Number(rawIndex);
+        if (itemIndex !== idx) {
+          next[itemIndex > idx ? itemIndex - 1 : itemIndex] = errors;
+        }
+      });
+      return next;
+    });
   };
 
   /** Collapse secondary form back to main list (pet row stays in draft). */
   const handleSaveSecondaryPetDraft = () => {
     if (isManageCrudMode || expandedPetIndex <= 0) {
+      return;
+    }
+    const errors = getPetFieldErrors(petForms[expandedPetIndex], { requireBreed: true });
+    if (Object.keys(errors).length > 0) {
+      setPetFieldErrors((prev) => ({ ...prev, [expandedPetIndex]: errors }));
+      setInvalidPetIndexes((prev) =>
+        prev.includes(expandedPetIndex) ? prev : [...prev, expandedPetIndex],
+      );
       return;
     }
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -335,7 +474,74 @@ export default function OnboardingPetsScreen({ navigation, route }) {
 
   const closePhotoModal = () => {
     setPhotoModalVisible(false);
-    setPhotoModalPetIndex(null);
+  };
+
+  useEffect(() => {
+    return () => {
+      screenMountedRef.current = false;
+    };
+  }, []);
+
+  // Abandon in-flight camera only when leaving the screen — not on parent remounts.
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        abandonCameraCapture('screen_blur', { screen: 'OnboardingPets' });
+      };
+    }, []),
+  );
+
+  // Returning from OS camera/gallery must not leave a stale RN modal intercepting touches.
+  useFocusEffect(
+    useCallback(() => {
+      setPhotoModalVisible(false);
+      setPhotoModalPetIndex(null);
+    }, []),
+  );
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        setPhotoModalVisible(false);
+        setPhotoModalPetIndex(null);
+      }
+    });
+    return () => subscription.remove();
+  }, []);
+
+  const commitPickedPetPhoto = useCallback(
+    async (index, uri) => {
+      if (!uri) {
+        return false;
+      }
+      // Validate after native crop confirmation — commit only when the gate accepts.
+      setPhotoValidatingPetIndex(index);
+      try {
+        const allowed = await approvePickedPhotoUri(uri, {
+          ready: photoValidationReady,
+          validatePhoto,
+        });
+        if (!allowed) {
+          return false;
+        }
+        updatePetField(index, 'photoUri', uri);
+        return true;
+      } finally {
+        setPhotoValidatingPetIndex(null);
+      }
+    },
+    [photoValidationReady, validatePhoto],
+  );
+
+  /** After native modal dismiss: pet index travels with source — not React state cleared by onClose. */
+  const handlePhotoSourceSelected = async (source, petIndex) => {
+    logPhotoFlow('screen_handler_start', { screen: 'OnboardingPets', petIndex });
+    setPhotoModalVisible(false);
+    try {
+      await pickPetPhoto(petIndex, source);
+    } finally {
+      setPhotoModalPetIndex(null);
+    }
   };
 
   /** @returns {Promise<boolean>} true when a new image URI was saved */
@@ -343,36 +549,43 @@ export default function OnboardingPetsScreen({ navigation, route }) {
     if (index == null) {
       return false;
     }
+
+    const traceId = nextCameraTraceId('OnboardingPets');
+    logCameraTrace(traceId, 'pick_pet_photo_start', { source, petIndex: index });
+
     try {
-      if (source === 'library') {
+      if (source !== 'camera') {
         const result = await pickFromGallery({
           allowsEditing: true,
           aspect: [1, 1],
           quality: 0.85,
         });
-        if (result?.assets?.[0]?.uri) {
-          updatePetField(index, 'photoUri', result.assets[0].uri);
-          return true;
+        const uri = result?.assets?.[0]?.uri;
+        if (uri) {
+          return commitPickedPetPhoto(index, uri);
         }
         return false;
       }
 
-      const granted = await requestCameraPermissionJIT();
-      if (!granted) {
-        Alert.alert('Camera', 'Permission was not granted. You can skip the photo and continue.', [
-          { text: 'Not now', style: 'cancel' },
-          { text: 'Open settings', onPress: openAppSettings },
-        ]);
+      const capture = await captureFromCamera(
+        {
+          allowsEditing: true,
+          aspect: [1, 1],
+          quality: 0.85,
+        },
+        { traceId, screen: 'OnboardingPets' },
+      );
+      logCameraTrace(traceId, 'pick_pet_photo_capture_result', { status: capture.status });
+
+      if (capture.status === 'busy' || capture.status === 'canceled' || capture.status === 'abandoned') {
         return false;
       }
-      const result = await ImagePicker.launchCameraAsync({
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.85,
-      });
-      if (!result.canceled && result.assets?.[0]?.uri) {
-        updatePetField(index, 'photoUri', result.assets[0].uri);
-        return true;
+      if (capture.status !== 'captured') {
+        return false;
+      }
+      const cameraUri = capture.result?.assets?.[0]?.uri;
+      if (cameraUri) {
+        return commitPickedPetPhoto(index, cameraUri);
       }
       return false;
     } catch (e) {
@@ -386,7 +599,10 @@ export default function OnboardingPetsScreen({ navigation, route }) {
     try {
       if (isManageCrudMode) {
         const activePet = petForms[0];
-        if (!isPetValid(activePet)) {
+        const activePetErrors = getPetFieldErrors(activePet);
+        if (Object.keys(activePetErrors).length > 0) {
+          setPetFieldErrors({ 0: activePetErrors });
+          setInvalidPetIndexes([0]);
           Alert.alert(
             'Almost there',
             'Add a name and choose Dog, Cat, Fish, or Other. If you choose Other, include what they are.',
@@ -470,25 +686,37 @@ export default function OnboardingPetsScreen({ navigation, route }) {
         return;
       }
 
-      if (!petForms.some(isPetValid)) {
+      if (!petForms.some((pet) => isPetValid(pet, onboardingPetOptions))) {
+        const firstCandidateIndex = petForms.findIndex((pet) => !isPetEmpty(pet));
+        const targetIndex = firstCandidateIndex >= 0 ? firstCandidateIndex : 0;
+        setPetFieldErrors({
+          [targetIndex]: getPetFieldErrors(petForms[targetIndex], onboardingPetOptions),
+        });
+        setInvalidPetIndexes([targetIndex]);
+        setExpandedPetIndex(targetIndex);
         Alert.alert(
           'Almost there',
-          'Add at least one friend with their name and a tap on Dog, Cat, Fish, or Other. If you pick Other, tell us what they are.',
+          'Add at least one friend with their name, breed, and a tap on Dog, Cat, Fish, or Other. If you pick Other, tell us what they are.',
         );
         return;
       }
 
       const invalidIndexes = petForms
         .map((pet, index) => ({ pet, index }))
-        .filter(({ pet }) => !isPetEmpty(pet) && !isPetValid(pet))
+        .filter(({ pet }) => !isPetEmpty(pet) && !isPetValid(pet, onboardingPetOptions))
         .map(({ index }) => index);
 
       if (invalidIndexes.length > 0) {
+        const nextFieldErrors = {};
+        invalidIndexes.forEach((index) => {
+          nextFieldErrors[index] = getPetFieldErrors(petForms[index], onboardingPetOptions);
+        });
+        setPetFieldErrors(nextFieldErrors);
         setInvalidPetIndexes(invalidIndexes);
         const petLabels = invalidIndexes.map((index) => `Pet ${index + 1}`).join(', ');
         Alert.alert(
           'Just a little more',
-          `${petLabels} still need a name and one of the paths below (Dog, Cat, Fish, or Other). If you chose Other, add a quick note so we know who they are.`,
+          `${petLabels} still need a name, breed, and one of the paths below (Dog, Cat, Fish, or Other). If you chose Other, add a quick note so we know who they are.`,
         );
         return;
       }
@@ -508,7 +736,7 @@ export default function OnboardingPetsScreen({ navigation, route }) {
 
       const resolvedInviteCode = inviteCode || (await getPendingInvite(user.id));
       if (!resolvedInviteCode && !__DEV__) {
-        Alert.alert('Invite required', 'Please enter a valid invite code to continue.');
+        Alert.alert('Invite needed', 'Enter a valid invite code to continue.');
         navigation.replace('InviteCodeScreen');
         return;
       }
@@ -589,7 +817,7 @@ export default function OnboardingPetsScreen({ navigation, route }) {
       let firstPetId = existingPetIds[0] ?? null;
 
       if (!existingPetIds.length) {
-        const petsToSave = petForms.filter(isPetValid);
+        const petsToSave = petForms.filter((pet) => isPetValid(pet, onboardingPetOptions));
         const petsPayload = await Promise.all(
           petsToSave.map(async (pet) => {
             const photo_url = await resolvePetPhotoUrl(pet.photoUri, user.id);
@@ -624,6 +852,39 @@ export default function OnboardingPetsScreen({ navigation, route }) {
         firstPetId = insertedPets?.[0]?.id ?? null;
       } else {
         console.log('[OnboardingPets] Reusing existing pets for interrupted onboarding:', existingPetIds);
+        const petsToSync = petForms.filter((pet, index) => existingPetIds[index]);
+        await Promise.all(
+          petsToSync.map(async (pet, index) => {
+            const petRowId = existingPetIds[index];
+            if (!petRowId) {
+              return;
+            }
+            const photo_url = await resolvePetPhotoUrl(pet.photoUri, user.id);
+            const { error: syncError } = await supabase
+              .from('pets')
+              .update({
+                name: pet.name.trim(),
+                age: parseAgeForStorage(pet.age),
+                breed: pet.breed.trim() || null,
+                gender: pet.gender?.trim() || null,
+                vaccinated:
+                  pet.vaccinated === 'Yes' || pet.vaccinated === 'No' ? pet.vaccinated : null,
+                photo_url,
+                pet_type: pet.pet_type,
+                pet_type_custom:
+                  pet.pet_type === 'other'
+                    ? pet.pet_type_custom?.trim()
+                      ? pet.pet_type_custom.trim()
+                      : null
+                    : null,
+              })
+              .eq('id', petRowId)
+              .eq('owner_id', user.id);
+            if (syncError) {
+              throw syncError;
+            }
+          }),
+        );
       }
 
       if (!firstPetId) {
@@ -639,7 +900,10 @@ export default function OnboardingPetsScreen({ navigation, route }) {
       });
       await refreshProfile?.();
 
-      navigation.replace('OnboardingFinal');
+      // OS notification prompt after successful pet submit — never block save on result.
+      await promptNotificationPermissionIfNeeded();
+
+      navigation.replace('MainTabs', { screen: 'FeedScreen' });
     } catch (error) {
       console.error('[OnboardingPets] Save failed:', {
         message: error?.message,
@@ -680,7 +944,14 @@ export default function OnboardingPetsScreen({ navigation, route }) {
 
   const renderOptionRow = (label, value, options, onSelect, optional = false) => (
     <View>
-      <Text style={optional ? styles.labelOptional : styles.label}>{label}</Text>
+      <Text
+        style={[
+          optional ? styles.labelOptional : styles.label,
+          optional ? onboardingTheme.labelOptional : onboardingTheme.label,
+        ]}
+      >
+        {label}
+      </Text>
       <View style={styles.optionRow}>
         {options.map((option) => {
           const active = value === option;
@@ -689,13 +960,23 @@ export default function OnboardingPetsScreen({ navigation, route }) {
               key={option}
               style={({ pressed }) => [
                 styles.optionChip,
-                optional && styles.optionChipOptional,
+                optional
+                  ? [styles.optionChipOptional, onboardingTheme.optionChipOptional]
+                  : onboardingTheme.optionChip,
                 active && styles.optionChipActive,
                 pressed && styles.chipPressed,
               ]}
               onPress={() => onSelect(option)}
             >
-              <Text style={[styles.optionChipText, active && styles.optionChipTextActive]}>{option}</Text>
+              <Text
+                style={[
+                  styles.optionChipText,
+                  onboardingTheme.optionChipText,
+                  active && styles.optionChipTextActive,
+                ]}
+              >
+                {option}
+              </Text>
             </Pressable>
           );
         })}
@@ -705,26 +986,78 @@ export default function OnboardingPetsScreen({ navigation, route }) {
 
   const isSecondaryPetExpanded = !isManageCrudMode && expandedPetIndex > 0;
   const showOnboardingHeader = !isSecondaryPetExpanded;
+  const scrollBottomInset = Math.max(insets.bottom, theme.spacing.xxxl);
+
+  const renderPetPhotoSection = (index, pet) => (
+    <View style={styles.photoSectionLead}>
+      <View style={styles.photoFrameRow}>
+        <PawPhotoFrame
+          uri={pet.photoUri}
+          onPress={() => openPetPhotoOptions(index)}
+          disabled={loading || photoValidatingPetIndex === index}
+          validating={photoValidatingPetIndex === index}
+        />
+      </View>
+      <View style={[styles.photoNameDivider, onboardingTheme.photoNameDivider]} />
+    </View>
+  );
+
+  const renderPrimaryAction = () => (
+    <Pressable
+      style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}
+      onPress={saveOnboarding}
+      disabled={loading}
+      accessibilityRole="button"
+      accessibilityLabel="Complete setup and go to home"
+    >
+      {loading ? (
+        <ActivityIndicator color={onboardingTheme.primaryActionSpinner} />
+      ) : (
+        <Text style={styles.buttonText}>
+          {isEditMode
+            ? 'Save Changes'
+            : isManageAddMode
+              ? 'Add Pet'
+              : `Complete Setup 🎉 (${completedCount} ready)`}
+        </Text>
+      )}
+    </Pressable>
+  );
 
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-      {prefillLoading ? (
-        <View style={styles.prefillLoadingWrap}>
-          <ActivityIndicator color={theme.colors.primary.light} />
-        </View>
-      ) : null}
-      <ScrollView
-        ref={scrollViewRef}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
+    <SafeAreaView style={[styles.container, onboardingTheme.container]} edges={['top', 'bottom']}>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={insets.top}
       >
+        {prefillLoading ? (
+          <View style={styles.prefillLoadingWrap}>
+            <ActivityIndicator color={theme.colors.primary.light} />
+          </View>
+        ) : null}
+        <ScrollView
+          ref={scrollViewRef}
+          contentContainerStyle={[
+            styles.scrollContent,
+            {
+              paddingTop: theme.feed.shellPaddingTop,
+              paddingBottom: scrollBottomInset,
+            },
+          ]}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          nestedScrollEnabled
+          scrollEnabled
+          removeClippedSubviews={false}
+        >
+        <View style={styles.scrollInner} collapsable={false}>
         {showOnboardingHeader ? (
           <>
-            <Text style={styles.title}>
+            <Text style={[styles.title, onboardingTheme.title]}>
               {isEditMode ? 'Edit Pet' : isManageAddMode ? 'Add Pet' : 'Add Your Pets'}
             </Text>
-            <Text style={styles.subtitle}>
+            <Text style={[styles.subtitle, onboardingTheme.subtitle]}>
               {isManageCrudMode ? 'Keep your pet profile up to date.' : 'You can add one or many pets now.'}
             </Text>
           </>
@@ -743,6 +1076,7 @@ export default function OnboardingPetsScreen({ navigation, route }) {
               key={`pet-summary-${petNumber}`}
               style={({ pressed }) => [
                 styles.summaryCard,
+                onboardingTheme.summaryCard,
                 showInvalid && styles.summaryCardInvalid,
                 pressed && styles.summaryPressed,
               ]}
@@ -751,14 +1085,14 @@ export default function OnboardingPetsScreen({ navigation, route }) {
               accessibilityLabel={`Edit pet ${petNumber}`}
             >
               <View style={styles.summaryRow}>
-                <Text style={styles.summaryMainText} numberOfLines={2}>
+                <Text style={[styles.summaryMainText, onboardingTheme.summaryMainText]} numberOfLines={2}>
                   {summaryLine}
                 </Text>
                 <View style={styles.editBadge}>
                   <Text style={styles.editIcon} accessibilityLabel="Edit">
                     ✏️
                   </Text>
-                  <Text style={styles.editLabel}>Edit</Text>
+                  <Text style={[styles.editLabel, onboardingTheme.editLabel]}>Edit</Text>
                 </View>
               </View>
             </Pressable>
@@ -774,11 +1108,13 @@ export default function OnboardingPetsScreen({ navigation, route }) {
           const isYesSelected = pet.vaccinated === 'Yes';
           const isNoSelected = pet.vaccinated === 'No';
           const isSecondaryPetFlow = !isManageCrudMode && index > 0;
+          const petErrors = petFieldErrors[index] ?? {};
           return (
             <View
               key={`pet-expanded-${index}`}
               style={[
                 styles.card,
+                onboardingTheme.card,
                 isSecondaryPetFlow && styles.cardSecondary,
                 invalidPetIndexes.includes(index) && styles.cardInvalid,
               ]}
@@ -792,31 +1128,47 @@ export default function OnboardingPetsScreen({ navigation, route }) {
                     accessibilityRole="button"
                     accessibilityLabel="Cancel adding pet"
                   >
-                    <Feather name="x" size={theme.fontSizes.xxl} color={theme.colors.text.muted.light} />
+                    <Feather name="x" size={theme.fontSizes.xxl} color={onboardingTheme.cancelIcon} />
                   </Pressable>
                   {petForms.length > 1 ? (
-                    <Text style={styles.petFormIndex}>{`Pet ${petNumber}`}</Text>
+                    <Text style={[styles.petFormIndex, onboardingTheme.petFormIndex]}>{`Pet ${petNumber}`}</Text>
                   ) : null}
 
+                  {renderPetPhotoSection(index, pet)}
+
+                  <View style={styles.petDetailsSection}>
+                  <View style={styles.requiredLabelRow}>
+                    <Text style={[styles.requiredFieldLabel, onboardingTheme.requiredFieldLabel]}>Pet name</Text>
+                    <RequiredBadge />
+                  </View>
                   <TextInput
                     ref={nameInputRef}
-                    style={[styles.input, styles.inputPetName]}
+                    style={[styles.input, onboardingTheme.input, styles.inputPetName, petErrors.name && styles.inputError]}
                     placeholder="Their name"
-                    placeholderTextColor={INPUT_PLACEHOLDER_COLOR}
+                    placeholderTextColor={onboardingTheme.placeholder}
                     value={pet.name}
                     onChangeText={(value) => updatePetField(index, 'name', value)}
                     editable={!loading}
                     returnKeyType="next"
                     accessibilityLabel="Pet name"
                   />
+                  {petErrors.name ? (
+                    <Text style={styles.inlineError} accessibilityLiveRegion="polite">
+                      {petErrors.name}
+                    </Text>
+                  ) : null}
 
                   <View style={styles.petTypePromptWrap}>
-                    <Text style={styles.petTypePrompt} numberOfLines={2}>
+                    <Text style={[styles.petTypePrompt, onboardingTheme.petTypePrompt]} numberOfLines={2}>
                       {getPetTypePromptLine(pet, index)}
                     </Text>
+                    <RequiredBadge />
                   </View>
 
-                  <View style={styles.petTypeChipRow} accessibilityRole="radiogroup">
+                  <View
+                    style={[styles.petTypeChipRow, petErrors.pet_type && styles.selectionError]}
+                    accessibilityRole="radiogroup"
+                  >
                     {PET_TYPE_CHIPS.map(({ key, label }) => {
                       const selected = pet.pet_type === key;
                       return (
@@ -824,7 +1176,9 @@ export default function OnboardingPetsScreen({ navigation, route }) {
                           key={key}
                           style={({ pressed }) => [
                             styles.petTypeChip,
-                            selected ? styles.petTypeChipSelected : styles.petTypeChipIdle,
+                            selected
+                              ? styles.petTypeChipSelected
+                              : [styles.petTypeChipIdle, onboardingTheme.petTypeChipIdle],
                             pressed && styles.chipPressed,
                           ]}
                           onPress={() => selectPetType(index, key)}
@@ -833,43 +1187,92 @@ export default function OnboardingPetsScreen({ navigation, route }) {
                           accessibilityState={{ selected }}
                           accessibilityLabel={label}
                         >
-                          <Text style={[styles.petTypeChipText, selected && styles.petTypeChipTextSelected]}>
+                          <Text
+                            style={[
+                              styles.petTypeChipText,
+                              onboardingTheme.petTypeChipText,
+                              selected && styles.petTypeChipTextSelected,
+                            ]}
+                          >
                             {label}
                           </Text>
                         </Pressable>
                       );
                     })}
                   </View>
-
-                  {pet.pet_type === 'other' ? (
-                    <TextInput
-                      style={[styles.input, styles.inputOptional, styles.petOtherInput]}
-                      placeholder="Tell us what they are..."
-                      placeholderTextColor={INPUT_PLACEHOLDER_COLOR}
-                      value={pet.pet_type_custom}
-                      onChangeText={(value) => updatePetField(index, 'pet_type_custom', value)}
-                      editable={!loading}
-                      accessibilityLabel="Describe your pet"
-                    />
+                  {petErrors.pet_type ? (
+                    <Text style={styles.inlineError} accessibilityLiveRegion="polite">
+                      {petErrors.pet_type}
+                    </Text>
                   ) : null}
 
-                  <View style={styles.optionalFields}>
-                    <Text style={styles.labelOptional}>Breed</Text>
+                  {pet.pet_type === 'other' ? (
+                    <>
+                      <View style={styles.requiredLabelRow}>
+                        <Text style={[styles.requiredFieldLabel, onboardingTheme.requiredFieldLabel]}>Type</Text>
+                        <RequiredBadge />
+                      </View>
+                      <TextInput
+                        style={[
+                          styles.input,
+                          onboardingTheme.input,
+                          styles.inputOptional,
+                          onboardingTheme.inputOptional,
+                          styles.petOtherInput,
+                          petErrors.pet_type_custom && styles.inputError,
+                        ]}
+                        placeholder="Tell us what they are..."
+                        placeholderTextColor={onboardingTheme.placeholder}
+                        value={pet.pet_type_custom}
+                        onChangeText={(value) => updatePetField(index, 'pet_type_custom', value)}
+                        editable={!loading}
+                        accessibilityLabel="Describe your pet"
+                      />
+                      {petErrors.pet_type_custom ? (
+                        <Text style={styles.inlineError} accessibilityLiveRegion="polite">
+                          {petErrors.pet_type_custom}
+                        </Text>
+                      ) : null}
+                    </>
+                  ) : null}
+
+                  <View style={[styles.optionalFields, onboardingTheme.optionalFieldsBorder]}>
+                    <View style={styles.requiredLabelRow}>
+                      <Text style={[styles.requiredFieldLabel, onboardingTheme.requiredFieldLabel]}>Breed</Text>
+                      <RequiredBadge />
+                    </View>
                     <TextInput
-                      style={[styles.input, styles.inputOptional]}
+                      style={[
+                        styles.input,
+                        onboardingTheme.input,
+                        styles.inputOptional,
+                        onboardingTheme.inputOptional,
+                        petErrors.breed && styles.inputError,
+                      ]}
                       placeholder="Golden Retriever"
-                      placeholderTextColor={INPUT_PLACEHOLDER_COLOR}
+                      placeholderTextColor={onboardingTheme.placeholder}
                       value={pet.breed}
                       onChangeText={(value) => updatePetField(index, 'breed', value)}
                       editable={!loading}
                       returnKeyType="next"
+                      accessibilityLabel="Breed"
                     />
+                    {petErrors.breed ? (
+                      <Text style={styles.inlineError} accessibilityLiveRegion="polite">
+                        {petErrors.breed}
+                      </Text>
+                    ) : null}
 
-                    <Text style={styles.labelOptional}>Age</Text>
+                    <Text style={[styles.labelOptional, onboardingTheme.labelOptional]}>Age</Text>
                     <TextInput
-                      style={[styles.input, styles.inputOptional]}
+                      style={[
+                        styles.input,
+                        onboardingTheme.input,
+                        styles.inputOptional,
+                        onboardingTheme.inputOptional,
+                      ]}
                       placeholder="Years (e.g., 2.5)"
-                      placeholderTextColor={INPUT_PLACEHOLDER_COLOR}
+                      placeholderTextColor={onboardingTheme.placeholder}
                       value={pet.age}
                       onChangeText={(value) => updatePetField(index, 'age', sanitizeAgeInput(value))}
                       keyboardType="decimal-pad"
@@ -880,16 +1283,18 @@ export default function OnboardingPetsScreen({ navigation, route }) {
                     {renderOptionRow('Gender', pet.gender, GENDER_OPTIONS, (value) => updatePetField(index, 'gender', value), true)}
 
                     <View>
-                      <Text style={styles.labelOptional}>Vaccinated?</Text>
+                      <Text style={[styles.labelOptional, onboardingTheme.labelOptional]}>Vaccinated?</Text>
                       <View style={styles.vaccineButtonRow}>
                         <Pressable
                           style={({ pressed }) => [
                             styles.vaccineButton,
                             styles.vaccineButtonHalf,
-                            {
-                              backgroundColor: isYesSelected ? theme.colors.primary.light : theme.colors.background.light,
-                              borderColor: isYesSelected ? theme.colors.primary.light : theme.colors.border.light,
-                            },
+                            isYesSelected
+                              ? {
+                                  backgroundColor: theme.colors.primary.light,
+                                  borderColor: theme.colors.primary.light,
+                                }
+                              : onboardingTheme.vaccineUnselected,
                             pressed && styles.chipPressed,
                           ]}
                           onPress={() => updatePetField(index, 'vaccinated', 'Yes')}
@@ -899,7 +1304,11 @@ export default function OnboardingPetsScreen({ navigation, route }) {
                           accessibilityLabel="Vaccinated: Yes"
                         >
                           <Text
-                            style={[styles.vaccineButtonText, isYesSelected && styles.vaccineButtonTextOnSolid]}
+                            style={[
+                              styles.vaccineButtonText,
+                              onboardingTheme.vaccineButtonText,
+                              isYesSelected && styles.vaccineButtonTextOnSolid,
+                            ]}
                           >
                             Yes
                           </Text>
@@ -908,10 +1317,12 @@ export default function OnboardingPetsScreen({ navigation, route }) {
                           style={({ pressed }) => [
                             styles.vaccineButton,
                             styles.vaccineButtonHalf,
-                            {
-                              backgroundColor: isNoSelected ? theme.colors.error.light : theme.colors.background.light,
-                              borderColor: isNoSelected ? theme.colors.error.light : theme.colors.border.light,
-                            },
+                            isNoSelected
+                              ? {
+                                  backgroundColor: theme.colors.error.light,
+                                  borderColor: theme.colors.error.light,
+                                }
+                              : onboardingTheme.vaccineUnselected,
                             pressed && styles.chipPressed,
                           ]}
                           onPress={() => updatePetField(index, 'vaccinated', 'No')}
@@ -921,34 +1332,35 @@ export default function OnboardingPetsScreen({ navigation, route }) {
                           accessibilityLabel="Vaccinated: No"
                         >
                           <Text
-                            style={[styles.vaccineButtonText, isNoSelected && styles.vaccineButtonTextOnSolid]}
+                            style={[
+                              styles.vaccineButtonText,
+                              onboardingTheme.vaccineButtonText,
+                              isNoSelected && styles.vaccineButtonTextOnSolid,
+                            ]}
                           >
                             No
                           </Text>
                         </Pressable>
                       </View>
                     </View>
-
-                    <View style={styles.photoSection}>
-                      <View style={styles.photoFrameRow}>
-                        <PawPhotoFrame
-                          uri={pet.photoUri}
-                          onPress={() => openPetPhotoOptions(index)}
-                          disabled={loading}
-                        />
-                      </View>
-                    </View>
+                  </View>
                   </View>
 
-                  <View style={styles.secondaryBottomActions}>
+                  <View style={[styles.secondaryBottomActions, onboardingTheme.secondaryBottomActionsBorder]}>
                     <Pressable
-                      style={({ pressed }) => [styles.secondaryBottomBtn, pressed && styles.chipPressed]}
+                      style={({ pressed }) => [
+                        styles.secondaryBottomBtn,
+                        onboardingTheme.secondaryBottomBtn,
+                        pressed && styles.chipPressed,
+                      ]}
                       onPress={handleCancelSecondaryPet}
                       disabled={loading}
                       accessibilityRole="button"
                       accessibilityLabel="Cancel and remove this pet"
                     >
-                      <Text style={styles.secondaryBottomBtnTextCancel}>Cancel</Text>
+                      <Text style={[styles.secondaryBottomBtnTextCancel, onboardingTheme.secondaryBottomBtnTextCancel]}>
+                        Cancel
+                      </Text>
                     </Pressable>
                     <Pressable
                       style={({ pressed }) => [styles.secondaryBottomBtnPrimary, pressed && styles.chipPressed]}
@@ -964,27 +1376,43 @@ export default function OnboardingPetsScreen({ navigation, route }) {
               ) : (
                 <>
                   {petForms.length > 1 ? (
-                    <Text style={styles.petFormIndex}>{`Pet ${petNumber}`}</Text>
+                    <Text style={[styles.petFormIndex, onboardingTheme.petFormIndex]}>{`Pet ${petNumber}`}</Text>
                   ) : null}
 
+                  {renderPetPhotoSection(index, pet)}
+
+                  <View style={styles.petDetailsSection}>
+                  <View style={styles.requiredLabelRow}>
+                    <Text style={[styles.requiredFieldLabel, onboardingTheme.requiredFieldLabel]}>Pet name</Text>
+                    <RequiredBadge />
+                  </View>
                   <TextInput
                     ref={nameInputRef}
-                    style={[styles.input, styles.inputPetName]}
+                    style={[styles.input, onboardingTheme.input, styles.inputPetName, petErrors.name && styles.inputError]}
                     placeholder="Their name"
-                    placeholderTextColor={INPUT_PLACEHOLDER_COLOR}
+                    placeholderTextColor={onboardingTheme.placeholder}
                     value={pet.name}
                     onChangeText={(value) => updatePetField(index, 'name', value)}
                     editable={!loading}
                     accessibilityLabel="Pet name"
                   />
+                  {petErrors.name ? (
+                    <Text style={styles.inlineError} accessibilityLiveRegion="polite">
+                      {petErrors.name}
+                    </Text>
+                  ) : null}
 
                   <View style={styles.petTypePromptWrap}>
-                    <Text style={styles.petTypePrompt} numberOfLines={2}>
+                    <Text style={[styles.petTypePrompt, onboardingTheme.petTypePrompt]} numberOfLines={2}>
                       {getPetTypePromptLine(pet, index)}
                     </Text>
+                    <RequiredBadge />
                   </View>
 
-                  <View style={styles.petTypeChipRow} accessibilityRole="radiogroup">
+                  <View
+                    style={[styles.petTypeChipRow, petErrors.pet_type && styles.selectionError]}
+                    accessibilityRole="radiogroup"
+                  >
                     {PET_TYPE_CHIPS.map(({ key, label }) => {
                       const selected = pet.pet_type === key;
                       return (
@@ -992,7 +1420,9 @@ export default function OnboardingPetsScreen({ navigation, route }) {
                           key={key}
                           style={({ pressed }) => [
                             styles.petTypeChip,
-                            selected ? styles.petTypeChipSelected : styles.petTypeChipIdle,
+                            selected
+                              ? styles.petTypeChipSelected
+                              : [styles.petTypeChipIdle, onboardingTheme.petTypeChipIdle],
                             pressed && styles.chipPressed,
                           ]}
                           onPress={() => selectPetType(index, key)}
@@ -1001,42 +1431,112 @@ export default function OnboardingPetsScreen({ navigation, route }) {
                           accessibilityState={{ selected }}
                           accessibilityLabel={label}
                         >
-                          <Text style={[styles.petTypeChipText, selected && styles.petTypeChipTextSelected]}>
+                          <Text
+                            style={[
+                              styles.petTypeChipText,
+                              onboardingTheme.petTypeChipText,
+                              selected && styles.petTypeChipTextSelected,
+                            ]}
+                          >
                             {label}
                           </Text>
                         </Pressable>
                       );
                     })}
                   </View>
-
-                  {pet.pet_type === 'other' ? (
-                    <TextInput
-                      style={[styles.input, styles.inputOptional, styles.petOtherInput]}
-                      placeholder="Tell us what they are..."
-                      placeholderTextColor={INPUT_PLACEHOLDER_COLOR}
-                      value={pet.pet_type_custom}
-                      onChangeText={(value) => updatePetField(index, 'pet_type_custom', value)}
-                      editable={!loading}
-                      accessibilityLabel="Describe your pet"
-                    />
+                  {petErrors.pet_type ? (
+                    <Text style={styles.inlineError} accessibilityLiveRegion="polite">
+                      {petErrors.pet_type}
+                    </Text>
                   ) : null}
 
-                  <View style={styles.optionalFields}>
-                    <Text style={styles.labelOptional}>Breed</Text>
-                    <TextInput
-                      style={[styles.input, styles.inputOptional]}
-                      placeholder="Golden Retriever"
-                      placeholderTextColor={INPUT_PLACEHOLDER_COLOR}
-                      value={pet.breed}
-                      onChangeText={(value) => updatePetField(index, 'breed', value)}
-                      editable={!loading}
-                    />
+                  {pet.pet_type === 'other' ? (
+                    <>
+                      <View style={styles.requiredLabelRow}>
+                        <Text style={[styles.requiredFieldLabel, onboardingTheme.requiredFieldLabel]}>Type</Text>
+                        <RequiredBadge />
+                      </View>
+                      <TextInput
+                        style={[
+                          styles.input,
+                          onboardingTheme.input,
+                          styles.inputOptional,
+                          onboardingTheme.inputOptional,
+                          styles.petOtherInput,
+                          petErrors.pet_type_custom && styles.inputError,
+                        ]}
+                        placeholder="Tell us what they are..."
+                        placeholderTextColor={onboardingTheme.placeholder}
+                        value={pet.pet_type_custom}
+                        onChangeText={(value) => updatePetField(index, 'pet_type_custom', value)}
+                        editable={!loading}
+                        accessibilityLabel="Describe your pet"
+                      />
+                      {petErrors.pet_type_custom ? (
+                        <Text style={styles.inlineError} accessibilityLiveRegion="polite">
+                          {petErrors.pet_type_custom}
+                        </Text>
+                      ) : null}
+                    </>
+                  ) : null}
 
-                    <Text style={styles.labelOptional}>Age</Text>
+                  <View style={[styles.optionalFields, onboardingTheme.optionalFieldsBorder]}>
+                    {!isManageCrudMode ? (
+                      <>
+                        <View style={styles.requiredLabelRow}>
+                          <Text style={[styles.requiredFieldLabel, onboardingTheme.requiredFieldLabel]}>Breed</Text>
+                          <RequiredBadge />
+                        </View>
+                        <TextInput
+                          style={[
+                            styles.input,
+                            onboardingTheme.input,
+                            styles.inputOptional,
+                            onboardingTheme.inputOptional,
+                            petErrors.breed && styles.inputError,
+                          ]}
+                          placeholder="Golden Retriever"
+                          placeholderTextColor={onboardingTheme.placeholder}
+                          value={pet.breed}
+                          onChangeText={(value) => updatePetField(index, 'breed', value)}
+                          editable={!loading}
+                          accessibilityLabel="Breed"
+                        />
+                        {petErrors.breed ? (
+                          <Text style={styles.inlineError} accessibilityLiveRegion="polite">
+                            {petErrors.breed}
+                          </Text>
+                        ) : null}
+                      </>
+                    ) : (
+                      <>
+                        <Text style={[styles.labelOptional, onboardingTheme.labelOptional]}>Breed</Text>
+                        <TextInput
+                          style={[
+                            styles.input,
+                            onboardingTheme.input,
+                            styles.inputOptional,
+                            onboardingTheme.inputOptional,
+                          ]}
+                          placeholder="Golden Retriever"
+                          placeholderTextColor={onboardingTheme.placeholder}
+                          value={pet.breed}
+                          onChangeText={(value) => updatePetField(index, 'breed', value)}
+                          editable={!loading}
+                        />
+                      </>
+                    )}
+
+                    <Text style={[styles.labelOptional, onboardingTheme.labelOptional]}>Age</Text>
                     <TextInput
-                      style={[styles.input, styles.inputOptional]}
+                      style={[
+                        styles.input,
+                        onboardingTheme.input,
+                        styles.inputOptional,
+                        onboardingTheme.inputOptional,
+                      ]}
                       placeholder="Years (e.g., 2.5)"
-                      placeholderTextColor={INPUT_PLACEHOLDER_COLOR}
+                      placeholderTextColor={onboardingTheme.placeholder}
                       value={pet.age}
                       onChangeText={(value) => updatePetField(index, 'age', sanitizeAgeInput(value))}
                       keyboardType="decimal-pad"
@@ -1047,16 +1547,18 @@ export default function OnboardingPetsScreen({ navigation, route }) {
                     {renderOptionRow('Gender', pet.gender, GENDER_OPTIONS, (value) => updatePetField(index, 'gender', value), true)}
 
                     <View>
-                      <Text style={styles.labelOptional}>Vaccinated?</Text>
+                      <Text style={[styles.labelOptional, onboardingTheme.labelOptional]}>Vaccinated?</Text>
                       <View style={styles.vaccineButtonRow}>
                         <Pressable
                           style={({ pressed }) => [
                             styles.vaccineButton,
                             styles.vaccineButtonHalf,
-                            {
-                              backgroundColor: isYesSelected ? theme.colors.primary.light : theme.colors.background.light,
-                              borderColor: isYesSelected ? theme.colors.primary.light : theme.colors.border.light,
-                            },
+                            isYesSelected
+                              ? {
+                                  backgroundColor: theme.colors.primary.light,
+                                  borderColor: theme.colors.primary.light,
+                                }
+                              : onboardingTheme.vaccineUnselected,
                             pressed && styles.chipPressed,
                           ]}
                           onPress={() => updatePetField(index, 'vaccinated', 'Yes')}
@@ -1066,7 +1568,11 @@ export default function OnboardingPetsScreen({ navigation, route }) {
                           accessibilityLabel="Vaccinated: Yes"
                         >
                           <Text
-                            style={[styles.vaccineButtonText, isYesSelected && styles.vaccineButtonTextOnSolid]}
+                            style={[
+                              styles.vaccineButtonText,
+                              onboardingTheme.vaccineButtonText,
+                              isYesSelected && styles.vaccineButtonTextOnSolid,
+                            ]}
                           >
                             Yes
                           </Text>
@@ -1075,10 +1581,12 @@ export default function OnboardingPetsScreen({ navigation, route }) {
                           style={({ pressed }) => [
                             styles.vaccineButton,
                             styles.vaccineButtonHalf,
-                            {
-                              backgroundColor: isNoSelected ? theme.colors.error.light : theme.colors.background.light,
-                              borderColor: isNoSelected ? theme.colors.error.light : theme.colors.border.light,
-                            },
+                            isNoSelected
+                              ? {
+                                  backgroundColor: theme.colors.error.light,
+                                  borderColor: theme.colors.error.light,
+                                }
+                              : onboardingTheme.vaccineUnselected,
                             pressed && styles.chipPressed,
                           ]}
                           onPress={() => updatePetField(index, 'vaccinated', 'No')}
@@ -1088,23 +1596,18 @@ export default function OnboardingPetsScreen({ navigation, route }) {
                           accessibilityLabel="Vaccinated: No"
                         >
                           <Text
-                            style={[styles.vaccineButtonText, isNoSelected && styles.vaccineButtonTextOnSolid]}
+                            style={[
+                              styles.vaccineButtonText,
+                              onboardingTheme.vaccineButtonText,
+                              isNoSelected && styles.vaccineButtonTextOnSolid,
+                            ]}
                           >
                             No
                           </Text>
                         </Pressable>
                       </View>
                     </View>
-
-                    <View style={styles.photoSection}>
-                      <View style={styles.photoFrameRow}>
-                        <PawPhotoFrame
-                          uri={pet.photoUri}
-                          onPress={() => openPetPhotoOptions(index)}
-                          disabled={loading}
-                        />
-                      </View>
-                    </View>
+                  </View>
                   </View>
                 </>
               )}
@@ -1114,46 +1617,38 @@ export default function OnboardingPetsScreen({ navigation, route }) {
 
         {!isManageCrudMode && expandedPetIndex === 0 ? (
           <>
-            <Text style={styles.addPetSubtitle}>Got another furry friend?</Text>
+            <Text style={[styles.addPetSubtitle, onboardingTheme.addPetSubtitle]}>Got another furry friend?</Text>
             <Pressable
-              style={({ pressed }) => [styles.secondaryButton, pressed && styles.buttonPressed]}
+              style={({ pressed }) => [
+                styles.secondaryButton,
+                onboardingTheme.secondaryButton,
+                pressed && styles.buttonPressed,
+              ]}
               onPress={handleAddAnotherPet}
               disabled={loading}
             >
-              <Text style={styles.secondaryButtonText}>+ Add Another Pet</Text>
+              <Text style={[styles.secondaryButtonText, onboardingTheme.secondaryButtonText]}>
+                + Add Another Pet
+              </Text>
             </Pressable>
           </>
         ) : null}
 
         {!isManageCrudMode ? <LegalConsentRow /> : null}
 
-        <Pressable
-          style={({ pressed }) => [styles.button, (!isManageCrudMode && !canSubmitFinalOnboarding) && styles.buttonDisabled, pressed && styles.buttonPressed]}
-          onPress={saveOnboarding}
-          disabled={loading || (!isManageCrudMode && !canSubmitFinalOnboarding)}
-          accessibilityRole="button"
-          accessibilityLabel="Complete setup and go to home"
-        >
-          {loading ? (
-            <ActivityIndicator color={theme.colors.background.light} />
-          ) : (
-            <Text style={styles.buttonText}>
-              {isEditMode
-                ? 'Save Changes'
-                : isManageAddMode
-                  ? 'Add Pet'
-                  : `Complete Setup 🎉 (${completedCount} ready)`}
-            </Text>
-          )}
-        </Pressable>
-      </ScrollView>
+        {renderPrimaryAction()}
+        </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
 
       <PhotoPickerModal
         visible={photoModalVisible}
-        petDisplayName={photoModalPetIndex != null ? petForms[photoModalPetIndex]?.name ?? '' : ''}
-        onClose={closePhotoModal}
-        onTakePhoto={() => pickPetPhoto(photoModalPetIndex, 'camera')}
-        onChooseFromLibrary={() => pickPetPhoto(photoModalPetIndex, 'library')}
+        photoModalPetIndex={photoModalPetIndex}
+        onClose={() => {
+          setPhotoModalVisible(false);
+          setPhotoModalPetIndex(null);
+        }}
+        onSelectSource={handlePhotoSourceSelected}
       />
     </SafeAreaView>
   );
@@ -1164,15 +1659,34 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colors.background.light,
   },
+  flex: {
+    flex: 1,
+  },
   prefillLoadingWrap: {
     paddingTop: theme.spacing.lg,
     alignItems: 'center',
   },
+  scroll: {
+    flex: 1,
+  },
   scrollContent: {
     paddingHorizontal: theme.feed.shellPaddingHorizontal,
-    paddingTop: theme.feed.shellPaddingTop,
-    paddingBottom: theme.spacing.xxxl,
-    gap: theme.spacing.md,
+  },
+  scrollInner: {
+    width: '100%',
+  },
+  photoSectionLead: {
+    alignItems: 'center',
+    alignSelf: 'stretch',
+    gap: theme.spacing.lg,
+  },
+  photoNameDivider: {
+    alignSelf: 'stretch',
+    height: 1,
+    backgroundColor: theme.colors.border.light,
+  },
+  petDetailsSection: {
+    gap: theme.spacing.sm,
   },
   title: {
     fontFamily: 'Inter-SemiBold',
@@ -1195,6 +1709,7 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.border.light,
     padding: theme.spacing.lg,
     gap: theme.spacing.sm,
+    marginBottom: theme.spacing.md,
   },
   cardInvalid: {
     borderColor: theme.colors.error.light,
@@ -1257,9 +1772,14 @@ const styles = StyleSheet.create({
     marginBottom: theme.spacing.xs,
   },
   petTypePromptWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: theme.spacing.sm,
     marginBottom: theme.spacing.sm,
   },
   petTypePrompt: {
+    flexShrink: 1,
     fontFamily: 'Inter-Medium',
     fontSize: theme.fontSizes.md,
     lineHeight: Math.round(theme.fontSizes.md * theme.lineHeights.normal),
@@ -1298,6 +1818,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: theme.spacing.sm,
   },
+  selectionError: {
+    borderWidth: 1,
+    borderColor: theme.colors.feedback.error.value,
+    borderRadius: theme.borderRadius.lg,
+    padding: theme.spacing.xs,
+  },
+  inlineError: {
+    marginTop: -theme.spacing.xs,
+    marginBottom: theme.spacing.sm,
+    fontFamily: theme.fonts.body,
+    fontSize: theme.fontSizes.sm,
+    color: theme.colors.feedback.error.value,
+  },
   petTypeChip: {
     paddingVertical: theme.spacing.sm,
     paddingHorizontal: theme.spacing.md,
@@ -1334,6 +1867,7 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.border.light,
     paddingVertical: theme.spacing.md,
     paddingHorizontal: theme.spacing.lg,
+    marginBottom: theme.spacing.md,
   },
   summaryCardInvalid: {
     borderColor: theme.colors.error.light,
@@ -1372,6 +1906,18 @@ const styles = StyleSheet.create({
     color: theme.colors.text.secondary.light,
     marginTop: theme.spacing.xs,
   },
+  requiredLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+    marginTop: theme.spacing.xs,
+    marginBottom: theme.spacing.sm,
+  },
+  requiredFieldLabel: {
+    fontFamily: theme.fonts.medium,
+    fontSize: theme.fontSizes.sm,
+    color: theme.colors.text.secondary.light,
+  },
   input: {
     minHeight: theme.components.input.minHeight,
     backgroundColor: theme.components.input.background,
@@ -1383,6 +1929,9 @@ const styles = StyleSheet.create({
     fontFamily: INPUT_FONT_FAMILY,
     fontSize: theme.fontSizes.md,
     color: theme.colors.text.primary.light,
+  },
+  inputError: {
+    borderColor: theme.colors.feedback.error.value,
   },
   inputPetName: {
     fontFamily: INPUT_FONT_FAMILY,
@@ -1463,6 +2012,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: theme.spacing.md,
+    marginTop: theme.spacing.md,
   },
   secondaryButton: {
     borderRadius: theme.components.button.borderRadius,
@@ -1471,6 +2021,7 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.border.light,
     justifyContent: 'center',
     alignItems: 'center',
+    marginBottom: theme.spacing.md,
     paddingHorizontal: theme.spacing.md,
     backgroundColor: theme.colors.card.light,
     marginTop: theme.spacing.sm,
@@ -1484,9 +2035,6 @@ const styles = StyleSheet.create({
   },
   buttonPressed: {
     opacity: 0.92,
-  },
-  buttonDisabled: {
-    opacity: 0.5,
   },
   buttonText: {
     fontFamily: theme.fonts.body,

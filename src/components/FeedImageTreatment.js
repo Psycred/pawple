@@ -1,18 +1,33 @@
 import React from 'react';
-import { Image, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import PawpleStorageImage from './PawpleStorageImage';
 import { theme } from '../config/theme';
+import { useRuntimeThemeColors } from '../hooks/useRuntimeThemeColors';
 
 /**
  * Moment photo with a soft warm wash — keeps the pet as focus, not filters on top of UI chrome.
  */
-export default function FeedImageTreatment({ uri }) {
+export default function FeedImageTreatment({ uri, resizeMode = 'cover', onImageSettled }) {
+  const surfaces = useRuntimeThemeColors();
+
   if (!uri) {
-    return <View style={styles.wrap} />;
+    return <View style={[styles.wrap, { backgroundColor: surfaces.feedCardBackground }]} />;
   }
 
+  const handleSettled = () => {
+    onImageSettled?.();
+  };
+
   return (
-    <View style={styles.wrap}>
-      <Image source={{ uri }} style={styles.photo} resizeMode="cover" accessibilityIgnoresInvertColors />
+    <View style={[styles.wrap, { backgroundColor: surfaces.feedCardBackground }]}>
+      <PawpleStorageImage
+        source={{ uri }}
+        style={styles.photo}
+        resizeMode={resizeMode}
+        accessibilityIgnoresInvertColors
+        onLoad={handleSettled}
+        onError={handleSettled}
+      />
       <View
         style={[
           styles.wash,
@@ -27,7 +42,7 @@ export default function FeedImageTreatment({ uri }) {
         style={[
           styles.veil,
           {
-            backgroundColor: theme.feed.desaturateVeilColor,
+            backgroundColor: surfaces.feedDesaturateVeilColor,
             opacity: theme.feed.desaturateVeilOpacity,
           },
         ]}

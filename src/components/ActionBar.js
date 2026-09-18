@@ -77,9 +77,7 @@ export default function ActionBar({ isLiked, onLike, onShare, onMore }) {
   const scale = useRef(new Animated.Value(1)).current;
 
   const handleLike = () => {
-    if (!isLiked) {
-      runGentleHeartbeat(scale);
-    }
+    runGentleHeartbeat(scale);
     onLike?.();
   };
 
@@ -89,7 +87,7 @@ export default function ActionBar({ isLiked, onLike, onShare, onMore }) {
         onPress={handleLike}
         style={({ pressed }) => [styles.button, pressed && styles.pressed]}
         accessibilityRole="button"
-        accessibilityLabel={isLiked ? 'Unlike memory' : 'Like memory'}
+        accessibilityLabel={isLiked ? 'Hearted memory' : 'Heart memory'}
       >
         <Animated.View style={{ transform: [{ scale }] }}>
           <Ionicons

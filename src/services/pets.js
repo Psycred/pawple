@@ -10,7 +10,7 @@ import {
 } from '../data/demoMeetupRsvp';
 
 const PET_PROFILE_SELECT =
-  'id, owner_id, name, pet_type, pet_type_custom, breed, age, gender, vaccinated, bio, photo_url, is_looking_for_companion, mating_description, traits';
+  'id, owner_id, name, pet_type, pet_type_custom, breed, age, gender, vaccinated, bio, photo_url, is_looking_for_companion, mating_breed_preference, mating_description, traits';
 
 const PET_DISCOVERY_SELECT =
   'id, owner_id, name, pet_type, breed, age, gender, photo_url, is_looking_for_companion, mating_description';
@@ -158,6 +158,121 @@ export async function updatePetCompanionDiscovery(petId, isLookingForCompanion) 
   const { data, error } = await supabase
     .from('pets')
     .update({ is_looking_for_companion: Boolean(isLookingForCompanion) })
+    .eq('id', petId)
+    .eq('owner_id', user.id)
+    .select(PET_PROFILE_SELECT)
+    .maybeSingle();
+
+  if (error) {
+    console.error('[Supabase]', error);
+    throw error;
+  }
+  if (!data) {
+    throw new Error('Could not update this pet.');
+  }
+
+  return data;
+}
+
+/**
+ * Persist the prerequisite gender before a separate mating opt-in update.
+ * Keeping these writes sequential prevents a failed gender save from enabling discovery.
+ */
+export async function updatePetGender(petId, gender) {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user?.id) {
+    throw new Error('Not signed in');
+  }
+  if (!petId) {
+    throw new Error('Pet is required.');
+  }
+
+  const normalizedGender = String(gender ?? '').trim();
+  if (!normalizedGender) {
+    throw new Error('Gender is required.');
+  }
+
+  const { data, error } = await supabase
+    .from('pets')
+    .update({ gender: normalizedGender })
+    .eq('id', petId)
+    .eq('owner_id', user.id)
+    .select(PET_PROFILE_SELECT)
+    .maybeSingle();
+
+  if (error) {
+    console.error('[Supabase]', error);
+    throw error;
+  }
+  if (!data) {
+    throw new Error('Could not update this pet.');
+  }
+
+  return data;
+}
+
+/**
+ * Persist personality traits for a pet profile.
+ */
+export async function updatePetTraits(petId, traits) {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user?.id) {
+    throw new Error('Not signed in');
+  }
+  if (!petId) {
+    throw new Error('Pet is required.');
+  }
+
+  const normalizedTraits = Array.isArray(traits)
+    ? traits
+        .filter((trait) => typeof trait === 'string' && trait.trim())
+        .map((trait) => trait.trim())
+        .slice(0, 5)
+    : [];
+
+  const { data, error } = await supabase
+    .from('pets')
+    .update({ traits: normalizedTraits })
+    .eq('id', petId)
+    .eq('owner_id', user.id)
+    .select(PET_PROFILE_SELECT)
+    .maybeSingle();
+
+  if (error) {
+    console.error('[Supabase]', error);
+    throw error;
+  }
+  if (!data) {
+    throw new Error('Could not update this pet.');
+  }
+
+  return data;
+}
+
+/**
+ * Persist the Step 7C breed scope preference (same_breed | all_breeds).
+ */
+export async function updatePetMatingBreedPreference(petId, breedPreference) {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user?.id) {
+    throw new Error('Not signed in');
+  }
+  if (!petId) {
+    throw new Error('Pet is required.');
+  }
+  if (breedPreference !== 'same_breed' && breedPreference !== 'all_breeds') {
+    throw new Error('Choose a valid breed preference.');
+  }
+
+  const { data, error } = await supabase
+    .from('pets')
+    .update({ mating_breed_preference: breedPreference })
     .eq('id', petId)
     .eq('owner_id', user.id)
     .select(PET_PROFILE_SELECT)

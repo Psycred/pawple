@@ -1,4 +1,4 @@
-import { Feather } from '@expo/vector-icons';
+﻿import { Feather } from '@expo/vector-icons';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
@@ -18,22 +18,28 @@ import ParticipantModal from '../components/ParticipantModal';
 import ContentSafetyMenu from '../components/ContentSafetyMenu';
 import ReportSheet from '../components/ReportSheet';
 import BlockConfirmSheet from '../components/BlockConfirmSheet';
+import CancelMeetupConfirmModal from '../components/CancelMeetupConfirmModal';
 import ScreenWrapper from '../components/ScreenWrapper';
 import { theme } from '../config/theme';
 import { isDemoContentEnabled } from '../config/environment';
 import { supabase } from '../config/supabase';
 import { useActivePet } from '../contexts/ActivePetContext';
+import { useRuntimeThemeColors } from '../hooks/useRuntimeThemeColors';
 import {
   applyDemoMeetupRsvp,
   cancelDemoMeetup,
 } from '../data/demoMeetupRsvp';
-import { buildMeetupShareMessage } from '../lib/shareUtils';
+import { shareMeetupWithPreview } from '../utils/shareFeedPost';
+import MeetupCard from '../components/MeetupCard';
+import { fetchBlockedPetIds, isBlockedByPetIds } from '../services/blocks';
 import {
   cancelMeetup,
   extractMeetupHostPetIds,
-  extractMeetupParticipantPets,
+  extractVisibleMeetupHostPetIds,
+  extractVisibleMeetupParticipantPets,
   extractViewerJoinedPetIds,
   fetchMeetupById,
+  getMeetupParticipantDisplayCount,
   hasViewerJoinedMeetup,
   isDemoMeetupId,
   isMeetupPast,
@@ -46,24 +52,16 @@ import {
   parseTimeOnDate,
 } from '../utils/formatMomentDate';
 import { extractHostPetNames, formatHostPetNames } from '../utils/meetupHostDisplay';
+import { buildMeetupShareCaption } from '../utils/meetupShareCopy';
 import { formatCityBadge } from '../utils/cityUtils';
 
-const SCREEN_BG = '#FFFCF8';
-const PRIMARY_TEXT = '#3A312E';
-const SECONDARY_TEXT = '#6B625C';
-const MUTED_TEXT = '#888888';
-const DIVIDER = '#F1E8DF';
 const SAGE = '#9EB8A0';
-const SAGE_CHIP_BG = '#EEF5EE';
-const CANCEL_BANNER_BG = '#FDECEC';
-const CANCEL_BANNER_TEXT = '#B84A4A';
-const DISABLED_BG = '#E5E5E5';
-const DISABLED_TEXT = '#888888';
+const MEETUP_LABEL_ACCENT = '#8EA88F';
 const CANCEL_EVENT = '#FF3B30';
 
 const AVATAR_SIZE = 36;
 
-function HeaderIconButton({ name, label, onPress }) {
+function HeaderIconButton({ name, label, onPress, color }) {
   return (
     <Pressable
       onPress={onPress}
@@ -72,15 +70,15 @@ function HeaderIconButton({ name, label, onPress }) {
       accessibilityRole="button"
       accessibilityLabel={label}
     >
-      <Feather name={name} size={22} color={PRIMARY_TEXT} />
+      <Feather name={name} size={22} color={color} />
     </Pressable>
   );
 }
 
-function DetailSection({ label, children }) {
+function DetailSection({ label, children, labelColor }) {
   return (
     <View style={styles.detailSection}>
-      <Text style={styles.detailLabel} allowFontScaling>
+      <Text style={[styles.detailLabel, { color: labelColor }]} allowFontScaling>
         {label}
       </Text>
       {children}
@@ -88,12 +86,14 @@ function DetailSection({ label, children }) {
   );
 }
 
-function PetAvatar({ pet, style }) {
+function PetAvatar({ pet, style, surfaces }) {
+  const avatarStyle = [styles.avatar, { borderColor: surfaces.meetupCardBackground }, style];
+
   if (pet?.photo_url) {
     return (
       <Image
         source={{ uri: pet.photo_url }}
-        style={[styles.avatar, style]}
+        style={avatarStyle}
         resizeMode="cover"
       />
     );
@@ -101,7 +101,13 @@ function PetAvatar({ pet, style }) {
 
   const initial = pet?.name?.charAt(0)?.toUpperCase() ?? '?';
   return (
-    <View style={[styles.avatar, styles.avatarFallback, style]}>
+    <View
+      style={[
+        avatarStyle,
+        styles.avatarFallback,
+        { backgroundColor: surfaces.meetupChipBackground },
+      ]}
+    >
       <Text style={styles.avatarInitial} allowFontScaling>
         {initial}
       </Text>
@@ -110,13 +116,14 @@ function PetAvatar({ pet, style }) {
 }
 
 /**
- * Central hub for a single meetup — details, RSVP, and participant preview.
+ * Central hub for a single meetup â€” details, RSVP, and participant preview.
  */
 export default function MeetupDetailsScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
   const { activePetId } = useActivePet();
+  const surfaces = useRuntimeThemeColors();
 
-  // MeetupDetailsScreen lives on the root stack — parent navigate matches other meetup flows.
+  // MeetupDetailsScreen lives on the root stack â€” parent navigate matches other meetup flows.
   const stackNavigation = useMemo(
     () => navigation.getParent?.() ?? navigation,
     [navigation],
@@ -130,14 +137,18 @@ export default function MeetupDetailsScreen({ navigation, route }) {
   const [error, setError] = useState(false);
   const [currentUserId, setCurrentUserId] = useState(null);
   const [ownedPetIds, setOwnedPetIds] = useState([]);
+  const [viewerPets, setViewerPets] = useState([]);
   const [hasJoined, setHasJoined] = useState(false);
+  const shareCardRef = React.useRef(null);
   const [rsvpBusy, setRsvpBusy] = useState(false);
   const [participantsOpen, setParticipantsOpen] = useState(false);
   const [joinSheetOpen, setJoinSheetOpen] = useState(false);
   const [leaveSheetOpen, setLeaveSheetOpen] = useState(false);
+  const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
   const [safetyMenuOpen, setSafetyMenuOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const [blockPetTarget, setBlockPetTarget] = useState(null);
+  const [blockedPetIds, setBlockedPetIds] = useState(() => new Set());
 
   const loadMeetup = useCallback(async () => {
     setLoading(true);
@@ -153,15 +164,24 @@ export default function MeetupDetailsScreen({ navigation, route }) {
       let nextOwnedPetIds = [];
 
       if (user?.id) {
-        const { data: pets } = await supabase
-          .from('pets')
-          .select('id, name, photo_url, breed, pet_type')
-          .eq('owner_id', user.id);
-        viewerPets = pets ?? [];
+        const [petsRes, blockedIds] = await Promise.all([
+          supabase
+            .from('pets')
+            .select('id, name, photo_url, breed, pet_type')
+            .eq('owner_id', user.id),
+          fetchBlockedPetIds().catch((err) => {
+            console.error('[Supabase]', err);
+            return [];
+          }),
+        ]);
+        viewerPets = petsRes.data ?? [];
         nextOwnedPetIds = viewerPets.map((p) => String(p.id));
+        setViewerPets(viewerPets);
         setOwnedPetIds(nextOwnedPetIds);
+        setBlockedPetIds(new Set((blockedIds ?? []).map(String)));
       } else {
         setOwnedPetIds([]);
+        setBlockedPetIds(new Set());
       }
 
       let row = null;
@@ -229,11 +249,14 @@ export default function MeetupDetailsScreen({ navigation, route }) {
   }, [loadMeetup]);
 
   const participantPets = useMemo(
-    () => (meetup ? extractMeetupParticipantPets(meetup) : []),
-    [meetup],
+    () => (meetup ? extractVisibleMeetupParticipantPets(meetup, blockedPetIds) : []),
+    [blockedPetIds, meetup],
   );
 
-  const hostPetIds = useMemo(() => extractMeetupHostPetIds(meetup ?? {}), [meetup]);
+  const hostPetIds = useMemo(
+    () => extractVisibleMeetupHostPetIds(meetup ?? {}, blockedPetIds),
+    [blockedPetIds, meetup],
+  );
 
   const isCreator = Boolean(
     currentUserId && meetup?.user_id && String(meetup.user_id) === String(currentUserId),
@@ -254,9 +277,16 @@ export default function MeetupDetailsScreen({ navigation, route }) {
   const isCancelled = status === 'cancelled';
   const isPast = isMeetupPast(meetup) || status === 'completed';
 
-  const participantCount = useMemo(() => {
+  const visibleParticipantCount = participantPets.length;
+
+  const serverParticipantCount = useMemo(() => {
     return Number(meetup?.participant_count ?? 0) || 0;
   }, [meetup?.participant_count]);
+
+  const displayParticipantCount = useMemo(
+    () => getMeetupParticipantDisplayCount(meetup, visibleParticipantCount),
+    [meetup, visibleParticipantCount],
+  );
 
   const limit = useMemo(() => {
     const n = Number(meetup?.participation_limit);
@@ -264,7 +294,10 @@ export default function MeetupDetailsScreen({ navigation, route }) {
   }, [meetup?.participation_limit]);
 
   const isFull =
-    limit != null && participantCount >= limit && !hasJoined && !isActivePetHost;
+    limit != null &&
+    serverParticipantCount >= limit &&
+    !hasJoined &&
+    !isActivePetHost;
 
   const openToLabel = useMemo(() => {
     const openTo = meetup?.open_to;
@@ -275,9 +308,14 @@ export default function MeetupDetailsScreen({ navigation, route }) {
   }, [meetup]);
 
   const hostNamesLine = useMemo(() => {
-    const names = extractHostPetNames(meetup?.meetup_hosts ?? []);
+    const visibleHostIds = new Set(hostPetIds.map(String));
+    const visibleHosts = (meetup?.meetup_hosts ?? []).filter((row) => {
+      const id = String(row?.pet_id ?? row?.pets?.id ?? '');
+      return id && visibleHostIds.has(id);
+    });
+    const names = extractHostPetNames(visibleHosts);
     return formatHostPetNames(names);
-  }, [meetup]);
+  }, [hostPetIds, meetup?.meetup_hosts]);
 
   const blockableHostPets = useMemo(() => {
     const owned = new Set(ownedPetIds.map(String));
@@ -285,7 +323,7 @@ export default function MeetupDetailsScreen({ navigation, route }) {
       .map((row) => {
         const pet = row?.pets ?? null;
         const id = String(row?.pet_id ?? pet?.id ?? '');
-        if (!id || owned.has(id)) {
+        if (!id || owned.has(id) || blockedPetIds.has(id)) {
           return null;
         }
         return {
@@ -294,7 +332,7 @@ export default function MeetupDetailsScreen({ navigation, route }) {
         };
       })
       .filter(Boolean);
-  }, [meetup?.meetup_hosts, ownedPetIds]);
+  }, [blockedPetIds, meetup?.meetup_hosts, ownedPetIds]);
 
   const canReportMeetup = Boolean(
     meetup?.id &&
@@ -314,7 +352,7 @@ export default function MeetupDetailsScreen({ navigation, route }) {
     if (!start || !end) {
       return '';
     }
-    return `${formatLocalTime(start)} – ${formatLocalTime(end)}`;
+    return `${formatLocalTime(start)} â€“ ${formatLocalTime(end)}`;
   }, [meetup?.date, meetup?.end_time, meetup?.start_time]);
 
   const locationText =
@@ -327,6 +365,37 @@ export default function MeetupDetailsScreen({ navigation, route }) {
   const cityLabel = useMemo(() => formatCityBadge(meetup?.city), [meetup?.city]);
 
   const previewPets = participantPets.slice(0, 3);
+
+  const handlePetBlocked = useCallback(
+    (pet) => {
+      const petId = String(pet?.id ?? '');
+      if (!petId) {
+        return;
+      }
+      setBlockedPetIds((prev) => {
+        const next = new Set(prev);
+        next.add(petId);
+        return next;
+      });
+      setBlockPetTarget(null);
+      setParticipantsOpen(false);
+      const hostIds = extractMeetupHostPetIds(meetup ?? {});
+      if (isBlockedByPetIds(hostIds, [...blockedPetIds, petId])) {
+        navigation.goBack();
+      }
+    },
+    [blockedPetIds, meetup, navigation],
+  );
+
+  useEffect(() => {
+    if (loading || !meetup) {
+      return;
+    }
+    const hostIds = extractMeetupHostPetIds(meetup);
+    if (hostIds.length > 0 && isBlockedByPetIds(hostIds, blockedPetIds)) {
+      navigation.goBack();
+    }
+  }, [blockedPetIds, loading, meetup, navigation]);
 
   const ctaState = useMemo(() => {
     if (isCancelled) {
@@ -362,19 +431,37 @@ export default function MeetupDetailsScreen({ navigation, route }) {
   }, [meetup?.date]);
 
   const handleShare = useCallback(async () => {
-    if (!meetup) {
+    if (!meetup?.id || !shareCardRef.current) {
       return;
     }
 
-    const shareMessage = buildMeetupShareMessage(meetup.title, shareDateLabel);
+    const shareMessage = buildMeetupShareCaption({
+      meetup,
+      ownedPetIds,
+      activePetId,
+      viewerPets,
+      shareDateLabel,
+    });
 
     try {
-      await Share.share({ message: shareMessage });
+      await shareMeetupWithPreview({
+        caption: shareMessage,
+        meetupId: meetup.id,
+        captureRefTarget: shareCardRef,
+        userId: currentUserId,
+      });
     } catch (err) {
       console.warn('[MeetupDetails] share failed', err);
       Alert.alert('Share', 'Could not open the share sheet right now.');
     }
-  }, [meetup, shareDateLabel]);
+  }, [
+    activePetId,
+    currentUserId,
+    meetup,
+    ownedPetIds,
+    shareDateLabel,
+    viewerPets,
+  ]);
 
   const handleEdit = useCallback(() => {
     const id = meetup?.id;
@@ -423,39 +510,33 @@ export default function MeetupDetailsScreen({ navigation, route }) {
   };
 
   const handleCancelEvent = () => {
-    Alert.alert(
-      'Cancel meetup?',
-      "It will be removed from everyone's plans.",
-      [
-        { text: 'No', style: 'cancel' },
-        {
-          text: 'Yes, cancel',
-          style: 'destructive',
-          onPress: async () => {
-            if (!meetup?.id) {
-              Alert.alert('Meetup', 'Could not cancel this meetup.');
-              return;
-            }
-            if (isDemoMeetupId(meetup.id)) {
-              setMeetup(cancelDemoMeetup(meetup));
-              return;
-            }
-            setRsvpBusy(true);
-            try {
-              await cancelMeetup(meetup.id);
-              const row = await fetchMeetupById(meetup.id);
-              setMeetup(row ?? { ...meetup, status: 'cancelled' });
-            } catch (err) {
-              console.error('[MeetupDetails] cancel event failed', err);
-              Alert.alert('Meetup', err?.message || 'Could not cancel this event.');
-            } finally {
-              setRsvpBusy(false);
-            }
-          },
-        },
-      ],
-    );
+    setCancelConfirmOpen(true);
   };
+
+  const confirmCancelEvent = useCallback(async () => {
+    if (!meetup?.id) {
+      Alert.alert('Meetup', 'Could not cancel this meetup.');
+      setCancelConfirmOpen(false);
+      return;
+    }
+    if (isDemoMeetupId(meetup.id)) {
+      setMeetup(cancelDemoMeetup(meetup));
+      setCancelConfirmOpen(false);
+      return;
+    }
+    setRsvpBusy(true);
+    try {
+      await cancelMeetup(meetup.id);
+      const row = await fetchMeetupById(meetup.id);
+      setMeetup(row ?? { ...meetup, status: 'cancelled' });
+      setCancelConfirmOpen(false);
+    } catch (err) {
+      console.error('[MeetupDetails] cancel event failed', err);
+      Alert.alert('Meetup', err?.message || 'Could not cancel this event.');
+    } finally {
+      setRsvpBusy(false);
+    }
+  }, [meetup]);
 
   const handleCtaPress = () => {
     if (ctaState.disabled || rsvpBusy) {
@@ -482,15 +563,26 @@ export default function MeetupDetailsScreen({ navigation, route }) {
 
   const headerRight = (
     <View style={styles.headerActions}>
-      <HeaderIconButton name="share-2" label="Share meetup" onPress={handleShare} />
+      <HeaderIconButton
+        name="share-2"
+        label="Share meetup"
+        onPress={handleShare}
+        color={surfaces.profileHeroNameColor}
+      />
       {isCreatorOrHost ? (
-        <HeaderIconButton name="edit-2" label="Edit meetup" onPress={handleEdit} />
+        <HeaderIconButton
+          name="edit-2"
+          label="Edit meetup"
+          onPress={handleEdit}
+          color={surfaces.profileHeroNameColor}
+        />
       ) : null}
       {canReportMeetup || blockableHostPets.length > 0 ? (
         <HeaderIconButton
           name="more-horizontal"
           label="More"
           onPress={() => setSafetyMenuOpen(true)}
+          color={surfaces.profileHeroNameColor}
         />
       ) : null}
     </View>
@@ -502,7 +594,7 @@ export default function MeetupDetailsScreen({ navigation, route }) {
         showBackButton
         onClose={() => stackNavigation.goBack()}
         headerRight={headerRight}
-        backgroundColor={SCREEN_BG}
+        backgroundColor={surfaces.meetupCardBackground}
         padded
       >
         <MeetupDetailsSkeleton />
@@ -515,14 +607,14 @@ export default function MeetupDetailsScreen({ navigation, route }) {
       <ScreenWrapper
         showBackButton
         onClose={() => stackNavigation.goBack()}
-        backgroundColor={SCREEN_BG}
+        backgroundColor={surfaces.meetupCardBackground}
         padded
       >
         <View style={styles.notFoundWrap}>
-          <Text style={styles.notFoundTitle} allowFontScaling>
+          <Text style={[styles.notFoundTitle, { color: surfaces.profileHeroNameColor }]} allowFontScaling>
             Meetup not found
           </Text>
-          <Text style={styles.notFoundBody} allowFontScaling>
+          <Text style={[styles.notFoundBody, { color: surfaces.meetupMetaText }]} allowFontScaling>
             This meetup may have been removed or is unavailable.
           </Text>
           <Pressable
@@ -544,9 +636,22 @@ export default function MeetupDetailsScreen({ navigation, route }) {
       showBackButton
       onClose={() => stackNavigation.goBack()}
       headerRight={headerRight}
-      backgroundColor={SCREEN_BG}
+      backgroundColor={surfaces.meetupCardBackground}
       contentStyle={styles.screenContent}
     >
+      <View
+        pointerEvents="none"
+        style={styles.shareCaptureHost}
+      >
+        <View ref={shareCardRef} collapsable={false}>
+          <MeetupCard
+            meetup={meetup}
+            viewerPets={viewerPets}
+            viewerId={currentUserId}
+          />
+        </View>
+      </View>
+
       <ScrollView
         contentContainerStyle={[
           styles.scrollContent,
@@ -555,14 +660,27 @@ export default function MeetupDetailsScreen({ navigation, route }) {
         showsVerticalScrollIndicator={false}
       >
         {isCancelled ? (
-          <View style={styles.cancelBanner}>
-            <Text style={styles.cancelBannerText} allowFontScaling>
-              This event was cancelled by the host.
+          <View
+            style={[
+              styles.cancelBanner,
+              {
+                backgroundColor: surfaces.backgroundCard,
+                borderColor: surfaces.meetupCardBorder,
+              },
+            ]}
+          >
+            <Text style={styles.cancelBannerLabel} allowFontScaling>
+              Cancelled
+            </Text>
+            <Text style={[styles.cancelBannerText, { color: surfaces.meetupMetaText }]} allowFontScaling>
+              {isCreatorOrHost
+                ? 'You cancelled this meetup.'
+                : 'This meetup was cancelled.'}
             </Text>
           </View>
         ) : null}
 
-        <Text style={styles.title} allowFontScaling>
+        <Text style={[styles.title, { color: surfaces.profileHeroNameColor }]} allowFontScaling>
           {meetup.title}
         </Text>
 
@@ -575,7 +693,7 @@ export default function MeetupDetailsScreen({ navigation, route }) {
             <View style={styles.cityText} />
           )}
           {openToLabel ? (
-            <View style={styles.openToChip}>
+            <View style={[styles.openToChip, { backgroundColor: surfaces.meetupChipBackground }]}>
               <Text style={styles.openToChipText} numberOfLines={1} allowFontScaling>
                 {openToLabel}
               </Text>
@@ -584,19 +702,19 @@ export default function MeetupDetailsScreen({ navigation, route }) {
         </View>
 
         {hostNamesLine ? (
-          <Text style={styles.hostedBy} allowFontScaling>
+          <Text style={[styles.hostedBy, { color: surfaces.profileHeroNameColor }]} allowFontScaling>
             {`Hosted by ${hostNamesLine}`}
           </Text>
         ) : null}
 
         <View style={styles.participantsSection}>
-          {participantCount === 0 ? (
-            <Text style={styles.emptyParticipants} allowFontScaling>
+          {displayParticipantCount === 0 ? (
+            <Text style={[styles.emptyParticipants, { color: surfaces.profileHeroBioColor }]} allowFontScaling>
               Be the first to join!
             </Text>
           ) : (
-            <Text style={styles.participantsCount} allowFontScaling>
-              {`🐾 ${participantCount}${limit != null ? ` / ${limit}` : ''} pets joining`}
+            <Text style={[styles.participantsCount, { color: surfaces.meetupMetaText }]} allowFontScaling>
+              {`${displayParticipantCount}${limit != null ? ` / ${limit}` : ''} pets joining`}
             </Text>
           )}
 
@@ -606,6 +724,7 @@ export default function MeetupDetailsScreen({ navigation, route }) {
                 <PetAvatar
                   key={String(pet.id)}
                   pet={pet}
+                  surfaces={surfaces}
                   style={index > 0 ? styles.avatarOverlap : null}
                 />
               ))}
@@ -624,21 +743,21 @@ export default function MeetupDetailsScreen({ navigation, route }) {
           </Pressable>
         </View>
 
-        <View style={styles.divider} />
+        <View style={[styles.divider, { backgroundColor: surfaces.meetupCardBorder }]} />
 
-        <DetailSection label="WHEN">
-          <Text style={styles.detailPrimary} allowFontScaling>
+        <DetailSection label="WHEN" labelColor={surfaces.profileHeroBioColor}>
+          <Text style={[styles.detailPrimary, { color: surfaces.profileHeroNameColor }]} allowFontScaling>
             {whenDay}
           </Text>
           {whenTime ? (
-            <Text style={styles.detailSecondary} allowFontScaling>
+            <Text style={[styles.detailSecondary, { color: surfaces.meetupMetaText }]} allowFontScaling>
               {whenTime}
             </Text>
           ) : null}
         </DetailSection>
 
-        <DetailSection label="WHERE">
-          <Text style={styles.detailPrimary} allowFontScaling>
+        <DetailSection label="WHERE" labelColor={surfaces.profileHeroBioColor}>
+          <Text style={[styles.detailPrimary, { color: surfaces.profileHeroNameColor }]} allowFontScaling>
             {locationText}
           </Text>
           {meetup.google_maps_link ? (
@@ -650,20 +769,29 @@ export default function MeetupDetailsScreen({ navigation, route }) {
           ) : null}
         </DetailSection>
 
-        <DetailSection label="ABOUT">
+        <DetailSection label="ABOUT" labelColor={surfaces.profileHeroBioColor}>
           {descriptionText ? (
-            <Text style={styles.detailSecondary} allowFontScaling>
+            <Text style={[styles.detailSecondary, { color: surfaces.meetupMetaText }]} allowFontScaling>
               {descriptionText}
             </Text>
           ) : (
-            <Text style={styles.detailEmpty} allowFontScaling>
+            <Text style={[styles.detailEmpty, { color: surfaces.profileHeroBioColor }]} allowFontScaling>
               No description provided
             </Text>
           )}
         </DetailSection>
       </ScrollView>
 
-      <View style={[styles.ctaBar, { paddingBottom: Math.max(insets.bottom, 16) }]}>
+      <View
+        style={[
+          styles.ctaBar,
+          {
+            backgroundColor: surfaces.meetupCardBackground,
+            borderTopColor: surfaces.meetupCardBorder,
+            paddingBottom: Math.max(insets.bottom, 16),
+          },
+        ]}
+      >
         <Pressable
           onPress={handleCtaPress}
           disabled={ctaState.disabled || rsvpBusy}
@@ -671,7 +799,9 @@ export default function MeetupDetailsScreen({ navigation, route }) {
             styles.ctaButton,
             ctaState.variant === 'primary' && styles.ctaPrimary,
             ctaState.variant === 'joined' && styles.ctaPrimary,
-            ctaState.variant === 'disabled' && styles.ctaDisabled,
+            ctaState.variant === 'disabled' && {
+              backgroundColor: surfaces.meetupDisabledButtonBackground,
+            },
             ctaState.variant === 'cancelEvent' && styles.ctaCancelEvent,
             pressed && !ctaState.disabled && styles.pressed,
           ]}
@@ -682,7 +812,10 @@ export default function MeetupDetailsScreen({ navigation, route }) {
             style={[
               styles.ctaText,
               (ctaState.variant === 'primary' || ctaState.variant === 'joined') && styles.ctaTextPrimary,
-              ctaState.variant === 'disabled' && styles.ctaTextDisabled,
+              ctaState.variant === 'disabled' && {
+                color: surfaces.profileHeroBioColor,
+                fontFamily: theme.fonts.medium,
+              },
               ctaState.variant === 'cancelEvent' && styles.ctaTextCancelEvent,
             ]}
             allowFontScaling
@@ -694,7 +827,7 @@ export default function MeetupDetailsScreen({ navigation, route }) {
 
       <ParticipantModal
         visible={participantsOpen}
-        count={participantCount}
+        count={displayParticipantCount}
         participants={participantPets}
         ownedPetIds={ownedPetIds}
         onBlockPet={(pet) => {
@@ -756,13 +889,30 @@ export default function MeetupDetailsScreen({ navigation, route }) {
         visible={Boolean(blockPetTarget)}
         pet={blockPetTarget}
         onClose={() => setBlockPetTarget(null)}
-        onBlocked={() => setBlockPetTarget(null)}
+        onBlocked={handlePetBlocked}
+      />
+
+      <CancelMeetupConfirmModal
+        visible={cancelConfirmOpen}
+        busy={rsvpBusy}
+        onClose={() => {
+          if (!rsvpBusy) {
+            setCancelConfirmOpen(false);
+          }
+        }}
+        onConfirm={confirmCancelEvent}
       />
     </ScreenWrapper>
   );
 }
 
 const styles = StyleSheet.create({
+  shareCaptureHost: {
+    position: 'absolute',
+    left: -10000,
+    top: 0,
+    width: '100%',
+  },
   screenContent: {
     flex: 1,
   },
@@ -782,23 +932,30 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   cancelBanner: {
-    backgroundColor: CANCEL_BANNER_BG,
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    marginBottom: 20,
+    borderRadius: 18,
+    borderWidth: 1,
+    paddingHorizontal: 18,
+    paddingVertical: 16,
+    marginBottom: 24,
+  },
+  cancelBannerLabel: {
+    fontFamily: theme.fonts.medium,
+    fontSize: 11,
+    lineHeight: 14,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    color: MEETUP_LABEL_ACCENT,
+    marginBottom: 6,
   },
   cancelBannerText: {
-    fontFamily: theme.fonts.medium,
-    fontSize: 14,
-    lineHeight: 20,
-    color: CANCEL_BANNER_TEXT,
+    fontFamily: theme.fonts.body,
+    fontSize: 15,
+    lineHeight: 22,
   },
   title: {
     fontFamily: theme.fonts.semibold,
     fontSize: 24,
     lineHeight: 30,
-    color: PRIMARY_TEXT,
     marginBottom: 16,
   },
   metaRow: {
@@ -817,7 +974,6 @@ const styles = StyleSheet.create({
   },
   openToChip: {
     flexShrink: 0,
-    backgroundColor: SAGE_CHIP_BG,
     borderRadius: theme.borderRadius.full,
     paddingHorizontal: 12,
     paddingVertical: 5,
@@ -832,7 +988,6 @@ const styles = StyleSheet.create({
     fontFamily: theme.fonts.medium,
     fontSize: 15,
     lineHeight: 22,
-    color: PRIMARY_TEXT,
     marginBottom: 20,
   },
   participantsSection: {
@@ -842,14 +997,12 @@ const styles = StyleSheet.create({
     fontFamily: theme.fonts.body,
     fontSize: 14,
     lineHeight: 20,
-    color: SECONDARY_TEXT,
     marginBottom: 12,
   },
   emptyParticipants: {
     fontFamily: theme.fonts.body,
     fontSize: 14,
     lineHeight: 20,
-    color: MUTED_TEXT,
     fontStyle: 'italic',
     marginBottom: 12,
   },
@@ -863,13 +1016,11 @@ const styles = StyleSheet.create({
     height: AVATAR_SIZE,
     borderRadius: AVATAR_SIZE / 2,
     borderWidth: 2,
-    borderColor: SCREEN_BG,
   },
   avatarOverlap: {
     marginLeft: -10,
   },
   avatarFallback: {
-    backgroundColor: SAGE_CHIP_BG,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -889,7 +1040,6 @@ const styles = StyleSheet.create({
   },
   divider: {
     height: 1,
-    backgroundColor: DIVIDER,
     marginBottom: 24,
   },
   detailSection: {
@@ -900,27 +1050,23 @@ const styles = StyleSheet.create({
     fontSize: 11,
     lineHeight: 14,
     letterSpacing: 0.8,
-    color: MUTED_TEXT,
     marginBottom: 8,
   },
   detailPrimary: {
     fontFamily: theme.fonts.medium,
     fontSize: 16,
     lineHeight: 24,
-    color: PRIMARY_TEXT,
   },
   detailSecondary: {
     fontFamily: theme.fonts.body,
     fontSize: 16,
     lineHeight: 24,
-    color: SECONDARY_TEXT,
     marginTop: 4,
   },
   detailEmpty: {
     fontFamily: theme.fonts.body,
     fontSize: 16,
     lineHeight: 24,
-    color: MUTED_TEXT,
     fontStyle: 'italic',
   },
   mapsLink: {
@@ -937,9 +1083,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     paddingHorizontal: 24,
     paddingTop: 12,
-    backgroundColor: SCREEN_BG,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: DIVIDER,
   },
   ctaButton: {
     minHeight: 52,
@@ -950,9 +1094,6 @@ const styles = StyleSheet.create({
   },
   ctaPrimary: {
     backgroundColor: SAGE,
-  },
-  ctaDisabled: {
-    backgroundColor: DISABLED_BG,
   },
   ctaCancelEvent: {
     backgroundColor: 'transparent',
@@ -966,10 +1107,6 @@ const styles = StyleSheet.create({
   },
   ctaTextPrimary: {
     color: '#FFFFFF',
-  },
-  ctaTextDisabled: {
-    color: DISABLED_TEXT,
-    fontFamily: theme.fonts.medium,
   },
   ctaTextCancelEvent: {
     color: CANCEL_EVENT,
@@ -985,7 +1122,6 @@ const styles = StyleSheet.create({
     fontFamily: theme.fonts.semibold,
     fontSize: 20,
     lineHeight: 26,
-    color: PRIMARY_TEXT,
     marginBottom: 8,
     textAlign: 'center',
   },
@@ -993,7 +1129,6 @@ const styles = StyleSheet.create({
     fontFamily: theme.fonts.body,
     fontSize: 15,
     lineHeight: 22,
-    color: SECONDARY_TEXT,
     textAlign: 'center',
     marginBottom: 24,
   },

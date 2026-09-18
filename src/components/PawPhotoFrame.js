@@ -1,6 +1,7 @@
 import { Feather } from '@expo/vector-icons';
 import React from 'react';
-import { Image, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import PawpleStorageImage from './PawpleStorageImage';
 import { theme } from '../config/theme';
 
 const SIZE = theme.pawPhotoFrame.photoDiameter;
@@ -10,27 +11,30 @@ const BORDER_WIDTH = 2;
 
 /**
  * Circular pet photo picker — dashed placeholder or filled image.
- * @param {{ uri?: string | null, onPress: () => void, disabled?: boolean }} props
+ * @param {{ uri?: string | null, onPress: () => void, disabled?: boolean, validating?: boolean }} props
  */
-export default function PawPhotoFrame({ uri, onPress, disabled = false }) {
+export default function PawPhotoFrame({ uri, onPress, disabled = false, validating = false }) {
   const hasPhoto = Boolean(uri);
+  const isDisabled = disabled || validating;
 
   return (
     <Pressable
       onPress={onPress}
-      disabled={disabled}
+      disabled={isDisabled}
       style={({ pressed }) => [
         styles.hit,
-        pressed && !disabled && styles.pressed,
-        disabled && styles.disabled,
+        pressed && !isDisabled && styles.pressed,
+        isDisabled && styles.disabled,
       ]}
       accessibilityRole="button"
       accessibilityLabel={hasPhoto ? 'Change pet photo' : 'Add pet photo'}
-      accessibilityState={{ disabled }}
+      accessibilityState={{ disabled: isDisabled, busy: validating }}
     >
       <View style={[styles.ring, hasPhoto && styles.ringFilled]}>
-        {hasPhoto ? (
-          <Image
+        {validating ? (
+          <ActivityIndicator color={theme.colors.primary.light} />
+        ) : hasPhoto ? (
+          <PawpleStorageImage
             source={{ uri }}
             style={styles.photo}
             resizeMode="cover"

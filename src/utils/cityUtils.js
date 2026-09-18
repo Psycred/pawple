@@ -1,19 +1,28 @@
 /**
  * Phase 1a bulletin-board city matching — coarse locality only.
- * Normalize with lower(trim(city)) equality per CTO architecture §3.2.
+ * Phase A.1: alias map + 100 km centroid radius via indianCityRegistry.
  */
+
+import {
+  citiesMatchWithinRadius,
+  isMeetupCityRelevantToViewer,
+  normalizeCityLookupKey,
+  resolveCanonicalCityKey,
+} from './indianCityRegistry.js';
 
 /** @param {string|null|undefined} city */
 export function normalizeCityKey(city) {
-  const trimmed = String(city ?? '').trim();
-  return trimmed ? trimmed.toLowerCase() : '';
+  return normalizeCityLookupKey(city);
 }
 
-/** @param {string|null|undefined} a @param {string|null|undefined} b */
-export function citiesMatch(a, b) {
-  const keyA = normalizeCityKey(a);
-  const keyB = normalizeCityKey(b);
-  return Boolean(keyA && keyB && keyA === keyB);
+/**
+ * Same city — exact spelling, alias (Bombay/Mumbai), or within default 100 km.
+ * @param {string|null|undefined} a
+ * @param {string|null|undefined} b
+ * @param {number} [radiusKm=100]
+ */
+export function citiesMatch(a, b, radiusKm = 100) {
+  return citiesMatchWithinRadius(a, b, radiusKm);
 }
 
 /**
@@ -34,14 +43,26 @@ export function formatCityBadge(city) {
 }
 
 /**
- * Keep meetups in the viewer's city for public discovery surfaces.
+ * Keep meetups relevant to the viewer's base and/or current city.
  * @param {object[]} meetups
  * @param {string|null|undefined} viewerCity
+ * @param {number} [radiusKm=100]
  */
-export function filterMeetupsByViewerCity(meetups = [], viewerCity) {
-  const viewerKey = normalizeCityKey(viewerCity);
-  if (!viewerKey) {
+export function filterMeetupsByViewerCity(meetups = [], viewerCity, radiusKm = 100) {
+  if (!normalizeCityKey(viewerCity)) {
     return [];
   }
-  return meetups.filter((meetup) => citiesMatch(meetup?.city, viewerCity));
+  return meetups.filter((meetup) =>
+    isMeetupCityRelevantToViewer(
+      meetup?.city,
+      { profileCity: viewerCity, deviceCity: null },
+      radiusKm,
+    ),
+  );
 }
+
+export {
+  isMeetupCityRelevantToViewer,
+  resolveCanonicalCityKey,
+  normalizeCityLookupKey,
+};

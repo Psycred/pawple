@@ -39,11 +39,11 @@ export const MOCK_MEETUP_VENUES = [
   { location_lat: 12.965, location_lng: 77.59 },
 ];
 
-/** Precompute distanceKm for a meetup using viewer GPS or mock user location. */
+/** Precompute distanceKm for a meetup using venue pin + viewer GPS or mock user location. */
 export function computeMeetupDistanceKm(meetup, viewerLat, viewerLng) {
-  const lat = meetup?.location_lat ?? meetup?.lat;
-  const lng = meetup?.location_lng ?? meetup?.lng;
-  return getDistanceToMeetup(lat, lng, viewerLat, viewerLng);
+  const venueLat = Number(meetup?.venue_lat ?? meetup?.location_lat ?? meetup?.lat);
+  const venueLng = Number(meetup?.venue_lng ?? meetup?.location_lng ?? meetup?.lng);
+  return getDistanceToMeetup(venueLat, venueLng, viewerLat, viewerLng);
 }
 
 /**

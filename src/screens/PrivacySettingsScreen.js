@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -10,6 +10,7 @@ import {
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { theme } from '../config/theme';
+import { useRuntimeThemeColors } from '../hooks/useRuntimeThemeColors';
 import { fetchBlockedPets, unblockPet } from '../services/blocks';
 
 /**
@@ -17,11 +18,34 @@ import { fetchBlockedPets, unblockPet } from '../services/blocks';
  * No false DM / search-hiding promises.
  */
 export default function PrivacySettingsScreen() {
+  const surfaces = useRuntimeThemeColors();
   const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState([]);
   const [errorText, setErrorText] = useState('');
   const [busyId, setBusyId] = useState(null);
+
+  const privacyTheme = useMemo(
+    () => ({
+      screen: { backgroundColor: surfaces.backgroundScreen },
+      lede: { color: surfaces.textSecondary },
+      group: {
+        backgroundColor: surfaces.backgroundCard,
+        borderColor: surfaces.border,
+      },
+      empty: { color: surfaces.textSecondary },
+      petName: { color: surfaces.textPrimary },
+      petMeta: { color: surfaces.textSecondary },
+      divider: { backgroundColor: surfaces.border },
+    }),
+    [
+      surfaces.backgroundCard,
+      surfaces.backgroundScreen,
+      surfaces.border,
+      surfaces.textPrimary,
+      surfaces.textSecondary,
+    ],
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -63,18 +87,18 @@ export default function PrivacySettingsScreen() {
   }, [busyId]);
 
   return (
-    <View style={[styles.screen, { paddingTop: Math.max(insets.top, 24) }]}>
-      <Text style={styles.lede} allowFontScaling>
+    <View style={[styles.screen, privacyTheme.screen, { paddingTop: Math.max(insets.top, 24) }]}>
+      <Text style={[styles.lede, privacyTheme.lede]} allowFontScaling>
         Blocked pets stay out of your feed. Report Moments and Meetups from the content itself.
       </Text>
 
-      <View style={styles.group}>
+      <View style={[styles.group, privacyTheme.group]}>
         {loading ? (
           <View style={styles.loadingWrap}>
             <ActivityIndicator color={theme.colors.brand.sage.value} />
           </View>
         ) : rows.length === 0 ? (
-          <Text style={styles.empty} allowFontScaling>
+          <Text style={[styles.empty, privacyTheme.empty]} allowFontScaling>
             No blocked pets.
           </Text>
         ) : (
@@ -84,7 +108,7 @@ export default function PrivacySettingsScreen() {
             const petId = String(row.blocked_pet_id);
             return (
               <View key={String(row.id ?? petId)}>
-                {index > 0 ? <View style={styles.divider} /> : null}
+                {index > 0 ? <View style={[styles.divider, privacyTheme.divider]} /> : null}
                 <View style={styles.row}>
                   {pet?.photo_url ? (
                     <Image source={{ uri: pet.photo_url }} style={styles.avatar} />
@@ -96,11 +120,11 @@ export default function PrivacySettingsScreen() {
                     </View>
                   )}
                   <View style={styles.rowText}>
-                    <Text style={styles.petName} numberOfLines={1} allowFontScaling>
+                    <Text style={[styles.petName, privacyTheme.petName]} numberOfLines={1} allowFontScaling>
                       {name}
                     </Text>
                     {pet?.breed ? (
-                      <Text style={styles.petMeta} numberOfLines={1} allowFontScaling>
+                      <Text style={[styles.petMeta, privacyTheme.petMeta]} numberOfLines={1} allowFontScaling>
                         {pet.breed}
                       </Text>
                     ) : null}

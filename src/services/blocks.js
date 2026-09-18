@@ -4,22 +4,33 @@
  */
 
 import { supabase } from '../config/supabase';
+import {
+  filterPetsNotBlocked,
+  isBlockedByPetIds,
+} from '../lib/petBlockVisibility.js';
+
+export { filterPetsNotBlocked, isBlockedByPetIds };
 
 /**
+ * @param {string|null} [userId] — when omitted, resolves the signed-in user
  * @returns {Promise<string[]>} blocked pet ids for the signed-in user
  */
-export async function fetchBlockedPetIds() {
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user?.id) {
+export async function fetchBlockedPetIds(userId = null) {
+  let resolvedUserId = userId;
+  if (!resolvedUserId) {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    resolvedUserId = user?.id ?? null;
+  }
+  if (!resolvedUserId) {
     return [];
   }
 
   const { data, error } = await supabase
     .from('pet_blocks')
     .select('blocked_pet_id')
-    .eq('blocker_user_id', user.id);
+    .eq('blocker_user_id', resolvedUserId);
 
   if (error) {
     console.error('[Supabase]', error);
@@ -142,22 +153,3 @@ export async function unblockPet(blockedPetId) {
   }
 }
 
-/**
- * True when any of the given pet ids is on the viewer's block list.
- * @param {Iterable<string>} petIds
- * @param {Set<string>|string[]} blockedPetIds
- */
-export function isBlockedByPetIds(petIds, blockedPetIds) {
-  const blocked = blockedPetIds instanceof Set
-    ? blockedPetIds
-    : new Set((blockedPetIds ?? []).map(String));
-  if (!blocked.size) {
-    return false;
-  }
-  for (const id of petIds ?? []) {
-    if (id && blocked.has(String(id))) {
-      return true;
-    }
-  }
-  return false;
-}

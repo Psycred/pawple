@@ -43,13 +43,23 @@ const lightColors = {
   info: '#4299E1',
 };
 
+/** Dark appearance surfaces — restrained charcoal palette (Task: Dark Theme). */
+const DARK_BACKGROUND = '#111111';
+const DARK_SURFACE = '#1C1C1C';
+const DARK_ELEVATED = '#242424';
+const DARK_DIVIDER = '#303030';
+const DARK_TEXT_PRIMARY = '#F5F1E8';
+const DARK_TEXT_SECONDARY = '#C8C4BC';
+const DARK_TEXT_MUTED = '#918D86';
+
 const darkColors = {
-  background: '#1F1F1F',
-  card: '#2A2A2A',
+  background: DARK_BACKGROUND,
+  card: DARK_SURFACE,
+  elevated: DARK_ELEVATED,
   text: {
-    primary: '#EDEBE7',
-    secondary: '#A0AEC0',
-    muted: '#718096',
+    primary: DARK_TEXT_PRIMARY,
+    secondary: DARK_TEXT_SECONDARY,
+    muted: DARK_TEXT_MUTED,
     inverse: TEXT_INVERSE,
   },
   brand: {
@@ -64,12 +74,193 @@ const darkColors = {
   status: {
     success: GREEN_STATUS_SUCCESS,
   },
-  accent: '#9F7AEA',
-  border: '#4A5568',
+  accent: lightColors.accent,
+  border: DARK_DIVIDER,
   error: '#F56565',
   warning: '#F6AD55',
-  info: '#63B3ED',
+  info: '#4299E1',
 };
+
+export const APPEARANCE_STORAGE_KEY = 'settings.appearance';
+
+/** Frozen light snapshots — never mutated; used to restore Light appearance exactly. */
+const LIGHT_SURFACE_SNAPSHOT = {
+  backgroundScreen: lightColors.background,
+  backgroundCard: lightColors.card,
+  backgroundElevated: lightColors.card,
+  textPrimary: lightColors.text.primary,
+  textSecondary: lightColors.text.secondary,
+  textMuted: lightColors.text.muted,
+  placeholder: TEXT_PLACEHOLDER,
+  border: lightColors.border,
+  inputBackground: '#FBFAF8',
+  inputBorder: '#E2E8F0',
+  feedScreenBackground: '#F5F4F1',
+  feedCardBackground: '#FBFAF8',
+  feedScrapbookPaperFill: '#FBFAF8',
+  feedCaptionColor: '#2F2F2F',
+  feedPetNameColor: '#4A4A4A',
+  feedMetaColor: TEXT_MUTED_SPEC,
+  feedActionIconColor: TEXT_SECONDARY_SPEC,
+  feedDesaturateVeilColor: '#F0EEEA',
+  createMomentScreenBackground: '#F5F4F1',
+  createMomentCardBackground: '#FBFAF8',
+  createMomentHeaderTitleColor: '#2F2F2F',
+  createMomentCaptionColor: '#2F2F2F',
+  createMomentPetColor: '#4A4A4A',
+  createMomentMetaColor: '#9A9A9A',
+  createMomentSecondaryTextColor: '#7A7A7A',
+  createMomentFoundationScreenBackground: '#F5F4F1',
+  createMomentFoundationCardBackground: '#FBFAF8',
+  createMomentFoundationHeaderTitleColor: '#2F2F2F',
+  meetupCardBackground: '#FFFCF8',
+  meetupCardBorder: '#F1E8DF',
+  meetupBodyText: '#4A403B',
+  meetupMetaText: '#6B625C',
+  meetupChipBackground: '#EEF5EE',
+  meetupJoinedButtonBackground: '#EEF5EE',
+  meetupSkeletonFill: '#E8E4DF',
+  meetupDisabledButtonBackground: '#E5E5E5',
+  createHubSheetBackground: '#FFFFFF',
+  createHubOptionBorder: '#F1E8DF',
+  createHubIconCircleBackground: '#EEF5EE',
+  profileHeroNameColor: '#3A312E',
+  profileHeroMutedColor: '#666666',
+  profileHeroBioColor: '#888888',
+  profileTraitChipBackground: '#F5F5F5',
+  createMomentEmptyCardBackground: '#FBFAF7',
+  createMomentScreenTitleColor: '#3A312E',
+  createMomentPaperWarmthColor: '#E8DCC4',
+  createMomentPlaceholderMuted: '#B7B0A5',
+  createMomentChangePhotoText: '#B7B0A5',
+  confirmModalCancelBackground: '#F3F3F3',
+  confirmIconCautionBackground: '#FCE8E8',
+};
+
+const DARK_SURFACE_SNAPSHOT = {
+  backgroundScreen: DARK_BACKGROUND,
+  backgroundCard: DARK_SURFACE,
+  backgroundElevated: DARK_ELEVATED,
+  textPrimary: DARK_TEXT_PRIMARY,
+  textSecondary: DARK_TEXT_SECONDARY,
+  textMuted: DARK_TEXT_MUTED,
+  placeholder: DARK_TEXT_MUTED,
+  border: DARK_DIVIDER,
+  inputBackground: DARK_SURFACE,
+  inputBorder: DARK_DIVIDER,
+  feedScreenBackground: DARK_BACKGROUND,
+  feedCardBackground: DARK_SURFACE,
+  feedScrapbookPaperFill: DARK_SURFACE,
+  feedCaptionColor: DARK_TEXT_PRIMARY,
+  feedPetNameColor: DARK_TEXT_SECONDARY,
+  feedMetaColor: DARK_TEXT_MUTED,
+  feedActionIconColor: DARK_TEXT_SECONDARY,
+  feedDesaturateVeilColor: DARK_ELEVATED,
+  createMomentScreenBackground: DARK_BACKGROUND,
+  createMomentCardBackground: DARK_SURFACE,
+  createMomentHeaderTitleColor: DARK_TEXT_PRIMARY,
+  createMomentCaptionColor: DARK_TEXT_PRIMARY,
+  createMomentPetColor: DARK_TEXT_SECONDARY,
+  createMomentMetaColor: DARK_TEXT_MUTED,
+  createMomentSecondaryTextColor: DARK_TEXT_MUTED,
+  createMomentFoundationScreenBackground: DARK_BACKGROUND,
+  createMomentFoundationCardBackground: DARK_SURFACE,
+  createMomentFoundationHeaderTitleColor: DARK_TEXT_PRIMARY,
+  meetupCardBackground: DARK_SURFACE,
+  meetupCardBorder: DARK_DIVIDER,
+  meetupBodyText: DARK_TEXT_PRIMARY,
+  meetupMetaText: DARK_TEXT_SECONDARY,
+  meetupChipBackground: DARK_ELEVATED,
+  meetupJoinedButtonBackground: DARK_ELEVATED,
+  meetupSkeletonFill: '#2A2A2A',
+  meetupDisabledButtonBackground: '#2A2A2A',
+  createHubSheetBackground: DARK_ELEVATED,
+  createHubOptionBorder: DARK_DIVIDER,
+  createHubIconCircleBackground: DARK_SURFACE,
+  profileHeroNameColor: DARK_TEXT_PRIMARY,
+  profileHeroMutedColor: DARK_TEXT_SECONDARY,
+  profileHeroBioColor: DARK_TEXT_MUTED,
+  profileTraitChipBackground: DARK_ELEVATED,
+  createMomentEmptyCardBackground: DARK_SURFACE,
+  createMomentScreenTitleColor: DARK_TEXT_PRIMARY,
+  createMomentPaperWarmthColor: DARK_ELEVATED,
+  createMomentPlaceholderMuted: DARK_TEXT_MUTED,
+  createMomentChangePhotoText: DARK_TEXT_MUTED,
+  confirmModalCancelBackground: '#2A2A2A',
+  confirmIconCautionBackground: '#3A2828',
+};
+
+/**
+ * @param {'light'|'dark'} mode
+ * @returns {typeof LIGHT_SURFACE_SNAPSHOT}
+ */
+export function getResolvedThemeSurfaces(mode) {
+  return mode === 'dark' ? DARK_SURFACE_SNAPSHOT : LIGHT_SURFACE_SNAPSHOT;
+}
+
+let activeColorMode = 'light';
+
+export function getActiveColorMode() {
+  return activeColorMode;
+}
+
+/**
+ * Sync runtime theme aliases used across the app for the active appearance mode.
+ * Light values always restore from LIGHT_SURFACE_SNAPSHOT unchanged.
+ */
+export function applyThemeColorMode(mode) {
+  const resolved = getResolvedThemeSurfaces(mode === 'dark' ? 'dark' : 'light');
+  activeColorMode = mode === 'dark' ? 'dark' : 'light';
+
+  theme.colors.background.screen = resolved.backgroundScreen;
+  theme.colors.background.card = resolved.backgroundCard;
+  theme.colors.background.elevated = resolved.backgroundElevated;
+  theme.colors.background.light = lightColors.background;
+  theme.colors.background.dark = darkColors.background;
+
+  theme.colors.text.primary.light = resolved.textPrimary;
+  theme.colors.text.primary.value = resolved.textPrimary;
+  theme.colors.text.secondary.light = resolved.textSecondary;
+  theme.colors.text.secondary.value = resolved.textSecondary;
+  theme.colors.text.muted.light = resolved.textMuted;
+  theme.colors.text.muted.value = resolved.textMuted;
+  theme.colors.placeholder.light = resolved.placeholder;
+  theme.colors.placeholder.value = resolved.placeholder;
+
+  theme.colors.border.light = resolved.border;
+
+  theme.components.input.background = resolved.inputBackground;
+  theme.components.input.border = resolved.inputBorder;
+  theme.components.card.background = resolved.backgroundCard;
+
+  theme.feed.screenBackground = resolved.feedScreenBackground;
+  theme.feed.cardBackground = resolved.feedCardBackground;
+  theme.feed.scrapbookPaperFill = resolved.feedScrapbookPaperFill;
+  theme.feed.captionColor = resolved.feedCaptionColor;
+  theme.feed.petNameColor = resolved.feedPetNameColor;
+  theme.feed.metaColor = resolved.feedMetaColor;
+  theme.feed.actionIconColor = resolved.feedActionIconColor;
+  theme.feed.desaturateVeilColor = resolved.feedDesaturateVeilColor;
+
+  theme.createMoment.screenBackground = resolved.createMomentScreenBackground;
+  theme.createMoment.cardBackground = resolved.createMomentCardBackground;
+  theme.createMoment.headerTitleColor = resolved.createMomentHeaderTitleColor;
+  theme.createMoment.captionColor = resolved.createMomentCaptionColor;
+  theme.createMoment.petColor = resolved.createMomentPetColor;
+  theme.createMoment.metaColor = resolved.createMomentMetaColor;
+  theme.createMoment.secondaryTextColor = resolved.createMomentSecondaryTextColor;
+
+  theme.createMomentFoundation.screenBackground = resolved.createMomentFoundationScreenBackground;
+  theme.createMomentFoundation.cardBackground = resolved.createMomentFoundationCardBackground;
+  theme.createMomentFoundation.headerTitleColor = resolved.createMomentFoundationHeaderTitleColor;
+
+  theme.fonts.legalDisclosure.color = resolved.textMuted;
+  theme.fonts.legalBody.color = resolved.textPrimary;
+  theme.fonts.legalSectionTitle.color = resolved.textPrimary;
+  theme.fonts.legalPageTitle.color = resolved.textPrimary;
+  theme.fonts.feedCaption.color = resolved.feedCaptionColor;
+  theme.fonts.feedPetName.color = resolved.feedPetNameColor;
+}
 
 const theme = {
   colors: {
@@ -81,6 +272,7 @@ const theme = {
       dark: darkColors.background,
       screen: '#F5F4F1',
       card: '#FBFAF8',
+      elevated: '#FBFAF8',
     },
     card: { light: lightColors.card, dark: darkColors.card },
     brand: {
@@ -623,6 +815,8 @@ theme.fonts.legalPageTitle = {
   lineHeight: Math.round(theme.fontSizes.creationTitle * theme.lineHeights.tight),
   color: theme.colors.text.primary.value,
 };
+
+applyThemeColorMode('light');
 
 export { theme };
 export default theme;

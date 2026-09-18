@@ -28,6 +28,10 @@ test('Account delete: RPC removes profile, pets, moments, and auth user', { skip
 
   const result = await deleteAccount(client);
   assert.equal(result.ok, true);
+  assert.equal(result.already_deleted, false);
+  assert.equal(Number(result.counts?.auth_users), 1);
+  assert.equal(Number(result.counts?.profiles), 1);
+  assert.notEqual(Number(result.counts?.storage_objects), -1);
 
   const { data: profile } = await admin.from('profiles').select('id').eq('id', userId).maybeSingle();
   assert.equal(profile, null);

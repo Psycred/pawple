@@ -485,16 +485,6 @@ export default function HomeScreen({ navigation, route }) {
     console.log('[Home] Help & support stub tapped');
   };
 
-  const onLogout = async () => {
-    await supabase.auth.signOut();
-    const stackNav = navigation.getParent?.()?.getParent?.();
-    if (stackNav?.navigate) {
-      stackNav.navigate('Auth');
-      return;
-    }
-    navigation.navigate('Auth');
-  };
-
   // Public viewing flags can be passed by future routes that show community/public pet context.
   const isPublicContext = Boolean(route?.params?.publicPetId) || Boolean(route?.params?.communityView);
   const showSettingsTrigger = isAuthenticated && !isPublicContext;
@@ -579,7 +569,6 @@ export default function HomeScreen({ navigation, route }) {
         onLocationPreferences={onLocationPreferences}
         onPrivacy={onPrivacy}
         onHelp={onHelp}
-        onLogout={onLogout}
       />
     </View>
   );

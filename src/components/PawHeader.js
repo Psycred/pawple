@@ -1,5 +1,6 @@
 import React from 'react';
-import { Image, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import PawpleStorageImage from './PawpleStorageImage';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { theme } from '../config/theme';
 
@@ -17,7 +18,7 @@ export default function PawHeader({ photoUri }) {
 
       <View style={styles.centerPad}>
         {photoUri ? (
-          <Image source={{ uri: photoUri }} style={styles.centerImage} />
+          <PawpleStorageImage source={{ uri: photoUri }} style={styles.centerImage} />
         ) : (
           <View style={styles.centerFallback}>
             <MaterialCommunityIcons name="paw" size={40} color={theme.colors.primary.dark} />

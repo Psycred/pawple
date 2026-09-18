@@ -2,25 +2,276 @@
 
 STATUS: CURRENT  
 AUTHORITY: FOUNDER  
-CEO: Updated per Founder Phase 1a execution directive `4ac03812` (2026-09-02)  
-LAST UPDATED: 2026-09-02  
-WAVE: Phase 1a — 18+ Bulletin Board; mating/intro chat **hidden** (code preserved)
+CEO: Updated per Founder Beta Hardening / Pre-APK Wave on PAW-222 (2026-09-07)  
+LAST UPDATED: 2026-09-07  
+WAVE: **PAW-222 Beta Hardening / Pre-APK (Camera · Gallery · Notifications · Image Safety · Invites) is the active execution wave.** Mating Match + Chat repair (PAW-195) remains CLOSED for controlled Beta — confirm intact only; **no Mating/Matching/Chat changes** in PAW-222. **Production expose NOT authorized** — `EXPOSE_MATING_SURFACES` stays false. No APK build inside PAW-222 (Founder builds after Tester + QA PASS). Design Wave 3 feel-pass and Phase 1a Bulletin Board remain.
+
+Kickoff doc: `docs/PAW222_BETA_HARDENING_WAVE.md`. CTO impact map first (PAW-223) before Frontend/Backend product code. Copy finals: `docs/PAW224_BETA_HARDENING_COPY.md`. Legal PAW-225: CONDITIONAL-GO (memo on issue).
 
 The contents of this file define the Founder-authorized scope for the
 current execution wave. Recommendations, observations, or proposed
 future work do not constitute authorization unless explicitly included
 here or in a subsequent CURRENT.md.
 
+============================================================
+FOUNDER AUTHORIZATION — BETA HARDENING / PRE-APK (PAW-222, 2026-09-07)
+============================================================
+
+Founder AUTHORIZES a **separate** Beta Hardening / Pre-APK wave on PAW-222
+for Camera · Gallery · Notifications · Image Safety · Invites.
+
+BINDING:
+- Hard scope lock: no unrelated refactor, nav redesign, dependency upgrades,
+  Mating/Matching/Chat product changes, or opportunistic bug fixing.
+- Logout and Delete Account remain protected / untouched.
+- Mating/Matching/Chat: **confirm intact only**. `EXPOSE_MATING_SURFACES`
+  stays false. No live Mating/Chat SQL. Bottom-nav Match/Chat placement
+  is a **separate** later decision.
+- Permissions in scope: Camera, Gallery/Photos/Media, Notifications only.
+  Do not change Location / Microphone / Contacts / Bluetooth / Calendar
+  unless Founder approves an unavoidable dependency.
+- Native OS permission state is source of truth. No persistent app-level
+  “hasAsked*” flags. No custom permission primers (PAW-136 stands).
+- Image safety applies to **pet profile photos and Moment photos**.
+  Moderation model/API/dependency install requires **Founder approval**
+  of CTO’s Phase 1a recommendation (PAW-222 §15).
+- Invites: warm intro + code-bearing invite URL + Android/iOS mock
+  `pawple.com` download fallbacks; deep-link retain/prefill; re-click
+  after install is enough (no deferred deep-link vendor required).
+- Tester path: **Pixel 6a Android emulator**. No APK build in this wave.
+  Founder builds fresh APK for Pixel 10 Pro after Tester + QA PASS.
+
+**Invite-file freeze — SUPERSEDED FOR THIS WAVE ONLY:**
+Prior Wave 1/2/3 freezes on `src/lib/onboardingInvite.js`,
+`src/screens/InviteCodeScreen.js`, and `src/components/InviteSheet.js`
+are **lifted solely for PAW-222 invite/deep-link work** mapped by CTO.
+Do not expand those edits beyond the Founder invite requirements.
+Beta caps / `@PAW-3600` prefill behaviour stay unless the impact map
+proves a minimal change is required for code retain/prefill — then
+stop for Founder if it alters invite economics.
+
+**CEO operating locks (within mandate, 2026-09-07):**
+- Rejected images: **discard by default** (no durable reject store) unless
+  Founder later authorizes retention.
+- Pet-vs-human strictness: where a **pet profile photo is expected**.
+  Moments: reject nudity/sexual/obscene/bikini-style human imagery;
+  do **not** ban ordinary humans-with-pets content that Guidelines allow.
+- If an automated image gate ships, Privacy/Terms/Guidelines must be
+  amended in the **same release** so they no longer claim “no AI
+  moderation” (Legal PAW-225 / PAW-226). Quiet UI reject copy stays
+  non-technical (Copywriter PAW-224). Do not enable the gate while
+  `legalDocuments.js` still asserts blanket “no AI moderation.”
+- Mock Android/iOS invite destinations stay honest placeholders
+  (no fake Play/App Store chrome).
+
 Source: Founder authorization on PAW-7 (comment `4ac03812`, 2026-09-02),
 which supersedes the 2026-08-31 “no hiding mating” launch-surface rule
 while preserving mating/intro-chat **code**. Prior Bulletin Board
-authorization remains `66e02a99` (2026-08-31). Phase 1b / Final Phase 1
-are **held** — note only, no development.
+authorization remains `66e02a99` (2026-08-31). Design Wave 1 and the
+Product Designer seat are authorized on **PAW-116** (2026-09-03).
+Design Wave 2 (feel-pass findings) is authorized on **PAW-126** (2026-09-03);
+**F1 copy and F3 permission primers are superseded by PAW-136.** F4 stands.
+Design Wave 3 (Design Constitution + rectification) is authorized on
+**PAW-136** (2026-09-03). Phase 1b / Final Phase 1 are **held** — note only,
+no development.
 
 Honesty & Safety wave residuals (staging smoke PAW-52) still **block store
-submission** until staging smoke passes. The hide/copy/legal wave may
-proceed in parallel. **No commit of that wave until PAW-115 QA SIGN-OFF.**
-Bulletin Board implementation is already committed (`71b0d9a`, PAW-110).
+submission** until staging smoke passes. Hide/legal wave is on origin/main
+(`70f503d`, PAW-115 SIGN-OFF). Bulletin Board implementation is committed
+(`71b0d9a`, PAW-110).
+
+============================================================
+FOUNDER AUTHORIZATION — MATING MATCH + CHAT REPAIR WAVE (PAW-195, 2026-09-06)
+============================================================
+
+Founder AUTHORIZES a Mating Match + Chat **repair / complete / test** wave
+on PAW-195 (comment `f67e783b`). This is **not** production expose.
+
+BINDING:
+- Recover and repair existing mating/chat code. Do not rebuild what exists.
+- Wave is **only** Mating Match + Chat. No opportunistic cleanup.
+- **Development: authorized. Controlled Tester/QA path: authorized.
+  Normal production exposure: NOT authorized.** Keep
+  `EXPOSE_MATING_SURFACES = false` for ordinary users.
+- Phase 1a distance: **fixed 100 km**. Preserve 5/10/25/50 selector code
+  for later phases; it must not be an active product choice now.
+- Location: keep existing coarse/approximate model. Honest ~km wording.
+  Do not redesign location architecture. Do not expose exact GPS.
+- Matching criteria remain breed, gender, and this fixed 100 km window only.
+- Open to Companionship is the eligibility switch. OFF → not matchable,
+  Chat inaccessible, that pet’s chats **removed from the product**.
+  Phase 1a retention is **freeze-and-hide** (CEO lock, 2026-09-06):
+  messages are not physically wiped. Do not claim chats are never saved.
+  Other pets’ chats stay. A physical wipe needs a new Founder decision.
+- Chat is pet-pair only (Pet A ↔ Pet B). No human names. Dedicated Chat
+  page aggregates the logged-in parent’s active pet-pair conversations.
+- Discover/Match is potential matches only. Mutual Paw → leave discovery,
+  live in Chat. Unmatch / companionship OFF may return a pet to discovery
+  if still eligible. No duplicate chats.
+- Bottom nav is conditional (companionship / first chat). Founder
+  pre-authorizes the tab-bar integration required for that.
+- Text-only chat. Keep link block, report/block. No media. No push /
+  Realtime unless already present.
+- No 18+ banner in the Phase 1a mating/chat UI. Under-18 remain ineligible.
+- Before product code: Change Impact Map (exact files). Protected working
+  files stay untouched unless genuinely required. Other cross-module
+  changes STOP for Founder approval (tab bar is already authorized).
+- Do not weaken RLS/auth.
+
+CEO operating interpretation (visibility): implement the Founder product
+(toggle, Discover/Match, Chat, nav) behind the existing production hide
+gate plus a **controlled non-production test path**. Do not flip the
+production gate.
+
+============================================================
+FOUNDER AUTHORIZATION — DESIGN CONSTITUTION + WAVE 3 (PAW-136, 2026-09-03)
+============================================================
+
+Founder AUTHORIZES the Design Constitution as binding on Designer,
+Frontend, and QA. It supersedes all conflicting prior directives,
+including Wave 2 F1/F3 copy and permission-screen items.
+
+**Design Constitution**
+- Default is no screen. Every interstitial, primer, or pre-screen must
+  justify its existence or be removed. System-standard flows win.
+- Permissions: OS system prompt only, requested at the moment of need.
+  The “why” lives in the OS permission string (Info.plist /
+  AndroidManifest / Expo plugin), written in Pawple voice. No custom
+  primer sheets for camera, photos, location, or notifications.
+- Microcopy over screens: where context is needed, one quiet line under
+  the relevant field. Never a standalone screen.
+- No copy anywhere may position Pawple as an adult product, a
+  stranger-danger product, or a dating product. Pawple is pet parents,
+  pet meetups, and UGC events.
+
+**Birthday** (supersedes F1 / F2 / N4)
+- Quiet field inside the same About You step as name and city.
+- Label: “Birthday.” Standard picker. No headline, no disclaimer, no
+  “Pawple is for adults,” no “I am 18 or older” button. Continue stays
+  the normal continue.
+- Attestation = the DOB value plus server timestamp (already recorded;
+  keep).
+- If computed age is under 18: calm decline screen only. Maximum two
+  sentences; no “strangers,” no “adult who can take responsibility,” no
+  meetup justification; warm Pawple voice; may state Pawple is 18+ for
+  now and a parental-consent version is on our road (no timeline, no
+  “soon”).
+
+**Removals (Wave 3; QA verifies each on device)**
+- “Use my city” button and “You can type your city instead” helper.
+  Restore the pre-Wave-2 city behavior exactly (typed city field).
+- Camera primer sheet. Photos primer sheet. Any other permission primer
+  or interstitial added in Waves 2–3 that is not legally required.
+- Camera/gallery: OS prompt at first add-photo tap, standard.
+- Location: OS prompt only when needed for feed locality. Optional
+  one-line helper under the city field, maximum: “Only your city —
+  never your exact location.” No screen.
+
+**Keep (do not touch):** F4 delete-account hardening; beta config freeze
+(`onboardingInvite.js`, `InviteCodeScreen.js`, InviteSheet hidden);
+mating/chat hidden; Community single-page Hosted/Joined toggle; details
+card alignment.
+
+**Gates:** Designer feel-walk vs pre-Wave-2 baseline; VETO any added
+friction. QA verifies each removal on device. Then Founder feel-pass.
+**No EAS build until pass.**
+
+Org-wide DoD unchanged: Product Designer emulator walkthrough as a
+first-time user, then Founder feel-pass. QA SIGN-OFF requires the
+designer feel-checklist green.
+
+============================================================
+FOUNDER AUTHORIZATION — DESIGN WAVE 2 / FEEL-PASS FINDINGS (PAW-126, 2026-09-03)
+SUPERSEDED IN PART BY PAW-136: F1 copy and F3 primers. F4 remains in force.
+============================================================
+
+Founder AUTHORIZES Design Wave 2 as binding remediation of the Wave 1
+feel-pass. Wave 1 D1–D3 remain in force except where F1–F4 explicitly
+supersede placement or copy.
+
+**F1 — Age gate copy** (supersedes Wave 1 N2 / adult-path justification):
+- Adult path: plain ask, no justification. “Pawple is for adults.” +
+  birthday + quiet confirm. No meetup or Terms mentions anywhere on
+  the adult path.
+- Under-18 path only: calm decline screen. Pawple is currently
+  adults-only because real-world meetups with strangers require adult
+  accountability; a version with proper parental consent is on our
+  road. **No timeline. No “soon.”**
+- Copywriter finalizes in Pawple voice.
+
+**F2 — Age placement** (CEO lock, 2026-09-03): Birthday lives in the
+same About You step as name + city. Never a standalone wall at either
+end of onboarding. Under-18 decline is a terminal screen after
+eligibility fails — not an onboarding step. Attestation stays
+mandatory before onboarding completes; it must never be the first
+screen. This supersedes Wave 1’s separate late AgeGate moment.
+
+**F3 — Permission moments:** Every sensitive permission gets a
+Pawple-voice primer **before** the native OS prompt.
+- (a) Location primer **NOW**, with the city-only promise (“Only your
+  city — never your exact location”) and a calm manual-city fallback
+  on decline.
+- (b) Notification primer **specced now**; ship when push is
+  authorized. Do not implement notification primer UI in this wave.
+- (c) Verify camera/photo primer consistency with the same pattern.
+- Legal: T&C consent never substitutes native runtime permission.
+  Copy must stay honest.
+
+**F4 — Delete hardening** (consolidates N1 + N3):
+- Client-side Storage API cleanup (list + remove under user prefix in
+  `moments` / `pet-photos`) before the delete RPC. Keep RPC storage
+  delete exception-guarded. Do not change schema or RLS.
+- On RPC ok: `signOut()` + clear per-user local state + reset
+  navigation to entry (Welcome).
+- Boot guard: session exists but profile fetch is null / `42501` /
+  `42703` → treat as signed out.
+- QA verifies on-device: delete → signup; no zombie screens.
+
+**Frozen (unchanged):** `src/lib/onboardingInvite.js`,
+`src/screens/InviteCodeScreen.js`, `src/components/InviteSheet.js`
+(hidden). Mating + chat stay hidden. Wave 2 Founder feel-pass is
+**superseded** by PAW-136. **No EAS preview** until Founder feel-pass
+on Wave 3.
+
+Org-wide DoD unchanged: Product Designer emulator walkthrough as a
+first-time user, then Founder feel-pass. QA SIGN-OFF requires the
+designer feel-checklist green.
+
+============================================================
+FOUNDER AUTHORIZATION — ORG HIRE + DESIGN WAVE 1 (PAW-116, 2026-09-03)
+============================================================
+
+Founder AUTHORIZES:
+
+1. **Named seat:** Product Designer (UI/UX) owns UI and UX as one role.
+   Reports to CEO for wave coordination. Peer of CTO and Engineering.
+   Protected founder escalation on pet-first philosophy. Feel-based VETOs
+   may be overridden only by the Founder.
+
+2. **Org-wide Definition of Done (immediate):** No user-facing wave closes
+   without (a) Product Designer emulator walkthrough as a first-time user,
+   (b) Founder feel-pass. QA SIGN-OFF requires the designer feel-checklist
+   green.
+
+3. **Design Wave 1** (designer specs → Frontend implements → QA + designer
+   gate). Copy via Copywriter.
+
+   - **D1 — Pet-first onboarding reorder:** warm welcome (pet-first,
+     "One Heart Is Enough") → invite code → about you → your pet → quiet
+     18+ attestation folded in immediately before account creation.
+     Attestation stays mandatory before account creation; it must never
+     be the first screen again.
+   - **D2 — Pet details card:** aligned label/value rows, consistent
+     vertical rhythm, dead whitespace removed; Age/Gender may share a row.
+   - **D3 — Community single page:** remove "My Meetups" as a destination;
+     segmented **Hosted / Joined** toggle (same pattern as Journal/About)
+     with the corresponding list scrolling beneath, same page.
+
+4. **Frozen:** do not touch `src/lib/onboardingInvite.js` (`@PAW-3600`
+   prefill, `BETA_BASELINE` 85, `BETA_USER_CAP` 100),
+   `src/screens/InviteCodeScreen.js`, `src/components/InviteSheet.js`
+   (hidden). Mating + chat stay hidden (`EXPOSE_MATING_SURFACES=false`).
+   Do **not** run the EAS preview build until the Founder feel-pass passes.
 
 ============================================================
 OVERARCHING PRINCIPLE
@@ -125,9 +376,10 @@ NOT AUTHORIZED / FROZEN
 EXECUTION RULES
 ============================================================
 
-- Full team: CTO, Backend, Frontend, Legal, QA, Product Strategist
+- Full team: CTO, Backend, Frontend, Legal, QA, Product Strategist, Product Designer (UI/UX), Copywriter
 - CTO architecture before implementation code
 - QA full gate required before **any commit**
+- User-facing waves also require Product Designer feel-checklist green and Founder feel-pass
 - Out-of-scope discoveries → recommendations only
 
 ============================================================

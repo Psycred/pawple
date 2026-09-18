@@ -1,0 +1,18 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "ollama": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Ollama",
+      "options": { "baseURL": "http://127.0.0.1:11434/v1", "apiKey": "ollama" },
+      "models": { "qwen2.5-coder:7b": { "name": "Qwen2.5 Coder 7B" } }
+    },
+    "groq": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Groq",
+      "options": { "baseURL": "https://api.groq.com/openai/v1", "apiKey": "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" },
+      "models": { "openai/gpt-oss-120b": { "name": "OpenAI GPT-OSS 120B" } }
+    }
+  },
+  "model": "groq/openai/gpt-oss-120b"
+}

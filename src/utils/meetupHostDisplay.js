@@ -50,3 +50,25 @@ export function extractHostPetNames(hostRows) {
     .map((name) => String(name).trim())
     .filter(Boolean);
 }
+
+/**
+ * Meetup card copy — primary host is the first meetup_hosts row (creator profile pet).
+ * 1 host: "Hosted by Tyson"
+ * 2 hosts: "Hosted by Tyson • Bella"
+ * 3+ hosts: "Hosted by Tyson + 2"
+ * @param {{ meetup_hosts?: Array<{ pet_id?: string, pets?: { name?: string } }> }} meetup
+ * @returns {string}
+ */
+export function formatMeetupCardHostedByLine(meetup) {
+  const names = extractHostPetNames(meetup?.meetup_hosts ?? []);
+  if (names.length === 0) {
+    return '';
+  }
+  if (names.length === 1) {
+    return `Hosted by ${names[0]}`;
+  }
+  if (names.length === 2) {
+    return `Hosted by ${names[0]} • ${names[1]}`;
+  }
+  return `Hosted by ${names[0]} + ${names.length - 1}`;
+}

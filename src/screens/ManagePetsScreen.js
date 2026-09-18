@@ -5,7 +5,6 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
-  Image,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -15,8 +14,11 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../config/supabase';
 import { theme } from '../config/theme';
+import { useRuntimeThemeColors } from '../hooks/useRuntimeThemeColors';
 import { useActivePet } from '../contexts/ActivePetContext';
 import { resolveActivePetAfterDelete } from '../lib/activePetIntegrity';
+import PawpleConfirmModal from '../components/PawpleConfirmModal';
+import PawpleStorageImage from '../components/PawpleStorageImage';
 
 const DESTRUCTIVE = theme.colors.destructive?.light ?? theme.colors.error.light;
 
@@ -24,12 +26,39 @@ const DESTRUCTIVE = theme.colors.destructive?.light ?? theme.colors.error.light;
  * Private CRUD surface for the current user's pets.
  */
 export default function ManagePetsScreen({ navigation }) {
+  const surfaces = useRuntimeThemeColors();
   const insets = useSafeAreaInsets();
   const { activePetId, setPet } = useActivePet();
   const [pets, setPets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
+  const [deleteConfirmPetId, setDeleteConfirmPetId] = useState(null);
+
+  const manageTheme = useMemo(
+    () => ({
+      screen: { backgroundColor: surfaces.backgroundScreen },
+      header: { borderBottomColor: surfaces.border },
+      title: { color: surfaces.textPrimary },
+      petName: { color: surfaces.textPrimary },
+      petMeta: { color: surfaces.textMuted },
+      divider: { backgroundColor: surfaces.border },
+      emptyText: { color: surfaces.textSecondary },
+      emptyAddButton: {
+        backgroundColor: surfaces.backgroundCard,
+        borderColor: surfaces.border,
+      },
+      emptyAddText: { color: surfaces.textPrimary },
+    }),
+    [
+      surfaces.backgroundCard,
+      surfaces.backgroundScreen,
+      surfaces.border,
+      surfaces.textMuted,
+      surfaces.textPrimary,
+      surfaces.textSecondary,
+    ],
+  );
 
   const fetchPets = useCallback(async (isRefresh = false) => {
     try {
@@ -103,16 +132,22 @@ export default function ManagePetsScreen({ navigation }) {
   };
 
   const confirmDelete = (petId) => {
-    Alert.alert('Remove pet?', "This will delete this pet's profile and memories.", [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Remove', style: 'destructive', onPress: () => handleDelete(petId) },
-    ]);
+    setDeleteConfirmPetId(petId);
+  };
+
+  const runConfirmedDelete = async () => {
+    if (!deleteConfirmPetId) {
+      return;
+    }
+    const petId = deleteConfirmPetId;
+    setDeleteConfirmPetId(null);
+    await handleDelete(petId);
   };
 
   const renderAvatar = (item) => {
     const initial = item?.name?.trim()?.charAt(0)?.toUpperCase() || '?';
     if (item?.photo_url) {
-      return <Image source={{ uri: item.photo_url }} style={styles.avatarImage} />;
+      return <PawpleStorageImage source={{ uri: item.photo_url }} style={styles.avatarImage} />;
     }
     return (
       <View style={styles.avatarCircle} accessibilityElementsHidden>
@@ -146,10 +181,10 @@ export default function ManagePetsScreen({ navigation }) {
       <View style={styles.row}>
         {renderAvatar(item)}
         <View style={styles.centerBlock}>
-          <Text style={styles.petName} numberOfLines={1}>
+          <Text style={[styles.petName, manageTheme.petName]} numberOfLines={1}>
             {item.name || 'Unnamed pet'}
           </Text>
-          <Text style={styles.petMeta} numberOfLines={1}>
+          <Text style={[styles.petMeta, manageTheme.petMeta]} numberOfLines={1}>
             {renderPetMeta(item)}
           </Text>
         </View>
@@ -160,7 +195,7 @@ export default function ManagePetsScreen({ navigation }) {
             accessibilityRole="button"
             accessibilityLabel={`Edit ${item.name || 'pet'}`}
           >
-            <Ionicons name="pencil-outline" size={20} color={theme.colors.text.secondary.light} />
+            <Ionicons name="pencil-outline" size={20} color={surfaces.textSecondary} />
           </Pressable>
           <Pressable
             onPress={() => confirmDelete(item.id)}
@@ -173,37 +208,41 @@ export default function ManagePetsScreen({ navigation }) {
           </Pressable>
         </View>
       </View>
-      {index < pets.length - 1 ? <View style={styles.divider} /> : null}
+      {index < pets.length - 1 ? <View style={[styles.divider, manageTheme.divider]} /> : null}
     </View>
   );
 
   const renderEmpty = () => (
     <View style={styles.emptyWrap}>
-      <Ionicons name="paw-outline" size={theme.fontSizes.xxxl} color={theme.colors.text.muted.light} />
-      <Text style={styles.emptyText}>No pets yet. Add your first friend!</Text>
+      <Ionicons name="paw-outline" size={theme.fontSizes.xxxl} color={surfaces.textMuted} />
+      <Text style={[styles.emptyText, manageTheme.emptyText]}>No pets yet. Add your first friend!</Text>
       <Pressable
-        style={({ pressed }) => [styles.emptyAddButton, pressed && styles.buttonPressed]}
+        style={({ pressed }) => [
+          styles.emptyAddButton,
+          manageTheme.emptyAddButton,
+          pressed && styles.buttonPressed,
+        ]}
         onPress={goToAdd}
         accessibilityRole="button"
         accessibilityLabel="Add pet"
       >
-        <Text style={styles.emptyAddText}>+ Add Pet</Text>
+        <Text style={[styles.emptyAddText, manageTheme.emptyAddText]}>+ Add Pet</Text>
       </Pressable>
     </View>
   );
 
   return (
-    <View style={[styles.screen, { paddingTop: insets.top }]}>
-      <View style={styles.header}>
+    <View style={[styles.screen, manageTheme.screen, { paddingTop: insets.top }]}>
+      <View style={[styles.header, manageTheme.header]}>
         <Pressable
           onPress={() => navigation.goBack()}
           style={({ pressed }) => [styles.backHit, pressed && styles.buttonPressed]}
           accessibilityRole="button"
           accessibilityLabel="Close manage pets"
         >
-          <Ionicons name="chevron-back" size={22} color={theme.colors.text.primary.light} />
+          <Ionicons name="chevron-back" size={22} color={surfaces.textPrimary} />
         </Pressable>
-        <Text style={styles.title}>Your Pets</Text>
+        <Text style={[styles.title, manageTheme.title]}>Your Pets</Text>
         <View style={styles.headerSpacer} />
       </View>
 
@@ -224,6 +263,24 @@ export default function ManagePetsScreen({ navigation }) {
           accessibilityLabel="Your pets list"
         />
       )}
+
+      <PawpleConfirmModal
+        visible={Boolean(deleteConfirmPetId)}
+        busy={Boolean(deletingId)}
+        onClose={() => {
+          if (!deletingId) {
+            setDeleteConfirmPetId(null);
+          }
+        }}
+        onConfirm={runConfirmedDelete}
+        title="Remove pet?"
+        body="This will delete this pet's profile and memories."
+        cancelLabel="Cancel"
+        confirmLabel="Remove"
+        icon="trash-2"
+        iconTone="caution"
+        confirmTone="sage"
+      />
     </View>
   );
 }

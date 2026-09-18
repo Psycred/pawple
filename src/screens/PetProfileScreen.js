@@ -1,9 +1,8 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { Feather } from '@expo/vector-icons';
+import { Feather, Ionicons } from '@expo/vector-icons';
 import {
   ActivityIndicator,
   FlatList,
-  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -14,10 +13,17 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import AppHeader from '../components/AppHeader';
 import MomentCard from '../components/MomentCard';
+import PawpleEmptyState from '../components/PawpleEmptyState';
+import {
+  PET_JOURNAL_EMPTY_BODY,
+  PET_JOURNAL_EMPTY_TITLE,
+} from '../content/legalDocuments';
+import PawpleStorageImage from '../components/PawpleStorageImage';
 import MatingSection from '../components/MatingSection';
 import PetCompanionCommunitySection from '../components/PetCompanionCommunitySection';
-import PetProfileMeetupsSection from '../components/PetProfileMeetupsSection';
-import { EXPOSE_MATING_SURFACES } from '../config/phase1aSurfaces';
+import PetCommunityMeetupsSection from '../components/PetCommunityMeetupsSection';
+import { areMatingSurfacesVisible } from '../config/phase1aSurfaces';
+import { useRuntimeThemeColors } from '../hooks/useRuntimeThemeColors';
 import { theme } from '../config/theme';
 import { useAuth } from '../contexts/AuthContext';
 import { useActivePet } from '../contexts/ActivePetContext';
@@ -34,13 +40,6 @@ const TABS = [
 
 const SEGMENT_ACTIVE_BG = theme.colors.brand.sage.light;
 const SEGMENT_ACTIVE_TEXT = theme.colors.text.inverse.light;
-const SEGMENT_INACTIVE_TEXT = theme.colors.text.secondary.light;
-
-/** Hero typography — Apple-inspired hierarchy for the profile header. */
-const HERO_NAME_COLOR = '#3A312E';
-const HERO_MUTED_COLOR = '#666666';
-const HERO_BIO_COLOR = '#888888';
-const HERO_TRAIT_BG = '#F5F5F5';
 const HERO_COMPANION_BG = '#9EB8A0';
 
 function formatHeroAge(age) {
@@ -90,6 +89,7 @@ function formatLocationLabel(value) {
 }
 
 function PetProfileHero({ pet, ownerCity, lookingForCompanion, petTraits = [] }) {
+  const surfaces = useRuntimeThemeColors();
   const subtitle = formatHeroSubtitle(pet);
   const bio = truncateBio(pet?.bio);
   const traits = normalizeTraits(petTraits);
@@ -98,47 +98,61 @@ function PetProfileHero({ pet, ownerCity, lookingForCompanion, petTraits = [] })
   return (
     <View style={styles.heroSection}>
       <View style={styles.heroAvatarShadow}>
-        <View style={styles.heroAvatarWrap}>
+        <View style={[styles.heroAvatarWrap, { backgroundColor: surfaces.backgroundCard }]}>
           {pet?.photo_url ? (
-            <Image
+            <PawpleStorageImage
               source={{ uri: pet.photo_url }}
               style={styles.heroAvatarImage}
               resizeMode="cover"
             />
           ) : (
             <View style={styles.heroAvatarFallback}>
-              <Feather name="camera" size={32} color={theme.colors.brand.sage.light} />
+              {lookingForCompanion ? (
+                <Ionicons
+                  name="paw"
+                  size={32}
+                  color={theme.colors.brand.sage.value}
+                />
+              ) : (
+                <Feather name="camera" size={32} color={theme.colors.brand.sage.light} />
+              )}
             </View>
           )}
         </View>
       </View>
 
-      <Text style={styles.heroName} allowFontScaling>
+      <Text style={[styles.heroName, { color: surfaces.profileHeroNameColor }]} allowFontScaling>
         {pet?.name || 'Pet'}
       </Text>
 
       {subtitle ? (
-        <Text style={styles.heroSubtitle} allowFontScaling>
+        <Text style={[styles.heroSubtitle, { color: surfaces.profileHeroMutedColor }]} allowFontScaling>
           {subtitle}
         </Text>
       ) : null}
 
       {locationLabel ? (
-        <Text style={styles.heroLocation} allowFontScaling>
+        <Text style={[styles.heroLocation, { color: surfaces.profileHeroMutedColor }]} allowFontScaling>
           {locationLabel}
         </Text>
       ) : null}
 
       {bio ? (
-        <Text style={styles.heroBio} allowFontScaling>
+        <Text style={[styles.heroBio, { color: surfaces.profileHeroBioColor }]} allowFontScaling>
           {bio}
         </Text>
       ) : null}
 
       {lookingForCompanion ? (
         <View style={styles.companionBadge}>
+          <Ionicons
+            name="paw"
+            size={12}
+            color={theme.colors.text.inverse.value}
+            style={styles.companionBadgeIcon}
+          />
           <Text style={styles.companionBadgeText} allowFontScaling>
-            Open to Companionship
+            Open to Mating
           </Text>
         </View>
       ) : null}
@@ -146,8 +160,11 @@ function PetProfileHero({ pet, ownerCity, lookingForCompanion, petTraits = [] })
       {traits.length > 0 ? (
         <View style={styles.traitsRow}>
           {traits.map((trait) => (
-            <View key={trait} style={styles.traitChip}>
-              <Text style={styles.traitChipText} allowFontScaling>
+            <View
+              key={trait}
+              style={[styles.traitChip, { backgroundColor: surfaces.profileTraitChipBackground }]}
+            >
+              <Text style={[styles.traitChipText, { color: surfaces.profileHeroNameColor }]} allowFontScaling>
                 {trait}
               </Text>
             </View>
@@ -166,8 +183,13 @@ function formatDetailValue(val) {
 }
 
 function ProfileSegmentedControl({ activeKey, onSelect }) {
+  const surfaces = useRuntimeThemeColors();
+
   return (
-    <View style={styles.segmentWrap} accessibilityRole="tablist">
+    <View
+      style={[styles.segmentWrap, { backgroundColor: surfaces.backgroundCard }]}
+      accessibilityRole="tablist"
+    >
       {TABS.map((tab) => {
         const active = tab.key === activeKey;
         return (
@@ -179,7 +201,14 @@ function ProfileSegmentedControl({ activeKey, onSelect }) {
             accessibilityState={{ selected: active }}
             accessibilityLabel={tab.label}
           >
-            <Text style={[styles.segmentText, active && styles.segmentTextActive]} allowFontScaling>
+            <Text
+              style={[
+                styles.segmentText,
+                { color: surfaces.textSecondary },
+                active && styles.segmentTextActive,
+              ]}
+              allowFontScaling
+            >
               {tab.label}
             </Text>
           </Pressable>
@@ -189,16 +218,24 @@ function ProfileSegmentedControl({ activeKey, onSelect }) {
   );
 }
 
-function DetailRow({ label, value }) {
+function DetailRow({ label, value, isLast = false }) {
+  const surfaces = useRuntimeThemeColors();
+
   if (!value) {
     return null;
   }
   return (
-    <View style={styles.detailRow}>
-      <Text style={styles.detailLabel} allowFontScaling>
+    <View
+      style={[
+        styles.detailRow,
+        !isLast && styles.detailRowDivider,
+        !isLast && { borderBottomColor: surfaces.border },
+      ]}
+    >
+      <Text style={[styles.detailLabel, { color: surfaces.textMuted }]} allowFontScaling>
         {label}
       </Text>
-      <Text style={styles.detailValue} allowFontScaling>
+      <Text style={[styles.detailValue, { color: surfaces.textPrimary }]} allowFontScaling>
         {value}
       </Text>
     </View>
@@ -208,9 +245,10 @@ function DetailRow({ label, value }) {
 /**
  * Pet-first profile — Journal (moments) and About (details + community signals).
  */
-export default function PetProfileScreen() {
+export default function PetProfileScreen({ onMatingAvailabilityChange }) {
   const { user } = useAuth();
   const { activePetId, loading: petLoading } = useActivePet();
+  const surfaces = useRuntimeThemeColors();
 
   const [activeTab, setActiveTab] = useState('journal');
   const [pet, setPet] = useState(null);
@@ -220,6 +258,7 @@ export default function PetProfileScreen() {
   const [participatedCount, setParticipatedCount] = useState(0);
   const [isOwner, setIsOwner] = useState(true);
   const [lookingForCompanion, setLookingForCompanion] = useState(false);
+  const [matingBreedPreference, setMatingBreedPreference] = useState('');
   const [matingDescription, setMatingDescription] = useState('');
   const [loading, setLoading] = useState(true);
   const [profileHidden, setProfileHidden] = useState(false);
@@ -253,6 +292,7 @@ export default function PetProfileScreen() {
       setParticipatedCount(profileData.participated_count ?? 0);
       setIsOwner(Boolean(profileData.isOwner));
       setLookingForCompanion(Boolean(profileData.pet?.is_looking_for_companion));
+      setMatingBreedPreference(profileData.pet?.mating_breed_preference ?? '');
       setMatingDescription(profileData.pet?.mating_description ?? '');
 
       const petMoments = await fetchMomentsForPet(activePetId);
@@ -309,10 +349,18 @@ export default function PetProfileScreen() {
         ? `${ageValue} ${ageValue === '1' ? 'yr' : 'yrs'}`
         : '';
 
+    const genderDisplay = gender && gender !== 'Unknown' ? gender : '';
+
+    let ageGenderDisplay = '';
+    if (ageDisplay && genderDisplay) {
+      ageGenderDisplay = `${ageDisplay} · ${genderDisplay}`;
+    } else {
+      ageGenderDisplay = ageDisplay || genderDisplay;
+    }
+
     return {
       breedDisplay,
-      ageDisplay: ageDisplay && ageDisplay !== 'Unknown' ? ageDisplay : '',
-      gender: gender && gender !== 'Unknown' ? gender : '',
+      ageGenderDisplay,
       vaccinatedLabel,
     };
   }, [pet]);
@@ -325,16 +373,34 @@ export default function PetProfileScreen() {
         caption: m.caption ?? '',
         location: m.location ?? '',
         memory_date: formatMomentDisplayDate(m),
+        moment_date: m.moment_date ?? null,
         created_at: m.created_at ?? '',
         pet_names: m.pet_names ?? '',
+        pet_ids: Array.isArray(m.pet_ids) ? m.pet_ids : [],
+        user_id: m.user_id ?? user?.id ?? null,
+        heart_count: Math.max(0, Number(m.heart_count) || 0),
+        viewer_has_hearted: Boolean(m.viewer_has_hearted),
       })),
-    [posts],
+    [posts, user?.id],
   );
 
   const petListForCards = useMemo(
     () => (pet?.id ? [{ id: pet.id, name: pet.name }] : []),
     [pet?.id, pet?.name],
   );
+
+  const handleCompanionChange = useCallback(
+    (nextOpenToMating) => {
+      setLookingForCompanion(Boolean(nextOpenToMating));
+      onMatingAvailabilityChange?.(Boolean(nextOpenToMating));
+    },
+    [onMatingAvailabilityChange],
+  );
+
+  const handleMomentDeleted = useCallback((momentId) => {
+    const id = String(momentId);
+    setPosts((prev) => prev.filter((moment) => String(moment?.id) !== id));
+  }, []);
 
   const renderJournal = () => {
     if (loading) {
@@ -347,11 +413,11 @@ export default function PetProfileScreen() {
 
     if (feedMoments.length === 0) {
       return (
-        <View style={styles.emptyState}>
-          <Text style={styles.emptyStateText} allowFontScaling>
-            No memories yet. Tap + to add one.
-          </Text>
-        </View>
+        <PawpleEmptyState
+          style={styles.emptyState}
+          title={PET_JOURNAL_EMPTY_TITLE}
+          body={PET_JOURNAL_EMPTY_BODY}
+        />
       );
     }
 
@@ -361,7 +427,12 @@ export default function PetProfileScreen() {
         keyExtractor={(item, index) => item.id?.toString?.() || String(index)}
         renderItem={({ item }) => (
           <View style={styles.momentSlot}>
-            <MomentCard moment={item} userPets={petListForCards} />
+            <MomentCard
+              moment={item}
+              userPets={petListForCards}
+              viewerUserId={user?.id ?? null}
+              onMomentDeleted={handleMomentDeleted}
+            />
           </View>
         )}
         contentContainerStyle={styles.journalList}
@@ -384,55 +455,93 @@ export default function PetProfileScreen() {
         contentContainerStyle={styles.aboutContent}
         showsVerticalScrollIndicator={false}
       >
-        {EXPOSE_MATING_SURFACES && isOwner && activePetId ? (
+        {areMatingSurfacesVisible() && isOwner && activePetId ? (
           <MatingSection
             petId={activePetId}
             petName={pet?.name}
+            petGender={pet?.gender}
+            matingBreedPreference={matingBreedPreference}
             lookingForCompanion={lookingForCompanion}
-            matingDescription={matingDescription}
-            onCompanionChange={setLookingForCompanion}
-            onDescriptionChange={setMatingDescription}
+            petTraits={petTraits}
+            onCompanionChange={handleCompanionChange}
+            onTraitsChange={(traits) => {
+              setPetTraits(traits);
+              setPet((currentPet) =>
+                currentPet ? { ...currentPet, traits } : currentPet,
+              );
+            }}
+            onGenderChange={(gender) =>
+              setPet((currentPet) =>
+                currentPet ? { ...currentPet, gender } : currentPet,
+              )
+            }
+            onBreedPreferenceChange={(preference) => {
+              setMatingBreedPreference(preference);
+              setPet((currentPet) =>
+                currentPet
+                  ? { ...currentPet, mating_breed_preference: preference }
+                  : currentPet,
+              );
+            }}
           />
         ) : null}
 
-        {EXPOSE_MATING_SURFACES && !isOwner && pet?.mating_description ? (
+        {areMatingSurfacesVisible() && !isOwner && pet?.mating_description ? (
           <View style={styles.matingReadOnly}>
-            <Text style={styles.sectionTitle} allowFontScaling>
+            <Text style={[styles.sectionTitle, { color: surfaces.textPrimary }]} allowFontScaling>
               About mating
             </Text>
-            <Text style={styles.matingReadOnlyBody} allowFontScaling>
+            <Text style={[styles.matingReadOnlyBody, { color: surfaces.textSecondary }]} allowFontScaling>
               {pet.mating_description}
             </Text>
           </View>
         ) : null}
 
-        <Text style={styles.sectionTitle} allowFontScaling>
+        <Text style={[styles.sectionTitle, { color: surfaces.textPrimary }]} allowFontScaling>
           Details
         </Text>
-        <View style={styles.detailsCard}>
-          <DetailRow label="Name" value={pet?.name} />
-          <DetailRow label="Breed" value={details.breedDisplay} />
-          <DetailRow label="Age" value={details.ageDisplay} />
-          <DetailRow label="Gender" value={details.gender} />
-          <DetailRow label="Vaccination" value={details.vaccinatedLabel} />
-          {ownerCity ? <DetailRow label="City" value={ownerCity} /> : null}
+        <View style={[styles.detailsCard, { backgroundColor: surfaces.backgroundCard }]}>
+          {(() => {
+            const rows = [
+              pet?.name ? { key: 'name', label: 'Name', value: pet.name } : null,
+              details.breedDisplay ? { key: 'breed', label: 'Breed', value: details.breedDisplay } : null,
+              details.ageGenderDisplay
+                ? { key: 'ageGender', label: 'Age / Gender', value: details.ageGenderDisplay }
+                : null,
+              details.vaccinatedLabel
+                ? { key: 'vaccination', label: 'Vaccination', value: details.vaccinatedLabel }
+                : null,
+              ownerCity ? { key: 'city', label: 'City', value: ownerCity } : null,
+            ].filter(Boolean);
+
+            return rows.map((row, index) => (
+              <DetailRow
+                key={row.key}
+                label={row.label}
+                value={row.value}
+                isLast={index === rows.length - 1}
+              />
+            ));
+          })()}
         </View>
 
-        <PetCompanionCommunitySection
-          showToggle={false}
-          hostedCount={hostedCount}
-          participatedCount={participatedCount}
-          communityAction={
-            isOwner && activePetId ? <PetProfileMeetupsSection /> : null
-          }
-        />
+        {isOwner && activePetId ? (
+          <>
+            <PetCompanionCommunitySection
+              showToggle={false}
+              hostedCount={hostedCount}
+              participatedCount={participatedCount}
+            />
+            <PetCommunityMeetupsSection petId={activePetId} />
+          </>
+        ) : null}
       </ScrollView>
     );
   };
 
   if (petLoading) {
     return (
-      <SafeAreaView style={styles.screen}>
+      <SafeAreaView style={[styles.screen, { backgroundColor: surfaces.backgroundScreen }]}>
         <AppHeader />
         <View style={styles.tabLoading}>
           <ActivityIndicator color={theme.colors.brand.sage.light} />
@@ -443,10 +552,10 @@ export default function PetProfileScreen() {
 
   if (profileHidden) {
     return (
-      <SafeAreaView style={styles.screen}>
+      <SafeAreaView style={[styles.screen, { backgroundColor: surfaces.backgroundScreen }]}>
         <AppHeader />
         <View style={styles.emptyState}>
-          <Text style={styles.emptyStateText} allowFontScaling>
+          <Text style={[styles.emptyStateText, { color: surfaces.textMuted }]} allowFontScaling>
             This profile is not available.
           </Text>
         </View>
@@ -455,13 +564,13 @@ export default function PetProfileScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.screen}>
+    <SafeAreaView style={[styles.screen, { backgroundColor: surfaces.backgroundScreen }]}>
       <AppHeader />
 
       <PetProfileHero
         pet={pet}
         ownerCity={ownerCity}
-        lookingForCompanion={EXPOSE_MATING_SURFACES && lookingForCompanion}
+        lookingForCompanion={areMatingSurfacesVisible() && lookingForCompanion}
         petTraits={petTraits}
       />
 
@@ -514,21 +623,18 @@ const styles = StyleSheet.create({
     marginTop: 16,
     fontFamily: theme.fonts.semibold,
     fontSize: 28,
-    color: HERO_NAME_COLOR,
     textAlign: 'center',
   },
   heroSubtitle: {
     marginTop: 6,
     fontFamily: theme.fonts.body,
     fontSize: 15,
-    color: HERO_MUTED_COLOR,
     textAlign: 'center',
   },
   heroLocation: {
     marginTop: 4,
     fontFamily: theme.fonts.body,
     fontSize: 14,
-    color: HERO_MUTED_COLOR,
     textAlign: 'center',
   },
   heroBio: {
@@ -537,16 +643,21 @@ const styles = StyleSheet.create({
     fontFamily: theme.fonts.body,
     fontSize: 14,
     fontStyle: 'italic',
-    color: HERO_BIO_COLOR,
     textAlign: 'center',
     lineHeight: 20,
   },
   companionBadge: {
     marginTop: 12,
-    paddingHorizontal: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 20,
     backgroundColor: HERO_COMPANION_BG,
+  },
+  companionBadgeIcon: {
+    marginTop: 1,
   },
   companionBadgeText: {
     fontFamily: theme.fonts.semibold,
@@ -565,19 +676,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 16,
-    backgroundColor: HERO_TRAIT_BG,
   },
   traitChipText: {
     fontSize: 12,
     fontWeight: '500',
-    color: HERO_NAME_COLOR,
   },
   segmentWrap: {
     flexDirection: 'row',
     marginHorizontal: theme.spacing.lg,
     marginBottom: theme.spacing.lg,
     borderRadius: theme.borderRadius.full,
-    backgroundColor: theme.colors.background.card,
     padding: theme.spacing.xs,
     gap: theme.spacing.xs,
   },
@@ -595,7 +703,6 @@ const styles = StyleSheet.create({
   segmentText: {
     fontFamily: theme.fonts.medium,
     fontSize: theme.fontSizes.md,
-    color: SEGMENT_INACTIVE_TEXT,
   },
   segmentTextActive: {
     color: SEGMENT_ACTIVE_TEXT,
@@ -617,29 +724,35 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontFamily: theme.fonts.semibold,
     fontSize: theme.fontSizes.lg,
-    color: theme.colors.text.primary.light,
     marginBottom: theme.spacing.md,
   },
   detailsCard: {
-    backgroundColor: theme.colors.background.card,
-    borderRadius: theme.borderRadius.lg,
-    paddingHorizontal: theme.spacing.lg,
-    paddingVertical: theme.spacing.md,
+    borderRadius: theme.borderRadius.xl,
+    paddingHorizontal: 20,
+    paddingVertical: theme.spacing.lg,
     marginBottom: theme.spacing.xl,
-    gap: theme.spacing.md,
+    overflow: 'hidden',
   },
   detailRow: {
-    gap: theme.spacing.xs,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    minHeight: 44,
+    paddingVertical: theme.spacing.sm,
+  },
+  detailRowDivider: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   detailLabel: {
     fontFamily: theme.fonts.medium,
     fontSize: theme.fontSizes.sm,
-    color: theme.colors.text.muted.light,
   },
   detailValue: {
+    flex: 1,
+    marginLeft: theme.spacing.lg,
     fontFamily: theme.fonts.body,
     fontSize: theme.fontSizes.md,
-    color: theme.colors.text.primary.light,
+    textAlign: 'right',
   },
   tabLoading: {
     flex: 1,
@@ -657,7 +770,6 @@ const styles = StyleSheet.create({
   emptyStateText: {
     fontFamily: theme.fonts.body,
     fontSize: theme.fontSizes.md,
-    color: theme.colors.text.muted.light,
     textAlign: 'center',
   },
   matingReadOnly: {
@@ -667,6 +779,5 @@ const styles = StyleSheet.create({
     fontFamily: theme.fonts.body,
     fontSize: theme.fontSizes.md,
     lineHeight: 22,
-    color: theme.colors.text.secondary.light,
   },
 });

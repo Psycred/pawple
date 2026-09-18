@@ -117,6 +117,29 @@ component-level visual refinements, or responsive layout details when those
 decisions remain consistent with Pawple's established principles and approved
 product direction.
 
+### Named seat — Product Designer (UI/UX)
+
+Founder PAW-116 (2026-09-03) names **Product Designer (UI/UX)** as the
+functional owner of Design / UX. The seat owns every user-facing surface:
+flows, screens, components, spacing, typography, and motion.
+
+- Reports to the CEO for wave coordination.
+- Peer of the CTO and Engineering; not subordinate to them.
+- Holds a protected direct escalation to the Founder on pet-first
+  philosophy matters.
+- May VETO a user-facing wave on feel grounds with a concrete alternative.
+  Feel-based VETOs may be overridden only by the Founder.
+- Partners with Copywriter on voice and Frontend on implementation.
+
+### User-facing Definition of Done (immediate)
+
+No user-facing wave closes without:
+
+1. Product Designer emulator walkthrough as a first-time user
+2. Founder feel-pass
+
+QA SIGN-OFF requires the designer feel-checklist green.
+
 ## 6. Pawple design philosophy
 
 Pawple's core design philosophy is:
@@ -137,6 +160,24 @@ discovery, and mating discovery.
 The owner is important, but should not become the dominant social identity in a
 way that turns Pawple into a conventional human social network with pets layered
 on top.
+
+### Design Constitution (PAW-136, binding)
+
+Founder PAW-136 (2026-09-03) binds Designer, Frontend, and QA:
+
+- Default is no screen. Every interstitial, primer, or pre-screen must
+  justify its existence or be removed. System-standard flows win.
+- Permissions: OS system prompt only, at the moment of need. The “why”
+  lives in the OS permission string, in Pawple voice. No custom primer
+  sheets for camera, photos, location, or notifications.
+- Microcopy over screens: one quiet line under the relevant field when
+  context is needed. Never a standalone screen.
+- No copy may position Pawple as an adult product, a stranger-danger
+  product, or a dating product. Pawple is pet parents, pet meetups, and
+  UGC events.
+
+This constitution supersedes Wave 2 F1/F3 primer-and-copy direction
+where they conflict. F4 delete hardening is unchanged.
 
 ### Apple-inspired design discipline
 

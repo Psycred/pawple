@@ -1,14 +1,17 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { theme } from '../config/theme';
+import { useRuntimeThemeColors } from '../hooks/useRuntimeThemeColors';
 
 /**
  * Calm retry state for list screens — distinct from genuine empty results.
  */
 export default function LoadErrorRetry({ onRetry, style }) {
+  const surfaces = useRuntimeThemeColors();
+
   return (
     <View style={[styles.wrap, style]}>
-      <Text style={styles.message} allowFontScaling>
+      <Text style={[styles.message, { color: surfaces.textSecondary }]} allowFontScaling>
         Couldn&apos;t load. Check your connection.
       </Text>
       <Pressable

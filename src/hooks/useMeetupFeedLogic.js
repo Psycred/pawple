@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { enrichMeetupsWithVenueDistance } from '../utils/distanceUtils';
 import {
   buildCarouselMeetups,
   buildMeetupInjectionRows,
@@ -8,8 +9,9 @@ import {
 /**
  * Carousel + main-feed meetup sorting for FeedScreen.
  *
- * - Carousel: own meetup + nearest meetups.
- * - Vertical feed: nine Moments followed by the next-nearest Meetup.
+ * Phase A.1: meetups filtered by current/base city (+ aliases, 100 km); global when unset.
+ * Carousel: three nearest upcoming meetups or random three.
+ * Vertical feed: nine Moments followed by one Meetup, with occasional completed injection.
  */
 export function useMeetupFeedLogic({
   meetups = [],
@@ -17,21 +19,48 @@ export function useMeetupFeedLogic({
   mergedMoments = [],
   injectionInterval = DEFAULT_MEETUP_INJECTION_INTERVAL,
   carouselSize,
+  userFeedLocation = null,
+  locationGranted = false,
+  sessionSeed = 0,
 }) {
+  const meetupsForFeed = useMemo(
+    () => enrichMeetupsWithVenueDistance(meetups, userFeedLocation),
+    [meetups, userFeedLocation],
+  );
+
   const { headerMeetups, carouselIds } = useMemo(() => {
-    const { slides, ids } = buildCarouselMeetups(meetups, currentUserId, carouselSize);
+    const { slides, ids } = buildCarouselMeetups(
+      meetupsForFeed,
+      currentUserId,
+      carouselSize,
+      userFeedLocation,
+      { locationGranted, sessionSeed },
+    );
     return { headerMeetups: slides, carouselIds: ids };
-  }, [meetups, currentUserId, carouselSize]);
+  }, [meetupsForFeed, currentUserId, carouselSize, userFeedLocation, locationGranted, sessionSeed]);
 
   const feedResult = useMemo(
     () =>
       buildMeetupInjectionRows({
         moments: mergedMoments,
-        allMeetups: meetups,
+        allMeetups: meetupsForFeed,
         carouselIds,
         injectionInterval,
+        userLocation: userFeedLocation,
+        locationGranted,
+        sessionSeed,
+        currentUserId,
       }),
-    [mergedMoments, meetups, carouselIds, injectionInterval],
+    [
+      mergedMoments,
+      meetupsForFeed,
+      carouselIds,
+      injectionInterval,
+      userFeedLocation,
+      locationGranted,
+      sessionSeed,
+      currentUserId,
+    ],
   );
 
   return {

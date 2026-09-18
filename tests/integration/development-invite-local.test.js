@@ -167,9 +167,8 @@ test('deferred Supabase bootstrap machinery is absent', async () => {
   assert.doesNotMatch(inviteSource, /validate_development_invite/);
   assert.doesNotMatch(inviteSource, /complete_development_onboarding/);
   assert.match(inviteSource, /\.from\('invites'\)/);
-  assert.match(
-    inviteScreen,
-    /useState\(getDefaultDevelopmentInviteCode\)/,
-  );
+  assert.match(inviteScreen, /getPendingInvite/);
+  assert.match(inviteScreen, /BETA_BOOTSTRAP_INVITE_CODE/);
+  assert.doesNotMatch(inviteScreen, /useState\('@PAW-3600'\)/);
   await assert.rejects(access(removedMigrationPath));
 });

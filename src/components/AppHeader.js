@@ -1,10 +1,9 @@
 import { Feather } from '@expo/vector-icons';
-import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
   Animated,
   FlatList,
-  Image,
   Modal,
   StyleSheet,
   Text,
@@ -16,22 +15,25 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../config/supabase';
 import { theme } from '../config/theme';
 import { useActivePet } from '../contexts/ActivePetContext';
+import { useRuntimeThemeColors } from '../hooks/useRuntimeThemeColors';
+import PawpleStorageImage from './PawpleStorageImage';
 import PetSelector from './PetSelector';
 
-const FETCH_DEBOUNCE_MS = 120;
-
-function AppHeader({ onPressSettings }) {
+function AppHeader({
+  onPressSettings,
+  onPressNotifications,
+  showSettings = true,
+  showNotifications = false,
+  hasUnreadNotifications = false,
+}) {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
-  const { activePetId, setPet } = useActivePet();
+  const { activePetId, activePet, setPet, loading: activePetLoading } = useActivePet();
   const [pets, setPets] = useState([]);
   const [loadingPets, setLoadingPets] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
-  const fetchTimerRef = useRef(null);
   const backdropOpacity = useRef(new Animated.Value(0)).current;
   const sheetTranslateY = useRef(new Animated.Value(32)).current;
-
-  const activePet = useMemo(() => pets.find((pet) => String(pet.id) === String(activePetId)) ?? null, [activePetId, pets]);
 
   const fetchPets = useCallback(async () => {
     setLoadingPets(true);
@@ -59,24 +61,6 @@ function AppHeader({ onPressSettings }) {
       setLoadingPets(false);
     }
   }, []);
-
-  const debouncedFetchPets = useCallback(() => {
-    if (fetchTimerRef.current) {
-      clearTimeout(fetchTimerRef.current);
-    }
-    fetchTimerRef.current = setTimeout(() => {
-      fetchPets();
-    }, FETCH_DEBOUNCE_MS);
-  }, [fetchPets]);
-
-  useEffect(() => {
-    debouncedFetchPets();
-    return () => {
-      if (fetchTimerRef.current) {
-        clearTimeout(fetchTimerRef.current);
-      }
-    };
-  }, [debouncedFetchPets]);
 
   useEffect(() => {
     if (!modalVisible) {
@@ -119,13 +103,17 @@ function AppHeader({ onPressSettings }) {
   }, [backdropOpacity, sheetTranslateY]);
 
   const openModal = useCallback(() => {
-    debouncedFetchPets();
+    fetchPets();
     setModalVisible(true);
-  }, [debouncedFetchPets]);
+  }, [fetchPets]);
 
   const handleSelectPet = useCallback(
     async (pet) => {
-      await setPet(String(pet.id));
+      await setPet(String(pet.id), {
+        id: pet.id,
+        name: pet.name,
+        photo_url: pet.photo_url,
+      });
       console.log(`[Header] Switched to ${pet.id}`);
       AccessibilityInfo.announceForAccessibility?.(`Switched to ${pet.name}`);
       closeModal();
@@ -162,13 +150,33 @@ function AppHeader({ onPressSettings }) {
     navigation.navigate('ManagePets');
   }, [navigation, onPressSettings]);
 
-  const activePetName = activePet?.name?.trim() || 'Your pet';
+  const handlePressNotifications = useCallback(() => {
+    if (onPressNotifications) {
+      onPressNotifications();
+      return;
+    }
+    const routeNames = navigation.getState()?.routeNames ?? [];
+    if (routeNames.includes('Notifications')) {
+      navigation.navigate('Notifications');
+      return;
+    }
+    const parentNav = navigation.getParent?.();
+    const parentRouteNames = parentNav?.getState?.()?.routeNames ?? [];
+    if (parentRouteNames.includes('Notifications')) {
+      parentNav.navigate('Notifications');
+    }
+  }, [navigation, onPressNotifications]);
+
+  const activePetName = activePet?.name?.trim() || 'Pets';
+  const surfaces = useRuntimeThemeColors();
 
   return (
     <View
       style={[
         styles.container,
         {
+          backgroundColor: surfaces.backgroundScreen,
+          borderBottomColor: surfaces.border,
           paddingTop: insets.top,
           paddingHorizontal: theme.spacing.lg,
           paddingBottom: theme.spacing.sm + 2,
@@ -177,18 +185,39 @@ function AppHeader({ onPressSettings }) {
     >
       <View style={styles.row}>
         <View style={styles.leftCluster}>
-          <PetSelector pet={activePet} onPress={openModal} accessibilityHint={`Current pet is ${activePetName}`} />
+          <PetSelector
+            pet={activePet}
+            identityLoading={activePetLoading && !activePet}
+            onPress={openModal}
+            accessibilityHint={`Current pet is ${activePetName}`}
+          />
         </View>
 
-        <TouchableOpacity
-          onPress={handlePressSettings}
-          style={styles.settingsHit}
-          activeOpacity={0.85}
-          accessibilityRole="button"
-          accessibilityLabel="Open settings"
-        >
-          <Feather name="settings" size={24} color={theme.colors.text.muted.light} />
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          {showNotifications ? (
+            <TouchableOpacity
+              onPress={handlePressNotifications}
+              style={styles.headerActionHit}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel="Notifications"
+            >
+              <Feather name="bell" size={24} color={theme.colors.text.muted.light} />
+              {hasUnreadNotifications ? <View style={styles.unreadIndicator} /> : null}
+            </TouchableOpacity>
+          ) : null}
+          {showSettings ? (
+            <TouchableOpacity
+              onPress={handlePressSettings}
+              style={styles.headerActionHit}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel="Open settings"
+            >
+              <Feather name="settings" size={24} color={theme.colors.text.muted.light} />
+            </TouchableOpacity>
+          ) : null}
+        </View>
       </View>
 
       <Modal visible={modalVisible} transparent animationType="none" onRequestClose={closeModal}>
@@ -197,10 +226,18 @@ function AppHeader({ onPressSettings }) {
             <Animated.View style={[styles.backdrop, { opacity: backdropOpacity }]} />
           </TouchableOpacity>
 
-          <Animated.View style={[styles.modalSheet, { transform: [{ translateY: sheetTranslateY }] }]}>
-            <Text style={styles.sheetTitle}>Your pets</Text>
+          <Animated.View
+            style={[
+              styles.modalSheet,
+              {
+                backgroundColor: surfaces.backgroundElevated,
+                transform: [{ translateY: sheetTranslateY }],
+              },
+            ]}
+          >
+            <Text style={[styles.sheetTitle, { color: surfaces.textPrimary }]}>Your pets</Text>
             {loadingPets ? (
-              <Text style={styles.helperText}>Loading pets...</Text>
+              <Text style={[styles.helperText, { color: surfaces.textMuted }]}>Loading pets...</Text>
             ) : (
               <FlatList
                 data={pets}
@@ -212,25 +249,39 @@ function AppHeader({ onPressSettings }) {
                     <TouchableOpacity
                       onPress={() => handleSelectPet(item)}
                       activeOpacity={0.85}
-                      style={[styles.petRow, selected && styles.petRowSelected]}
+                      style={[
+                        styles.petRow,
+                        selected && [
+                          styles.petRowSelected,
+                          { backgroundColor: surfaces.backgroundScreen },
+                        ],
+                      ]}
                       accessibilityRole="button"
                       accessibilityLabel={`${item.name}${selected ? ', selected' : ''}`}
                       accessibilityHint="Switch pet"
                     >
-                      <PetSelectorAvatar photoUrl={item.photo_url} initial={initial} />
-                      <Text style={styles.rowName}>{item.name || 'Unnamed pet'}</Text>
+                      <PetSelectorAvatar
+                        photoUrl={item.photo_url}
+                        initial={initial}
+                        textPrimary={surfaces.textPrimary}
+                      />
+                      <Text style={[styles.rowName, { color: surfaces.textPrimary }]}>
+                        {item.name || 'Unnamed pet'}
+                      </Text>
                       {selected ? (
                         <Feather name="check" size={18} color={theme.colors.primary.light} />
                       ) : null}
                     </TouchableOpacity>
                   );
                 }}
-                ItemSeparatorComponent={() => <View style={styles.separator} />}
+                ItemSeparatorComponent={() => (
+                  <View style={[styles.separator, { backgroundColor: surfaces.border }]} />
+                )}
                 ListFooterComponent={
                   <TouchableOpacity
                     onPress={handleAddPet}
                     activeOpacity={0.85}
-                    style={styles.addPetButton}
+                    style={[styles.addPetButton, { borderColor: surfaces.border }]}
                     accessibilityRole="button"
                     accessibilityLabel="Add another pet"
                   >
@@ -249,22 +300,20 @@ function AppHeader({ onPressSettings }) {
 
 export default memo(AppHeader);
 
-function PetSelectorAvatar({ photoUrl, initial }) {
+function PetSelectorAvatar({ photoUrl, initial, textPrimary }) {
   if (photoUrl) {
-    return <Image source={{ uri: photoUrl }} style={styles.rowAvatar} />;
+    return <PawpleStorageImage source={{ uri: photoUrl }} style={styles.rowAvatar} />;
   }
   return (
     <View style={styles.rowAvatarFallback}>
-      <Text style={styles.rowAvatarInitial}>{initial}</Text>
+      <Text style={[styles.rowAvatarInitial, { color: textPrimary }]}>{initial}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: theme.colors.background.light,
     borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border.light,
   },
   row: {
     flexDirection: 'row',
@@ -278,11 +327,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     minWidth: 0,
   },
-  settingsHit: {
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  headerActionHit: {
     minHeight: 44,
     minWidth: 44,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  unreadIndicator: {
+    position: 'absolute',
+    top: theme.spacing.sm,
+    right: theme.spacing.sm,
+    width: theme.spacing.sm,
+    height: theme.spacing.sm,
+    borderRadius: theme.spacing.sm / 2,
+    backgroundColor: theme.colors.brand.sage.light,
   },
   modalRoot: {
     flex: 1,
@@ -294,7 +356,6 @@ const styles = StyleSheet.create({
   },
   modalSheet: {
     maxHeight: '72%',
-    backgroundColor: theme.colors.card.light,
     borderTopLeftRadius: theme.borderRadius.xl,
     borderTopRightRadius: theme.borderRadius.xl,
     paddingHorizontal: theme.spacing.lg,
@@ -306,13 +367,11 @@ const styles = StyleSheet.create({
     marginBottom: theme.spacing.md,
     fontFamily: theme.fonts.heading,
     fontSize: theme.fontSizes.lg,
-    color: theme.colors.text.primary.light,
   },
   helperText: {
     paddingVertical: theme.spacing.sm,
     fontFamily: theme.fonts.body,
     fontSize: theme.fontSizes.sm,
-    color: theme.colors.text.muted.light,
   },
   petRow: {
     minHeight: 44,
@@ -321,7 +380,6 @@ const styles = StyleSheet.create({
     paddingVertical: theme.spacing.sm,
   },
   petRowSelected: {
-    backgroundColor: theme.colors.background.light,
     borderRadius: theme.borderRadius.md,
     paddingHorizontal: theme.spacing.sm,
   },
@@ -343,18 +401,15 @@ const styles = StyleSheet.create({
   rowAvatarInitial: {
     fontFamily: theme.fonts.body,
     fontSize: theme.fontSizes.sm,
-    color: theme.colors.text.primary.light,
     fontWeight: theme.fontWeights.semibold,
   },
   rowName: {
     flex: 1,
     fontFamily: theme.fonts.body,
     fontSize: theme.fontSizes.md,
-    color: theme.colors.text.primary.light,
   },
   separator: {
     height: StyleSheet.hairlineWidth,
-    backgroundColor: theme.colors.border.light,
   },
   addPetButton: {
     minHeight: 44,
@@ -365,7 +420,6 @@ const styles = StyleSheet.create({
     marginTop: theme.spacing.sm,
     borderRadius: theme.borderRadius.md,
     borderWidth: 1,
-    borderColor: theme.colors.border.light,
   },
   addPetText: {
     fontFamily: theme.fonts.body,

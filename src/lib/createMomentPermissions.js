@@ -1,29 +1,24 @@
-import { Alert } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { openAppSettings } from './permissions';
-import { resolveGalleryPermission } from './photoPicker';
 
-const MESSAGES = {
-  camera: {
-    title: 'Camera',
-    body: 'Camera access helps capture moments with your pet.',
-  },
-  library: {
-    title: 'Photos',
-    body: 'Photo access helps upload memories from your gallery.',
-  },
-};
+function hasGalleryAccess(permission) {
+  return permission?.granted === true || permission?.accessPrivileges === 'limited';
+}
 
-function showDeniedAlert(kind) {
-  const { title, body } = MESSAGES[kind];
-  Alert.alert(title, body, [
-    { text: 'Not now', style: 'cancel' },
-    { text: 'Open Settings', onPress: openAppSettings },
-  ]);
+/** Current camera permission without opening an OS prompt. */
+export async function getCameraPermissionState() {
+  try {
+    const current = await ImagePicker.getCameraPermissionsAsync();
+    return {
+      status: current?.status ?? 'undetermined',
+      canAskAgain: current?.canAskAgain ?? true,
+    };
+  } catch {
+    return { status: 'undetermined', canAskAgain: true };
+  }
 }
 
 /**
- * Check current status, request only when needed, open picker if granted.
+ * OS camera prompt at moment of need — no custom primer or Pawple skip dialog.
  * @returns {'granted'|'denied'|'blocked'}
  */
 export async function resolveCameraPermission() {
@@ -31,9 +26,6 @@ export async function resolveCameraPermission() {
     const current = await ImagePicker.getCameraPermissionsAsync();
     if (current?.granted) {
       return 'granted';
-    }
-    if (current?.status === 'denied' && current.canAskAgain === false) {
-      return 'blocked';
     }
     const requested = await ImagePicker.requestCameraPermissionsAsync();
     if (requested?.granted) {
@@ -48,21 +40,33 @@ export async function resolveCameraPermission() {
   }
 }
 
+/**
+ * OS photo-library prompt at moment of need — no custom primer or Pawple skip dialog.
+ * @returns {'granted'|'denied'|'blocked'}
+ */
 export async function resolvePhotoLibraryPermission() {
   try {
-    const permission = await resolveGalleryPermission();
-    return permission.granted ? 'granted' : permission.canAskAgain ? 'denied' : 'blocked';
+    const current = await ImagePicker.getMediaLibraryPermissionsAsync();
+    if (hasGalleryAccess(current)) {
+      return 'granted';
+    }
+    if (current?.status === 'denied' && current.canAskAgain === false) {
+      return 'blocked';
+    }
+    const requested = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (hasGalleryAccess(requested)) {
+      return 'granted';
+    }
+    if (requested?.canAskAgain === false) {
+      return 'blocked';
+    }
+    return 'denied';
   } catch {
     return 'denied';
   }
 }
 
-export function handlePermissionResult(kind, status) {
-  if (status === 'granted') {
-    return true;
-  }
-  if (status === 'blocked' || status === 'denied') {
-    showDeniedAlert(kind);
-  }
-  return false;
+/** @returns {boolean} true only when status is granted */
+export function handlePermissionResult(_kind, status, _context = 'default') {
+  return status === 'granted';
 }

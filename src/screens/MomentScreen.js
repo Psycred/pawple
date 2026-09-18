@@ -1,5 +1,6 @@
+import { Feather } from '@expo/vector-icons';
 import { useIsFocused, useNavigation } from '@react-navigation/native';
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   Modal,
   Pressable,
@@ -10,6 +11,43 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { navigationRef } from '../navigation/navigationRef';
 import { theme } from '../config/theme';
+import { useRuntimeThemeColors } from '../hooks/useRuntimeThemeColors';
+
+const ICON_COLOR = '#6D8B74';
+const CHEVRON_COLOR = '#A8A8A8';
+
+function CreateOption({ icon, label, onPress, accessibilityLabel, surfaces }) {
+  const optionTheme = useMemo(
+    () => ({
+      card: {
+        backgroundColor: surfaces.createHubSheetBackground,
+        borderColor: surfaces.createHubOptionBorder,
+      },
+      iconCircle: { backgroundColor: surfaces.createHubIconCircleBackground },
+      label: { color: surfaces.textPrimary },
+    }),
+    [surfaces],
+  );
+
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [styles.optionCard, optionTheme.card, pressed && styles.optionPressed]}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+    >
+      <View style={styles.optionRow}>
+        <View style={[styles.optionIconWrap, optionTheme.iconCircle]}>
+          <Feather name={icon} size={22} color={ICON_COLOR} />
+        </View>
+        <Text style={[styles.optionLabel, optionTheme.label]} allowFontScaling>
+          {label}
+        </Text>
+        <Feather name="chevron-right" size={22} color={CHEVRON_COLOR} />
+      </View>
+    </Pressable>
+  );
+}
 
 /**
  * “+” tab: calm creation hub with an iOS-style bottom sheet.
@@ -19,6 +57,18 @@ export default function MomentHubScreen() {
   const navigation = useNavigation();
   const isFocused = useIsFocused();
   const insets = useSafeAreaInsets();
+  const surfaces = useRuntimeThemeColors();
+  const sheetTheme = useMemo(
+    () => ({
+      root: { backgroundColor: surfaces.backgroundScreen },
+      sheet: { backgroundColor: surfaces.createHubSheetBackground },
+      handle: { backgroundColor: surfaces.border },
+      title: { color: surfaces.textPrimary },
+      divider: { backgroundColor: surfaces.border },
+      cancel: { color: surfaces.textMuted },
+    }),
+    [surfaces],
+  );
 
   const goToFeed = () => {
     navigation.navigate('FeedScreen');
@@ -48,7 +98,7 @@ export default function MomentHubScreen() {
   };
 
   return (
-    <View style={styles.root} accessibilityLabel="Create">
+    <View style={[styles.root, sheetTheme.root]} accessibilityLabel="Create">
       <Modal
         visible={isFocused}
         animationType="slide"
@@ -68,40 +118,39 @@ export default function MomentHubScreen() {
           <View
             style={[
               styles.sheet,
+              sheetTheme.sheet,
               {
-                paddingBottom: Math.max(insets.bottom, theme.spacing.xxl),
+                paddingBottom: Math.max(insets.bottom, theme.spacing.lg),
               },
             ]}
           >
-            <View style={styles.handle} importantForAccessibility="no" />
+            <View style={[styles.handle, sheetTheme.handle]} importantForAccessibility="no" />
 
-            <Text style={[theme.fonts.h2, styles.sheetTitle]} accessibilityRole="header">
+            <Text
+              style={[styles.sheetTitle, sheetTheme.title]}
+              accessibilityRole="header"
+              allowFontScaling
+            >
               Create
             </Text>
 
-            <Pressable
+            <CreateOption
+              icon="camera"
+              label="Moment"
               onPress={openMoment}
-              style={({ pressed }) => [styles.optionCard, pressed && styles.optionPressed]}
-              accessibilityRole="button"
-              accessibilityLabel="Capture a moment"
-            >
-              <Text style={[theme.fonts.bodySemibold, styles.optionTitle]} allowFontScaling>
-                🐾 Capture a moment
-              </Text>
-              <Text style={styles.optionSubtitle}>Save a quiet memory with your pet</Text>
-            </Pressable>
+              accessibilityLabel="Create a moment"
+              surfaces={surfaces}
+            />
 
-            <Pressable
+            <CreateOption
+              icon="calendar"
+              label="Meetup"
               onPress={openMeetup}
-              style={({ pressed }) => [styles.optionCard, pressed && styles.optionPressed]}
-              accessibilityRole="button"
-              accessibilityLabel="Plan a meetup"
-            >
-              <Text style={[theme.fonts.bodySemibold, styles.optionTitle]} allowFontScaling>
-                📍 Plan a meetup
-              </Text>
-              <Text style={styles.optionSubtitle}>Invite nearby paws for a gentle gathering</Text>
-            </Pressable>
+              accessibilityLabel="Create a meetup"
+              surfaces={surfaces}
+            />
+
+            <View style={[styles.cancelDivider, sheetTheme.divider]} />
 
             <Pressable
               onPress={goToFeed}
@@ -109,7 +158,9 @@ export default function MomentHubScreen() {
               accessibilityRole="button"
               accessibilityLabel="Cancel"
             >
-              <Text style={styles.cancelLabel}>Cancel</Text>
+              <Text style={[styles.cancelLabel, sheetTheme.cancel]} allowFontScaling>
+                Cancel
+              </Text>
             </Pressable>
           </View>
         </View>
@@ -121,7 +172,6 @@ export default function MomentHubScreen() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: theme.colors.background.screen,
   },
   modalRoot: {
     flex: 1,
@@ -135,61 +185,78 @@ const styles = StyleSheet.create({
     backgroundColor: theme.components.bottomSheet.backdrop,
   },
   sheet: {
-    backgroundColor: theme.colors.background.screen,
-    borderTopLeftRadius: theme.borderRadius.xl,
-    borderTopRightRadius: theme.borderRadius.xl,
-    paddingHorizontal: theme.spacing.lg + theme.spacing.xs,
-    paddingTop: theme.spacing.lg,
-    ...theme.shadowsRN.sm,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 24,
+    paddingTop: 12,
   },
   handle: {
     width: theme.components.bottomSheet.handleWidth,
     height: theme.components.bottomSheet.handleHeight,
     borderRadius: theme.components.bottomSheet.handleRadius,
-    backgroundColor: theme.colors.border.light,
     alignSelf: 'center',
-    marginBottom: theme.spacing.xl,
+    marginBottom: 20,
   },
   sheetTitle: {
+    fontFamily: theme.fonts.medium,
+    fontSize: theme.fontSizes.lg,
+    lineHeight: 24,
     textAlign: 'center',
-    marginBottom: theme.spacing.xl,
-    color: theme.colors.text.primary.light,
+    marginBottom: 24,
   },
   optionCard: {
-    backgroundColor: theme.colors.background.card,
-    borderRadius: theme.borderRadius.lg,
-    paddingVertical: theme.spacing.lg + theme.spacing.xs / 2,
-    paddingHorizontal: theme.spacing.xl,
-    marginBottom: theme.spacing.md,
-    minHeight: theme.components.button.minHeight,
+    borderRadius: 20,
+    borderWidth: 1,
+    paddingHorizontal: 18,
+    paddingVertical: 18,
+    marginBottom: 12,
+    minHeight: 76,
+    justifyContent: 'center',
+    shadowColor: '#000000',
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 1,
   },
   optionPressed: {
-    opacity: 0.92,
+    opacity: theme.opacity.pressedUi,
   },
-  optionTitle: {
-    color: theme.colors.text.primary.light,
+  optionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
   },
-  optionSubtitle: {
-    fontFamily: 'Inter-Regular',
-    fontSize: theme.fontSizes.sm,
-    lineHeight: theme.fontSizes.sm * theme.lineHeights.normal,
-    color: theme.colors.text.muted.light,
-    marginTop: theme.spacing.xs,
-  },
-  cancelBtn: {
-    marginTop: theme.spacing.lg,
-    paddingVertical: theme.spacing.md,
-    minHeight: theme.components.button.minHeight,
+  optionIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  optionLabel: {
+    flex: 1,
+    fontFamily: theme.fonts.semibold,
+    fontSize: theme.fontSizes.lg,
+    lineHeight: 24,
+  },
+  cancelDivider: {
+    height: StyleSheet.hairlineWidth,
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  cancelBtn: {
+    minHeight: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+  },
   cancelPressed: {
-    opacity: 0.8,
+    opacity: theme.opacity.pressedUi,
   },
   cancelLabel: {
     fontFamily: theme.fonts.body,
     fontSize: theme.fontSizes.md,
-    color: theme.colors.text.muted.light,
+    lineHeight: 22,
     textAlign: 'center',
   },
 });

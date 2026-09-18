@@ -1,6 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Feather } from '@expo/vector-icons';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -14,49 +13,46 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Feather } from '@expo/vector-icons';
 import InviteSheet from '../components/InviteSheet';
-import { supabase } from '../config/supabase';
 import { theme } from '../config/theme';
+import { useAppearance } from '../contexts/AppearanceContext';
 import { useAuth } from '../contexts/AuthContext';
-import { deleteAccount } from '../lib/deleteAccount';
+import { useRuntimeThemeColors } from '../hooks/useRuntimeThemeColors';
 import { exportUserData, shareUserDataExport } from '../lib/exportAccount';
-import { openAppSettings } from '../lib/permissions';
 
-const APPEARANCE_KEY = 'settings.appearance';
 const DISTANCE_KEY = 'settings.distanceUnit';
 
 const VALUE_DEFAULTS = {
-  appearance: 'System',
   distance: 'km',
 };
 
 export default function SettingsScreen({ navigation }) {
   const insets = useSafeAreaInsets();
-  const { user } = useAuth();
+  const { user, openLogoutConfirm, openDeleteConfirm, lifecycleBusy } = useAuth();
+  const { preference: appearance, setAppearancePreference } = useAppearance();
+  const surfaces = useRuntimeThemeColors();
   const [inviteVisible, setInviteVisible] = useState(false);
   const [remainingInvites, setRemainingInvites] = useState(5);
   const [exportingData, setExportingData] = useState(false);
-  const [deletingAccount, setDeletingAccount] = useState(false);
-  const [appearance, setAppearance] = useState(VALUE_DEFAULTS.appearance);
   const [distanceUnit, setDistanceUnit] = useState(VALUE_DEFAULTS.distance);
 
   const sectionHeader = useCallback(
     (title) => (
-      <Text accessibilityRole="header" style={styles.sectionHeader}>
+      <Text
+        accessibilityRole="header"
+        style={[styles.sectionHeader, { color: surfaces.textMuted }]}
+      >
         {title}
       </Text>
     ),
-    [],
+    [surfaces.textMuted],
   );
 
   useEffect(() => {
     const hydrate = async () => {
       try {
-        const [appearanceValue, distanceValue] = await Promise.all([
-          AsyncStorage.getItem(APPEARANCE_KEY),
-          AsyncStorage.getItem(DISTANCE_KEY),
-        ]);
-        if (appearanceValue) setAppearance(appearanceValue);
+        const distanceValue = await AsyncStorage.getItem(DISTANCE_KEY);
         if (distanceValue) setDistanceUnit(distanceValue);
       } catch (error) {
         console.log('[Settings] hydrate error', error);
@@ -65,23 +61,18 @@ export default function SettingsScreen({ navigation }) {
     hydrate();
   }, []);
 
-  const handleManageNotifications = useCallback(() => {
-    openAppSettings();
-  }, []);
-
   const handleAppearance = useCallback(() => {
     const options = ['System', 'Light', 'Dark'];
     Alert.alert('Appearance', 'Choose how Pawple should appear.', [
       ...options.map((value) => ({
         text: value,
-        onPress: async () => {
-          setAppearance(value);
-          await AsyncStorage.setItem(APPEARANCE_KEY, value);
+        onPress: () => {
+          void setAppearancePreference(value);
         },
       })),
       { text: 'Cancel', style: 'cancel' },
     ]);
-  }, []);
+  }, [setAppearancePreference]);
 
   const handleDistanceUnit = useCallback(async () => {
     const next = distanceUnit === 'km' ? 'miles' : 'km';
@@ -115,71 +106,25 @@ export default function SettingsScreen({ navigation }) {
     }
   }, [exportingData, showExportToast, user?.id]);
 
-  const handleLogout = useCallback(() => {
-    Alert.alert('Logout?', 'You will need to sign in again.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Logout',
-        style: 'destructive',
-        onPress: async () => {
-          await supabase.auth.signOut();
-          navigation.reset({ index: 0, routes: [{ name: 'Auth' }] });
-        },
-      },
-    ]);
-  }, [navigation]);
-
-  const performDeleteAccount = useCallback(async () => {
-    if (deletingAccount || !user?.id) return;
-    try {
-      setDeletingAccount(true);
-      await deleteAccount();
-      navigation.reset({ index: 0, routes: [{ name: 'Auth' }] });
-    } catch (error) {
-      console.error('[Settings] delete account error', error);
-      Alert.alert(
-        'Delete Account',
-        'Could not delete your account right now. Please try again.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Try Again', style: 'destructive', onPress: performDeleteAccount },
-        ],
-      );
-    } finally {
-      setDeletingAccount(false);
-    }
-  }, [deletingAccount, navigation, user?.id]);
-
-  const handleDeleteAccount = useCallback(() => {
-    if (deletingAccount) return;
-    Alert.alert('Delete account?', 'This removes your profile, pets, invites, and posts from Pawple.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: performDeleteAccount,
-      },
-    ]);
-  }, [deletingAccount, performDeleteAccount]);
-
-  const appVersion = useMemo(() => 'v1.0.0', []);
+  const appVersion = 'v1.0.0';
+  const groupCardStyle = {
+    backgroundColor: surfaces.backgroundCard,
+    borderColor: surfaces.border,
+  };
 
   return (
-    <SafeAreaView style={[styles.safe, { paddingTop: insets.top }]}>
+    <SafeAreaView
+      style={[styles.safe, { paddingTop: insets.top, backgroundColor: surfaces.backgroundScreen }]}
+    >
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.section}>
           {sectionHeader('ACCOUNT')}
-          <View style={styles.group}>
+          <View style={[styles.group, groupCardStyle]}>
             <SettingRow icon="user" title="My Profile" onPress={() => navigation.navigate('EditProfile')} />
-            <SettingRow
-              icon="calendar"
-              title="My Meetups"
-              onPress={() => navigation.navigate('MyMeetupsScreen')}
-            />
             <SettingRow icon="users" title="Manage Pets" onPress={() => navigation.navigate('ManagePets')} />
             <SettingRow
               icon="share-2"
-              title="Invite Friends"
+              title="Invite"
               onPress={() => setInviteVisible(true)}
               rightNode={
                 <View style={styles.badge}>
@@ -192,15 +137,12 @@ export default function SettingsScreen({ navigation }) {
 
         <View style={styles.section}>
           {sectionHeader('PRIVACY & DATA')}
-          <View style={styles.group}>
+          <View style={[styles.group, groupCardStyle]}>
             <SettingRow
-              icon="bell"
-              title="Notifications"
-              subtitle="Opens your device notification settings"
-              onPress={handleManageNotifications}
+              icon="shield"
+              title="Permissions"
+              onPress={() => navigation.navigate('Permissions')}
             />
-            <SettingRow icon="map-pin" title="Location Permissions" onPress={openAppSettings} />
-            <SettingRow icon="image" title="Photo & Media" onPress={openAppSettings} />
             <SettingRow
               icon="download"
               title="Download My Data"
@@ -220,25 +162,25 @@ export default function SettingsScreen({ navigation }) {
 
         <View style={styles.section}>
           {sectionHeader('APP PREFERENCES')}
-          <View style={styles.group}>
+          <View style={[styles.group, groupCardStyle]}>
             <SettingRow
               icon={appearance === 'Dark' ? 'moon' : 'sun'}
               title="Appearance"
               onPress={handleAppearance}
-              rightNode={<Text style={styles.rightMeta}>{appearance}</Text>}
+              rightNode={<Text style={[styles.rightMeta, { color: surfaces.textMuted }]}>{appearance}</Text>}
             />
             <SettingRow
               icon="globe"
               title="Distance Units"
               onPress={handleDistanceUnit}
-              rightNode={<Text style={styles.rightMeta}>{distanceUnit}</Text>}
+              rightNode={<Text style={[styles.rightMeta, { color: surfaces.textMuted }]}>{distanceUnit}</Text>}
             />
           </View>
         </View>
 
         <View style={[styles.section, styles.lastSection]}>
           {sectionHeader('SUPPORT & LEGAL')}
-          <View style={styles.group}>
+          <View style={[styles.group, groupCardStyle]}>
             <SettingRow
               icon="info"
               title="About Pawple"
@@ -266,8 +208,14 @@ export default function SettingsScreen({ navigation }) {
 
         <View style={styles.bottomActions}>
           <Pressable
-            onPress={handleLogout}
-            style={({ pressed }) => [styles.bottomActionRow, pressed && styles.rowPressed]}
+            onPress={openLogoutConfirm}
+            disabled={lifecycleBusy}
+            style={({ pressed }) => [
+              styles.bottomActionRow,
+              groupCardStyle,
+              pressed && !lifecycleBusy && styles.rowPressed,
+              lifecycleBusy && styles.bottomActionDisabled,
+            ]}
             accessibilityRole="button"
             accessibilityLabel="Log out"
           >
@@ -276,25 +224,26 @@ export default function SettingsScreen({ navigation }) {
           </Pressable>
 
           <Pressable
-            onPress={handleDeleteAccount}
-            disabled={deletingAccount}
+            onPress={openDeleteConfirm}
+            disabled={lifecycleBusy}
             style={({ pressed }) => [
               styles.bottomActionRow,
               styles.deleteActionRow,
-              pressed && !deletingAccount && styles.rowPressed,
-              deletingAccount && styles.bottomActionDisabled,
+              groupCardStyle,
+              pressed && !lifecycleBusy && styles.rowPressed,
+              lifecycleBusy && styles.bottomActionDisabled,
             ]}
             accessibilityRole="button"
             accessibilityLabel="Delete account"
-            accessibilityState={{ disabled: deletingAccount, busy: deletingAccount }}
+            accessibilityState={{ disabled: lifecycleBusy, busy: lifecycleBusy }}
           >
-            {deletingAccount ? (
+            {lifecycleBusy ? (
               <ActivityIndicator size="small" color={theme.colors.danger.value} />
             ) : (
               <Feather name="trash-2" size={theme.fontSizes.xl} color={theme.colors.danger.value} />
             )}
             <Text style={styles.deleteActionText}>
-              {deletingAccount ? 'Deleting…' : 'Delete Account'}
+              {lifecycleBusy ? 'Deleting…' : 'Delete Account'}
             </Text>
           </Pressable>
         </View>
@@ -316,13 +265,31 @@ function SettingRow({
   rightIconSize = theme.fontSizes.md,
   danger = false,
 }) {
+  const surfaces = useRuntimeThemeColors();
+
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.row, pressed && styles.rowPressed]} accessibilityRole="button">
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.row,
+        { borderBottomColor: surfaces.border },
+        pressed && styles.rowPressed,
+      ]}
+      accessibilityRole="button"
+    >
       <View style={styles.rowLeft}>
-        <Feather name={icon} size={theme.fontSizes.xl} color={danger ? theme.colors.danger.value : theme.colors.text.muted.light} />
+        <Feather
+          name={icon}
+          size={theme.fontSizes.xl}
+          color={danger ? theme.colors.danger.value : surfaces.textMuted}
+        />
         <View>
-          <Text style={[styles.rowTitle, danger && styles.rowTitleDanger]}>{title}</Text>
-          {subtitle ? <Text style={styles.rowSubtitle}>{subtitle}</Text> : null}
+          <Text style={[styles.rowTitle, { color: surfaces.textPrimary }, danger && styles.rowTitleDanger]}>
+            {title}
+          </Text>
+          {subtitle ? (
+            <Text style={[styles.rowSubtitle, { color: surfaces.textMuted }]}>{subtitle}</Text>
+          ) : null}
         </View>
       </View>
 
@@ -331,7 +298,7 @@ function SettingRow({
           <Feather
             name={rightIcon}
             size={rightIconSize}
-            color={danger ? theme.colors.danger.value : theme.colors.text.muted.light}
+            color={danger ? theme.colors.danger.value : surfaces.textMuted}
           />
         ) : null)}
     </Pressable>

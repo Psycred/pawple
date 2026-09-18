@@ -37,6 +37,7 @@ export function assertContractEnvironment() {
       pawpleEnv,
       isLocalDevRuntime,
       isDemoContentEnabled,
+      diagnostics: process.env.EXPO_PUBLIC_PAWPLE_DIAGNOSTICS ?? 'camera',
       supabaseConfigured: Boolean(
         process.env.EXPO_PUBLIC_SUPABASE_URL && process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
       ),
