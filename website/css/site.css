@@ -1,0 +1,248 @@
+/* Pawple public site — calm, minimal, mobile-first */
+
+:root {
+  --bg-screen: #f5f4f1;
+  --bg-card: #fbfaf8;
+  --text-primary: #2f2f2f;
+  --text-secondary: #6a6a6a;
+  --text-muted: #7a7a7a;
+  --sage: #8faf9b;
+  --sage-dark: #6d8b74;
+  --border: #e8e4df;
+  --max-width: 40rem;
+  --page-pad: 1.25rem;
+  --section-gap: 1.5rem;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-size: 1rem;
+  line-height: 1.55;
+  color: var(--text-primary);
+  background: var(--bg-screen);
+}
+
+a {
+  color: var(--sage-dark);
+  text-decoration: none;
+}
+
+a:hover,
+a:focus-visible {
+  text-decoration: underline;
+}
+
+img {
+  max-width: 100%;
+  height: auto;
+}
+
+.site-header {
+  padding: 1.5rem var(--page-pad) 1rem;
+  text-align: center;
+}
+
+.site-header a.logo-link {
+  display: inline-block;
+  text-decoration: none;
+}
+
+.site-header .logo {
+  width: min(11rem, 62vw);
+  height: auto;
+  display: block;
+  margin: 0 auto;
+}
+
+.site-nav {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.75rem 1.25rem;
+  margin-top: 1rem;
+  font-size: 0.875rem;
+}
+
+.site-nav a {
+  color: var(--text-secondary);
+}
+
+main {
+  padding: 0 var(--page-pad) 2.5rem;
+  max-width: var(--max-width);
+  margin: 0 auto;
+}
+
+.hero {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.hero h1 {
+  font-size: clamp(1.5rem, 5vw, 1.875rem);
+  font-weight: 600;
+  line-height: 1.25;
+  margin: 0 0 0.75rem;
+  letter-spacing: -0.02em;
+}
+
+.hero .lede {
+  color: var(--text-secondary);
+  margin: 0 0 1rem;
+  font-size: 1rem;
+}
+
+.early-access {
+  display: inline-block;
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--sage-dark);
+  background: #e8f1ea;
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  margin-bottom: 1.5rem;
+}
+
+.card {
+  background: var(--bg-card);
+  border-radius: 1.25rem;
+  padding: 1.5rem 1.25rem;
+  border: 1px solid var(--border);
+  margin-bottom: var(--section-gap);
+}
+
+.card h2 {
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin: 0 0 1rem;
+}
+
+.btn-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.btn {
+  display: block;
+  text-align: center;
+  padding: 0.875rem 1.25rem;
+  border-radius: 999px;
+  font-size: 1rem;
+  font-weight: 600;
+  text-decoration: none;
+  border: 1px solid transparent;
+  transition: opacity 0.2s ease;
+}
+
+.btn:hover,
+.btn:focus-visible {
+  text-decoration: none;
+  opacity: 0.92;
+}
+
+.btn-primary {
+  background: var(--sage);
+  color: #fff;
+}
+
+.btn-secondary {
+  background: var(--bg-card);
+  color: var(--text-muted);
+  border-color: var(--border);
+  cursor: default;
+}
+
+.legal-page h1 {
+  font-size: 1.75rem;
+  font-weight: 600;
+  margin: 0 0 0.25rem;
+}
+
+.legal-page .updated {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  margin: 0 0 1.5rem;
+}
+
+.legal-page section {
+  margin-bottom: 1.5rem;
+}
+
+.legal-page h2 {
+  font-size: 1.0625rem;
+  font-weight: 600;
+  margin: 0 0 0.5rem;
+}
+
+.legal-page p,
+.legal-page ul {
+  margin: 0 0 0.75rem;
+  color: var(--text-secondary);
+}
+
+.legal-page ul {
+  padding-left: 1.25rem;
+}
+
+.legal-page li {
+  margin-bottom: 0.35rem;
+}
+
+.note {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  border-left: 3px solid var(--border);
+  padding-left: 0.75rem;
+  margin: 1rem 0;
+}
+
+.site-footer {
+  text-align: center;
+  padding: 2rem var(--page-pad) 2.5rem;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border);
+  margin-top: 2rem;
+}
+
+.footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.footer-links a {
+  color: var(--text-secondary);
+}
+
+.error-page {
+  text-align: center;
+  padding-top: 3rem;
+}
+
+.error-page h1 {
+  font-size: 1.5rem;
+  margin-bottom: 0.5rem;
+}
+
+@media (min-width: 480px) {
+  :root {
+    --page-pad: 1.5rem;
+  }
+}

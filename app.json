@@ -5,7 +5,7 @@
     "version": "1.0.0",
     "scheme": "pawple",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/brand/dist/store-play-512.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
@@ -15,8 +15,8 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "foregroundImage": "./assets/brand/dist/adaptive-foreground-432.png",
+        "backgroundImage": "./assets/brand/dist/adaptive-background-432.png"
       },
       "edgeToEdgeEnabled": true,
       "permissions": [

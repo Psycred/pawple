@@ -28,7 +28,7 @@ const DESTRUCTIVE = theme.colors.destructive?.light ?? theme.colors.error.light;
 export default function ManagePetsScreen({ navigation }) {
   const surfaces = useRuntimeThemeColors();
   const insets = useSafeAreaInsets();
-  const { activePetId, setPet } = useActivePet();
+  const { activePetId, setPet, refreshUserPets } = useActivePet();
   const [pets, setPets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -112,15 +112,35 @@ export default function ManagePetsScreen({ navigation }) {
     setDeletingId(petId);
     setPets(nextPets);
     try {
-      const { error } = await supabase.from('pets').delete().eq('id', petId);
+      const { error } = await supabase.rpc('delete_pet', { p_pet_id: petId });
       if (error) {
         throw error;
       }
       Alert.alert('Pets', 'Pet removed');
 
-      const nextPetId = resolveActivePetAfterDelete(activePetId, petId, nextPets);
-      if (nextPetId !== undefined) {
-        await setPet(nextPetId);
+      const remaining = await refreshUserPets();
+
+      if (!remaining?.length) {
+        await setPet(null);
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (user) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('name, city')
+            .eq('id', user.id)
+            .single();
+          navigation.navigate('OnboardingPets', {
+            fullName: profile?.name ?? '',
+            city: profile?.city ?? '',
+          });
+        }
+      } else {
+        const nextPetId = resolveActivePetAfterDelete(activePetId, petId, remaining);
+        if (nextPetId !== undefined) {
+          await setPet(nextPetId);
+        }
       }
     } catch (error) {
       console.log('[ManagePets] Delete pet error:', error);

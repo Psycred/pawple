@@ -184,22 +184,13 @@ export default function FeedScreen() {
 
       let nextMeetups = realMeetups;
 
-      if (USE_DEMO_FEED_WHEN_EMPTY) {
-        const demoMeetups = getDemoMeetupsForFeed();
-        if (realMeetups.length === 0) {
-          nextMeetups = demoMeetups;
-        } else {
-          const realIds = new Set(realMeetups.map((m) => String(m.id)));
-          nextMeetups = [
-            ...realMeetups,
-            ...demoMeetups.filter((d) => !realIds.has(String(d.id))),
-          ];
-        }
+      // Dev fixtures only when the feed has no real meetups — never mix demos into
+      // production pools (city filtering would drop them and collapse the carousel).
+      if (USE_DEMO_FEED_WHEN_EMPTY && realMeetups.length === 0) {
+        nextMeetups = getDemoMeetupsForFeed();
         if (isLocalDevRuntime) {
-          console.log('[FeedScreen] Demo meetups merged:', {
-            demoCount: demoMeetups.length,
-            realCount: realMeetups.length,
-            total: nextMeetups.length,
+          console.log('[FeedScreen] Demo meetups loaded (empty real feed):', {
+            demoCount: nextMeetups.length,
           });
         }
       }

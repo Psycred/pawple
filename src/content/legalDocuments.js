@@ -246,7 +246,7 @@ export const termsSections = [
   {
     title: 'Contact',
     body:
-      'Questions: support@pawple.app\n\n[COUNSEL REVIEW REQUIRED: legal entity name and registered address]\n[COUNSEL REVIEW REQUIRED: grievance officer / grievance mechanism]\n[COUNSEL REVIEW REQUIRED: governing law, jurisdiction, and dispute resolution]',
+      'Questions: hello@pawple.app\n\n[COUNSEL REVIEW REQUIRED: legal entity name and registered address]\n[COUNSEL REVIEW REQUIRED: grievance officer / grievance mechanism]\n[COUNSEL REVIEW REQUIRED: governing law, jurisdiction, and dispute resolution]',
   },
 ];
 
@@ -339,7 +339,7 @@ export const privacySections = [
   {
     title: 'Contact',
     body:
-      'Privacy questions: support@pawple.app\n\n[COUNSEL REVIEW REQUIRED: legal entity name and registered address]\n[COUNSEL REVIEW REQUIRED: grievance officer / grievance mechanism]\n[COUNSEL REVIEW REQUIRED: governing law, jurisdiction, and dispute resolution]',
+      'Privacy questions: hello@pawple.app\n\n[COUNSEL REVIEW REQUIRED: legal entity name and registered address]\n[COUNSEL REVIEW REQUIRED: grievance officer / grievance mechanism]\n[COUNSEL REVIEW REQUIRED: governing law, jurisdiction, and dispute resolution]',
   },
 ];
 
@@ -383,6 +383,6 @@ export const guidelinesSections = [
   },
   {
     title: 'Contact',
-    body: 'Concerns: support@pawple.app',
+    body: 'Concerns: hello@pawple.app',
   },
 ];

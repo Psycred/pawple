@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Pawple Privacy Policy." />
+    <title>Privacy Policy — Pawple</title>
+    <link rel="stylesheet" href="/css/site.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="logo-link" href="/" aria-label="Pawple home">
+        <img class="logo" src="/assets/lockup-stacked.svg" alt="Pawple" width="176" height="176" />
+      </a>
+      <nav class="site-nav" aria-label="Primary">
+        <a href="/">Home</a>
+        <a href="/terms">Terms</a>
+        <a href="/support">Support</a>
+      </nav>
+    </header>
+
+    <main class="legal-page">
+      <h1>Privacy Policy</h1>
+      <p class="updated">Last updated: September 2026</p>
+
+      <section>
+        <h2>Introduction</h2>
+        <p>
+          This policy describes what the Pawple mobile app collects, how we use it, and what happens when you delete your account. Pawple is a private, invite-only community for signed-in members. We aim to collect only what the product needs.
+        </p>
+      </section>
+
+      <section>
+        <h2>What we collect</h2>
+        <ul>
+          <li><strong>Account and profile:</strong> Email and name from Apple or Google sign-in; the name and city you add; date of birth when you confirm you are 18 or older; notification preference; your device’s latest timezone when the app is active.</li>
+          <li><strong>Pets:</strong> Name, breed, age, photos, mating preferences you opt into, and other details you choose to share.</li>
+          <li><strong>Moments:</strong> Photos, captions, memory dates, written location labels, and—when location permission is granted—approximate coordinates attached to a Moment.</li>
+          <li><strong>Meetups:</strong> Events you create or join, including title, description, city, date and time, venue or meeting-point text, optional map links, host and participant pet names, and RSVP relationships visible to signed-in members.</li>
+          <li><strong>Feed and proximity:</strong> A rounded location snapshot on your profile for server-side proximity features; and, on your device only, a cached approximate location used to sort your Feed.</li>
+          <li><strong>Open to Mating:</strong> Paw interest, Interested and Connected status, introduction-chat messages you send, and related pet and account relationships (when that feature is enabled in the app).</li>
+          <li><strong>Notifications:</strong> In-app notification records and, when you allow push, a device push token linked to your account.</li>
+          <li><strong>Safety:</strong> Reports you file (reason, optional details, and the content or account reported) and block lists you create.</li>
+          <li><strong>Invites:</strong> Invite codes you receive or use for access.</li>
+          <li><strong>Hearts:</strong> Moments you heart.</li>
+          <li><strong>External link previews:</strong> When you share a Moment or Meetup link, Pawple may upload a temporary preview image for link recipients.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>Sign-in</h2>
+        <p>
+          Pawple does not use a Pawple password or phone number for authentication. Sign-in is passwordless via <strong>Apple</strong> or <strong>Google</strong> OAuth through our backend provider <strong>Supabase</strong>.
+        </p>
+      </section>
+
+      <section>
+        <h2>How we use information</h2>
+        <p>
+          We use your information to operate Pawple: pet profiles, Moments, Meetups, invite-only access, in-app and push notifications, Meetup reminders in your timezone, Open to Mating and introduction chat where enabled, reports and blocks, photo hosting, temporary link previews, and security. We do <strong>not</strong> use your information for behavioural advertising or to sell personal data.
+        </p>
+        <p>
+          Based on review of the current app codebase, this launch does <strong>not</strong> include third-party analytics or crash-reporting SDKs in the mobile app. A placeholder Firebase config file exists in the repository but is <strong>not</strong> wired into the app.
+        </p>
+      </section>
+
+      <section>
+        <h2>Location</h2>
+        <p>
+          Pawple uses <strong>foreground location only</strong> when you grant permission. We do not use background or silent location tracking. Approximate coordinates are rounded before server storage. Your latest rounded location may be stored on your profile for proximity features. A separate approximate location cache may be stored on your device to sort your Feed.
+        </p>
+        <ul>
+          <li>Feed Moments: prioritised within about 200 km when location is available.</li>
+          <li>Meetups: city and approximate proximity, generally within about 100 km between city areas.</li>
+          <li>Open to Mating: discovery within a fixed 100 km radius when enabled.</li>
+        </ul>
+        <p>Other members may see approximate distance (for example, ~5 km), not your exact coordinates.</p>
+      </section>
+
+      <section>
+        <h2>Notifications</h2>
+        <p>
+          Pawple may send in-app notifications and, when permitted, device push notifications (for example Paw received, mutual Paw, introduction-chat messages, Meetup activity, reminders, and announcements). Push delivery uses <strong>Expo’s push notification service</strong> and depends on your device, permissions, and network. Delivery is not guaranteed.
+        </p>
+      </section>
+
+      <section>
+        <h2>On-device photo checks</h2>
+        <p>
+          Before certain pet photos and Moment photos upload, Pawple may run automated checks <strong>on your device</strong> (using on-device ML Kit–based tooling in the app) that can flag disallowed or unsuitable imagery and help verify that the image appears to contain an animal. Rejected images are not published. These checks are for upload screening only—not automated scanning of introduction-chat messages.
+        </p>
+      </section>
+
+      <section>
+        <h2>Reporting and moderation</h2>
+        <p>
+          You can report Moments, Meetups, pets, mating interest, and introduction chats. Authorized team members may review reports and related content. Report and moderation records may be kept for investigation and safety while your account exists. There is no in-app appeal workflow at this time.
+        </p>
+      </section>
+
+      <section>
+        <h2>External sharing and link previews</h2>
+        <p>
+          You may share Moment or Meetup links outside Pawple. Pawple may store temporary preview images (up to about 24 hours, with scheduled cleanup) so link recipients can see limited preview information. Instagram sharing from Pawple generates the image on your device only and does not upload a Pawple preview image. In-app content remains for signed-in members unless you share a specific link.
+        </p>
+      </section>
+
+      <section>
+        <h2>Service providers</h2>
+        <p>We use service providers to operate Pawple, including:</p>
+        <ul>
+          <li><strong>Supabase</strong> — authentication, database, storage, and server functions</li>
+          <li><strong>Apple</strong> and <strong>Google</strong> — sign-in</li>
+          <li><strong>Expo push notification service</strong> — device push delivery</li>
+        </ul>
+        <p>We may disclose information when required by law.</p>
+        <p class="note">
+          <strong>Not verified in code:</strong> Registered legal entity name, registered address, data-controller identity for cross-border processing, and grievance-officer details are not defined in the repository and should be added before production legal sign-off.
+        </p>
+      </section>
+
+      <section>
+        <h2>Retention and deletion</h2>
+        <p>
+          Most data stays until you delete content or your account. Temporary link-preview images are removed on a schedule (about 24 hours) and when your account is deleted.
+        </p>
+        <p>
+          When you delete your account in <strong>Settings</strong> in the app, a server process removes your profile, pets, Moments, Meetup relationships, mating data, chats, notifications, blocks, reports you filed or that name you, push tokens, related storage objects, and your sign-in identity. See <a href="/delete-account">Delete Account</a>.
+        </p>
+      </section>
+
+      <section>
+        <h2>Export and your choices</h2>
+        <p>
+          You can export some data from Settings (JSON on your device). You can edit profile and pets, control location and notification permissions in device settings, turn Open to Mating on or off per pet, block, report, or delete your account from Settings.
+        </p>
+      </section>
+
+      <section>
+        <h2>Age</h2>
+        <p>
+          Pawple Phase 1 is <strong>18+ only</strong>. You confirm your date of birth in the app. If we learn an account belongs to someone under 18, we will delete it.
+        </p>
+      </section>
+
+      <section>
+        <h2>Changes</h2>
+        <p>We may update this policy. Material changes may also be reflected in the in-app Privacy Policy.</p>
+      </section>
+
+      <section>
+        <h2>Contact</h2>
+        <p>Privacy questions: <a href="mailto:hello@pawple.app">hello@pawple.app</a></p>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <nav class="footer-links" aria-label="Legal and support">
+        <a href="/privacy">Privacy Policy</a>
+        <a href="/terms">Terms &amp; Conditions</a>
+        <a href="/delete-account">Delete Account</a>
+        <a href="/support">Support</a>
+      </nav>
+      <p>&copy; Pawple</p>
+    </footer>
+  </body>
+</html>

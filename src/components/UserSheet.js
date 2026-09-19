@@ -55,7 +55,7 @@ export default function UserSheet(props) {
 
   const handleSendFeedback = async () => {
     console.log('[Settings] Opened Feedback');
-    const feedbackMailto = 'mailto:support@pawple.app?subject=Pawple%20Feedback';
+    const feedbackMailto = 'mailto:hello@pawple.app?subject=Pawple%20Feedback';
     const canOpen = await Linking.canOpenURL(feedbackMailto);
     if (canOpen) {
       await Linking.openURL(feedbackMailto);

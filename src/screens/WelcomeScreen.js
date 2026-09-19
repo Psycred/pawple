@@ -1,8 +1,9 @@
 import React, { useCallback, useState } from 'react';
-import { AntDesign, Feather } from '@expo/vector-icons';
+import { AntDesign } from '@expo/vector-icons';
 import {
   ActivityIndicator,
   BackHandler,
+  Image,
   Modal,
   Platform,
   Pressable,
@@ -117,10 +118,12 @@ export default function WelcomeScreen({ navigation }) {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.brandWrap}>
-          <View style={styles.logoWrap}>
-            <Feather name="heart" size={theme.spacing.xxl} color={theme.colors.background.screen} />
-          </View>
-          <Text style={styles.brand}>pawple</Text>
+          <Image
+            source={require('../../assets/brand/dist/lockup-stacked-1024w.png')}
+            style={styles.logoLockup}
+            resizeMode="contain"
+            accessibilityLabel="Pawple"
+          />
           <Text style={styles.headline} allowFontScaling>
             One heart is enough.
           </Text>
@@ -228,24 +231,12 @@ const styles = StyleSheet.create({
   },
   brandWrap: {
     alignItems: 'center',
-    marginBottom: theme.spacing.xxl,
-  },
-  logoWrap: {
-    width: theme.spacing.xxxl + theme.spacing.lg + theme.spacing.sm,
-    height: theme.spacing.xxxl + theme.spacing.lg + theme.spacing.sm,
-    borderRadius: theme.spacing.xxl + theme.spacing.xs,
-    marginBottom: theme.spacing.md + theme.spacing.sm,
-    backgroundColor: theme.colors.brand.sage.light,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  brand: {
-    fontFamily: 'Inter-Medium',
-    fontSize: theme.fontSizes.xs,
-    color: theme.colors.text.muted.light,
-    letterSpacing: 0.4,
-    textAlign: 'center',
     marginBottom: theme.spacing.xl,
+  },
+  logoLockup: {
+    width: '62.5%',
+    aspectRatio: 72 / 103,
+    marginBottom: theme.spacing.lg,
   },
   headline: {
     fontFamily: 'Inter-SemiBold',

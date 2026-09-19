@@ -100,6 +100,37 @@ function pinMeetupFirst(meetups = [], pinnedMeetup) {
   ];
 }
 
+const MEETUP_CAROUSEL_SIZE = 3;
+
+/**
+ * Build the top carousel from an eligible pool in existing relevance order.
+ * When the viewer has an owned meetup, pin it first then backfill remaining
+ * slots from the full pool (not just the first slice).
+ */
+function buildCarouselFromPool(orderedPool = [], pinnedMeetup, maxSize = MEETUP_CAROUSEL_SIZE) {
+  const cap = Math.max(1, Math.min(maxSize, MEETUP_CAROUSEL_SIZE));
+
+  if (!pinnedMeetup?.id) {
+    return orderedPool.slice(0, Math.min(cap, orderedPool.length));
+  }
+
+  const pinId = String(pinnedMeetup.id);
+  const carousel = [pinnedMeetup];
+
+  for (const meetup of orderedPool) {
+    if (carousel.length >= cap) {
+      break;
+    }
+    const id = String(meetup?.id ?? '');
+    if (!id || id === pinId) {
+      continue;
+    }
+    carousel.push(meetup);
+  }
+
+  return carousel.slice(0, cap);
+}
+
 export function meetupDistanceKm(meetup, userLocation) {
   const venue = getMeetupVenueCoords(meetup);
   const uLat = Number(userLocation?.latitude);
@@ -243,10 +274,7 @@ export function prepareMeetupFeedPools(
 
   if (!hasContext) {
     const shuffledAll = seededShuffle(meetups, sessionSeed);
-    const carouselMeetups = pinMeetupFirst(
-      shuffledAll.slice(0, Math.min(3, shuffledAll.length)),
-      pinnedMeetup,
-    ).slice(0, Math.min(3, shuffledAll.length));
+    const carouselMeetups = buildCarouselFromPool(shuffledAll, pinnedMeetup);
     return {
       mode: 'global',
       carouselMeetups,
@@ -279,10 +307,7 @@ export function prepareMeetupFeedPools(
         viewerCities,
         userLocation,
       );
-      const carouselMeetups = pinMeetupFirst(
-        ownOnly.slice(0, Math.min(3, ownOnly.length)),
-        pinnedMeetup,
-      ).slice(0, Math.min(3, ownOnly.length));
+      const carouselMeetups = buildCarouselFromPool(ownOnly, pinnedMeetup);
       return {
         mode: 'city-own-only',
         carouselMeetups,
@@ -293,10 +318,7 @@ export function prepareMeetupFeedPools(
     }
 
     const shuffledAll = seededShuffle(meetups, sessionSeed);
-    const carouselMeetups = pinMeetupFirst(
-      shuffledAll.slice(0, Math.min(3, shuffledAll.length)),
-      pinnedMeetup,
-    ).slice(0, Math.min(3, shuffledAll.length));
+    const carouselMeetups = buildCarouselFromPool(shuffledAll, pinnedMeetup);
     return {
       mode: 'global-fallback',
       carouselMeetups,
@@ -306,10 +328,7 @@ export function prepareMeetupFeedPools(
     };
   }
 
-  const carouselMeetups = pinMeetupFirst(
-    upcomingOrdered.slice(0, 3),
-    pinnedMeetup,
-  ).slice(0, 3);
+  const carouselMeetups = buildCarouselFromPool(upcomingOrdered, pinnedMeetup);
 
   return {
     mode: 'city',

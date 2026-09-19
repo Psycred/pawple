@@ -43,3 +43,13 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+
+# Pawple local/generated artifacts
+/artifacts/
+/supabase/.temp/
+/tools/**/node_modules/
+/website/.firebase/
+*.log
+/pawple-camera-*.txt
+/pawple-full-test-log.txt

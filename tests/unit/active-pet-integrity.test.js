@@ -33,8 +33,9 @@ describe('resolveInitialActivePetId', () => {
 });
 
 describe('resolveActivePetAfterDelete', () => {
-  it('switches to the next oldest pet when deleting the active pet with siblings', () => {
+  it('selects the first remaining canonical userPets pet when deleting the active pet with siblings', () => {
     assert.equal(resolveActivePetAfterDelete('b', 'b', [petC, petA]), 'a');
+    assert.equal(resolveActivePetAfterDelete('c', 'c', [petA, petB]), 'a');
   });
 
   it('clears active pet when deleting the last pet', () => {
@@ -43,6 +44,7 @@ describe('resolveActivePetAfterDelete', () => {
 
   it('does not change active pet when deleting a non-active pet', () => {
     assert.equal(resolveActivePetAfterDelete('a', 'b', [petA]), undefined);
+    assert.equal(resolveActivePetAfterDelete('a', 'b', [petA, petC]), undefined);
   });
 });
 
@@ -64,5 +66,38 @@ describe('Deletion screens use setPet (static contract)', () => {
     assert.doesNotMatch(edit, /setActivePetId\s*\(/);
     assert.match(manage, /setPet/);
     assert.doesNotMatch(manage, /setActivePetId\s*\(/);
+  });
+});
+
+describe('pet deletion screen behavior (static contract)', () => {
+  it('EditPetScreen refreshes userPets and stays on screen when active pet is deleted with siblings', async () => {
+    const { readFile } = await import('node:fs/promises');
+    const edit = await readFile(new URL('../../src/screens/EditPetScreen.js', import.meta.url), 'utf8');
+    assert.match(edit, /refreshUserPets/);
+    assert.match(edit, /resolveActivePetAfterDelete/);
+    assert.match(edit, /navigation\.setParams/);
+  });
+
+  it('EditPetScreen routes zero pets to main OnboardingPets with profile params', async () => {
+    const { readFile } = await import('node:fs/promises');
+    const edit = await readFile(new URL('../../src/screens/EditPetScreen.js', import.meta.url), 'utf8');
+    assert.match(edit, /await setPet\(null\)/);
+    assert.match(edit, /navigate\('OnboardingPets',\s*\{[\s\S]*fullName:[\s\S]*city:/);
+    assert.doesNotMatch(edit, /navigateToMainOnboardingPets[\s\S]*mode:\s*'add'/);
+  });
+
+  it('ManagePetsScreen refreshes userPets and routes zero pets to main OnboardingPets', async () => {
+    const { readFile } = await import('node:fs/promises');
+    const manage = await readFile(new URL('../../src/screens/ManagePetsScreen.js', import.meta.url), 'utf8');
+    assert.match(manage, /refreshUserPets/);
+    assert.match(manage, /!remaining\?\.length/);
+    assert.match(manage, /navigate\('OnboardingPets',\s*\{[\s\S]*fullName:[\s\S]*city:/);
+    assert.match(manage, /\.order\('created_at',\s*\{\s*ascending:\s*false\s*\}\)/);
+  });
+
+  it('ManagePetsScreen add-pet flow still uses mode add', async () => {
+    const { readFile } = await import('node:fs/promises');
+    const manage = await readFile(new URL('../../src/screens/ManagePetsScreen.js', import.meta.url), 'utf8');
+    assert.match(manage, /goToAdd[\s\S]*mode:\s*'add'/);
   });
 });

@@ -104,7 +104,7 @@ function normalizeTraits(raw) {
 export default function EditPetScreen({ navigation, route }) {
   const surfaces = useRuntimeThemeColors();
   const petId = route?.params?.petId ?? null;
-  const { activePetId, setPet } = useActivePet();
+  const { activePetId, setPet, refreshUserPets } = useActivePet();
   const { ready: photoValidationReady, validatePhoto } = usePhotoValidationGate();
 
   const [loading, setLoading] = useState(true);
@@ -443,31 +443,53 @@ export default function EditPetScreen({ navigation, route }) {
     }
   };
 
+  const navigateToMainOnboardingPets = async () => {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) {
+      return;
+    }
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('name, city')
+      .eq('id', user.id)
+      .single();
+    navigation.navigate('OnboardingPets', {
+      fullName: profile?.name ?? '',
+      city: profile?.city ?? '',
+    });
+  };
+
   const handleDelete = async () => {
     setDeleting(true);
     try {
-      const { error } = await supabase.from('pets').delete().eq('id', petId);
+      const { error } = await supabase.rpc('delete_pet', { p_pet_id: petId });
       if (error) {
         throw error;
       }
+
+      const remaining = await refreshUserPets();
+
+      if (!remaining?.length) {
+        await setPet(null);
+        await navigateToMainOnboardingPets();
+        return;
+      }
+
       if (String(activePetId) === String(petId)) {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-        if (user) {
-          const { data: remaining } = await supabase
-            .from('pets')
-            .select('id, created_at')
-            .eq('owner_id', user.id)
-            .order('created_at', { ascending: true });
-          const nextPetId = resolveActivePetAfterDelete(activePetId, petId, remaining ?? []);
-          if (nextPetId !== undefined) {
-            await setPet(nextPetId);
-          }
-        } else {
-          await setPet(null);
+        const nextPetId = resolveActivePetAfterDelete(activePetId, petId, remaining);
+        if (nextPetId != null) {
+          await setPet(nextPetId);
+          const nextPet = remaining.find((pet) => String(pet.id) === String(nextPetId));
+          navigation.setParams({
+            petId: nextPetId,
+            petName: nextPet?.name ?? '',
+          });
+          return;
         }
       }
+
       navigation.goBack();
     } catch (error) {
       console.error('[Supabase]', error);

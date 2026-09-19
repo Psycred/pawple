@@ -201,7 +201,7 @@ export default function SettingsScreen({ navigation }) {
             <SettingRow
               icon="mail"
               title="Contact Support"
-              onPress={() => Linking.openURL('mailto:support@pawple.app')}
+              onPress={() => Linking.openURL('mailto:hello@pawple.app')}
             />
           </View>
         </View>

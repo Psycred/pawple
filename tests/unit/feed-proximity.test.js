@@ -179,4 +179,109 @@ describe('feedProximity', () => {
     assert.equal(pools.mode, 'global');
     assert.equal(pools.injectionMeetups.length, 2);
   });
+
+  describe('carousel backfill after owned meetup pin', () => {
+    const MUMBAI_FEED = { profileCity: 'Mumbai', deviceCity: 'Mumbai' };
+
+    it('fills 3 carousel cards when owned meetup plus 2 eligible meetups exist', () => {
+      const meetups = [
+        { id: 'owned', user_id: 'viewer', city: 'Mumbai', ...FUTURE },
+        { id: 'second', city: 'Bombay', ...FUTURE },
+        { id: 'third', city: 'Navi Mumbai', ...FUTURE },
+      ];
+      const pools = prepareMeetupFeedPools(
+        meetups,
+        MUMBAI_FEED,
+        false,
+        11,
+        'viewer',
+      );
+
+      assert.equal(pools.mode, 'city');
+      assert.equal(pools.carouselMeetups.length, 3);
+      assert.equal(pools.carouselMeetups[0].id, 'owned');
+      assert.deepEqual(
+        pools.carouselMeetups.map((meetup) => meetup.id),
+        ['owned', 'second', 'third'],
+      );
+    });
+
+    it('fills 2 carousel cards when owned meetup plus 1 eligible meetup exists', () => {
+      const meetups = [
+        { id: 'owned', user_id: 'viewer', city: 'Mumbai', ...FUTURE },
+        { id: 'local', city: 'Mumbai', ...FUTURE },
+      ];
+      const pools = prepareMeetupFeedPools(
+        meetups,
+        MUMBAI_FEED,
+        false,
+        12,
+        'viewer',
+      );
+
+      assert.equal(pools.carouselMeetups.length, 2);
+      assert.deepEqual(pools.carouselMeetups.map((meetup) => meetup.id), ['owned', 'local']);
+    });
+
+    it('shows only the owned meetup when no other eligible meetups exist', () => {
+      const meetups = [
+        { id: 'owned', user_id: 'viewer', city: 'Chandigarh', ...FUTURE },
+      ];
+      const pools = prepareMeetupFeedPools(
+        meetups,
+        MUMBAI_FEED,
+        false,
+        13,
+        'viewer',
+      );
+
+      assert.equal(pools.mode, 'city');
+      assert.equal(pools.carouselMeetups.length, 1);
+      assert.equal(pools.carouselMeetups[0].id, 'owned');
+    });
+
+    it('backfills from the full eligible pool when owned meetup sorts after other meetups', () => {
+      const meetups = [
+        { id: 'nearest', city: 'Mumbai', ...FUTURE },
+        { id: 'second', city: 'Bombay', ...FUTURE },
+        { id: 'third', city: 'Navi Mumbai', ...FUTURE },
+        { id: 'owned', user_id: 'viewer', city: 'Mumbai', ...FUTURE },
+      ];
+      const pools = prepareMeetupFeedPools(
+        meetups,
+        MUMBAI_FEED,
+        false,
+        14,
+        'viewer',
+      );
+
+      assert.equal(pools.carouselMeetups.length, 3);
+      assert.equal(pools.carouselMeetups[0].id, 'owned');
+      assert.deepEqual(
+        pools.carouselMeetups.map((meetup) => meetup.id),
+        ['owned', 'nearest', 'second'],
+      );
+    });
+
+    it('preserves existing carousel behavior when the viewer has no owned meetup', () => {
+      const meetups = [
+        { id: 'nearest', city: 'Mumbai', ...FUTURE },
+        { id: 'second', city: 'Bombay', ...FUTURE },
+        { id: 'third', city: 'Navi Mumbai', ...FUTURE },
+      ];
+      const pools = prepareMeetupFeedPools(
+        meetups,
+        MUMBAI_FEED,
+        false,
+        15,
+        null,
+      );
+
+      assert.equal(pools.carouselMeetups.length, 3);
+      assert.deepEqual(
+        pools.carouselMeetups.map((meetup) => meetup.id),
+        ['nearest', 'second', 'third'],
+      );
+    });
+  });
 });
