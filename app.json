@@ -14,11 +14,12 @@
       "backgroundColor": "#ffffff"
     },
     "android": {
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/brand/dist/adaptive-foreground-432.png",
         "backgroundImage": "./assets/brand/dist/adaptive-background-432.png"
       },
-      "edgeToEdgeEnabled": true,
+      //"edgeToEdgeEnabled": true,
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.ACCESS_COARSE_LOCATION",
@@ -73,6 +74,8 @@
       "package": "com.anonymous.Pawple"
     },
     "ios": {
+      "bundleIdentifier": "com.psycredinnovation.pawple",
+      "googleServicesFile": "./GoogleService-Info.plist",
       "supportsTablet": true,
       "associatedDomains": [
         "applinks:pawple.com",

@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "770778180305",
+    "project_id": "pawple-m-v-p-5igl3e",
+    "storage_bucket": "pawple-m-v-p-5igl3e.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:770778180305:android:47d6e404643ea8bf96b3f0",
+        "android_client_info": {
+          "package_name": "com.anonymous.Pawple"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDEkcCAP8HcFsSDTPYGReT62kCOAu17f-o"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:770778180305:android:e9ee5db4249ca06b96b3f0",
+        "android_client_info": {
+          "package_name": "com.mycompany.pawplemvp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDEkcCAP8HcFsSDTPYGReT62kCOAu17f-o"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
