@@ -6,6 +6,9 @@ node_modules/
 # Expo
 .expo/
 dist/
+# Pawple committed brand exports (still generated; see tools/brand-export/)
+!assets/brand/dist/
+!assets/brand/dist/**
 web-build/
 expo-env.d.ts
 
